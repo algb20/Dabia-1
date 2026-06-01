@@ -27,33 +27,29 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <script>
-        // إعدادات الاتصال بمشروعك الفريد في Supabase
         const supabaseUrl = 'https://fjeyhpasqhhqebqmhcmy.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqZXlocGFzcWhocWVicW1oY215Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNTYyMDcsImV4cCI6MjA5NTgzMjIwN30.0eluGIJX-9QGgjsD_ipk1z688aWLW2fiuxqmeFGx4WI';
 
-        // تفعيل عميل الاتصال بالسيرفر
         const _supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
-        // مراقبة نموذج التسجيل عند إرسال البيانات
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
-            e.preventDefault(); // منع الصفحة من التحديث التلقائي
+            e.preventDefault();
 
-            // جلب البيانات التي كتبها المستخدم في الخانات
             const username = document.getElementById('username').value;
-            const email = document.getElementById('email').value;
+            const emailValue = document.getElementById('email').value;
             const password = document.getElementById('password').value;
 
-            // إرسال الحساب السحابي مباشرة لجدول Dabia في Supabase
+            // تم تعديل الكلمة هنا إلى emall لتطابق جدولك في السيرفر تماماً
             const { data, error } = await _supabase
                 .from('Dabia')
-                .insert([{ username: username, email: email, password: password }]);
+                .insert([{ username: username, emall: emailValue, password: password }]);
 
             if (error) {
-                console.error('خطأ أثناء الحفظ السحابي:', error.message);
+                console.error('خطأ أثناء الحفظ:', error.message);
                 alert('فشل التسجيل: ' + error.message);
             } else {
                 alert('ممتاز! تم إنشاء حسابك بنجاح في قاعدة بيانات دابيا السحابية.');
-                document.getElementById('registerForm').reset(); // تفريغ الحقول بعد النجاح
+                document.getElementById('registerForm').reset();
             }
         });
     </script>
