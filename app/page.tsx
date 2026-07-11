@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -42,7 +42,7 @@ type NotifType   = "price_drop" | "new_arrival" | "trending" | "order" | "auctio
 interface Review       { id: number; author: string; rating: number; body: string; purchaseTxId: string; verified: boolean; timestamp: string }
 interface MerchantOffer { merchantName: string; accountType: AccountType; price: number; currency: "π"; inStock: boolean; deliveryDays: number; isOfficial: boolean; verified: boolean; rating: number; soldCount: number }
 interface TrustIndex   { total: number; breakdown: { sales: number; reviews: number; reliability: number; activity: number }; verifiedSalesCount: number }
-interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
+interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerUserId?: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
 interface Auction      { id: string; productName: string; image: string; currentBid: number; minIncrement: number; currency: "π"; endsAt: string; status: AuctionStatus; bidCount: number; seller: string; blockchainId: string; verified: boolean }
 interface GroupShop    { id: string; productId: number; productName: string; image: string; originalPrice: number; groupPrice: number; currency: "π"; membersJoined: number; membersNeeded: number; endsAt: string; shareCode: string; status: "open" | "full" | "completed"; createdBy: string }
 interface Notif        { id: number; type: NotifType; title: string; body: string; time: string; read: boolean }
@@ -79,6 +79,7 @@ function dbProductToProduct(p: DBProduct): Product {
     },
     category: p.category || "Other",
     seller: p.seller_name || "Dabia Seller",
+    sellerUserId: p.seller_user_id ? String(p.seller_user_id) : undefined,
     sellerTrust: 80,
     sold: p.review_count ?? 0,
     liked: false,
@@ -295,34 +296,7 @@ const SkeletonCard = memo(function SkeletonCard() {
 
 // ─── Product card ─────────────────────────────────────────────────────────────
 const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser }: { product: Product; onOpen: (p: Product) => void; currentUser?: DBUser | null }) {
-  const [liked, setLiked] = useState(p.liked)
-  const [showCardShare, setShowCardShare] = useState(false)
-  const [saved, setSaved] = useState(false)
   const isOfficial = p.sellerAccountType === "official"
-
-  useEffect(() => {
-    if (currentUser?.id) {
-      isProductSaved(currentUser.id, String(p.id)).then(setSaved)
-      isLikedByUser(currentUser.id, String(p.id)).then(setLiked)
-    }
-  }, [currentUser?.id, p.id])
-
-  // إعجاب حقيقي محفوظ في القاعدة (يُحتسب في محرّك التراند) — تحديث متفائل مع تراجع عند الفشل
-  const handleToggleLike = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!currentUser?.id) return
-    const prev = liked
-    setLiked(!prev)
-    const { liked: now } = await toggleLike(currentUser.id, String(p.id))
-    setLiked(now)
-  }
-
-  const handleToggleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!currentUser?.id) return
-    const { saved: nowSaved } = await toggleSaveProduct(currentUser.id, String(p.id))
-    setSaved(nowSaved)
-  }
   const isPremium  = p.sellerAccountType === "premium"
   const discount   = p.originalPrice ? Math.round((1 - p.price / p.originalPrice) * 100) : 0
 
@@ -355,26 +329,9 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
           )}
         </div>
 
-        {/* Top-right: like + trend */}
+        {/* Top-right: trend indicator only (أزرار الإعجاب/الحفظ/المشاركة انتقلت
+            إلى داخل صفحة المنتج لتفادي التشويش البصري على الشبكة) */}
         <div className="absolute right-1.5 top-1.5 flex flex-col items-end gap-1">
-          <button
-            onClick={handleToggleLike}
-            className={`flex h-6 w-6 items-center justify-center rounded-full backdrop-blur-sm transition-colors ${liked ? "bg-red-500 text-white" : "bg-black/55 text-white"}`}
-            aria-label={liked ? "Unlike" : "Like"}>
-            <Heart className="h-3 w-3" fill={liked ? "currentColor" : "none"} />
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); setShowCardShare(true) }}
-            className="flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm"
-            aria-label="Share">
-            <Share2 className="h-3 w-3" />
-          </button>
-          <button
-            onClick={handleToggleSave}
-            className={`flex h-6 w-6 items-center justify-center rounded-full backdrop-blur-sm transition-colors ${saved ? "bg-amber-400 text-black" : "bg-black/55 text-white"}`}
-            aria-label={saved ? "Unsave" : "Save"}>
-            <Bookmark className="h-3 w-3" fill={saved ? "currentColor" : "none"} />
-          </button>
           {p.trend === "hot" && (
             <span className="flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] backdrop-blur-sm">
               <Flame className="h-2.5 w-2.5 text-red-400" />
@@ -418,23 +375,13 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
           <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
         </div>
 
-        <div className="flex items-baseline gap-1">
+        <div className="mt-auto flex items-baseline gap-1">
           <span className="text-xs font-black text-amber-400 sm:text-sm">{fmtPi(p.price)}</span>
           {p.originalPrice && (
-            <span className="hidden text-[9px] text-muted-foreground line-through sm:inline">{fmtPi(p.originalPrice)}</span>
+            <span className="text-[9px] text-muted-foreground line-through">{fmtPi(p.originalPrice)}</span>
           )}
         </div>
-
-        <button
-          onClick={e => { e.stopPropagation(); onOpen(p) }}
-          className="btn-primary mt-auto w-full rounded-xl py-2 text-[11px] font-bold text-black">
-          Compare Prices
-        </button>
       </div>
-      {showCardShare && (
-        <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowCardShare(false)}
-          shareToSocial={currentUser ? { product: { id: String(p.id), name: p.name, price: p.price, image: p.image }, user: currentUser } : undefined} />
-      )}
     </article>
   )
 })
@@ -594,6 +541,16 @@ const SecurityModal = memo(function SecurityModal({ amount, onClose, onComplete 
   )
 })
 
+interface CheckoutData {
+  quantity: number
+  recipient_name: string
+  recipient_phone: string
+  ship_country: string
+  ship_city: string
+  ship_address: string
+  ship_postal: string
+}
+
 const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { product: Product; onClose: () => void }) {
   useCloseOnBack(onClose) // زر الرجوع يغلق صفحة المنتج بدل الخروج من التطبيق
   const [detailTab, setDetailTab]     = useState<"compare" | "overview" | "reviews">("compare")
@@ -612,6 +569,18 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const [paymentError, setPaymentError] = useState("")
   const { user: buyerUser } = useUserAuth()
   const [showShareModal, setShowShareModal] = useState(false)
+
+  // إعجاب/حفظ حقيقيان — انتقلا إلى صفحة المنتج (لا يظهران على البطاقة لتفادي التشويش)
+  const [dLiked, setDLiked] = useState(false)
+  const [dSaved, setDSaved] = useState(false)
+  useEffect(() => {
+    if (buyerUser?.id) {
+      isLikedByUser(buyerUser.id, String(p.id)).then(setDLiked)
+      isProductSaved(buyerUser.id, String(p.id)).then(setDSaved)
+    }
+  }, [buyerUser?.id, p.id])
+  const toggleDLike = async () => { if (!buyerUser?.id) return; setDLiked(v => !v); const { liked } = await toggleLike(buyerUser.id, String(p.id)); setDLiked(liked) }
+  const toggleDSave = async () => { if (!buyerUser?.id) return; setDSaved(v => !v); const { saved } = await toggleSaveProduct(buyerUser.id, String(p.id)); setDSaved(saved) }
 
   // ── تقييمات حقيقية من القاعدة (تُحمَّل عند فتح تبويب Reviews) ──────────────
   const [reviews, setReviews]         = useState<DBReview[]>([])
@@ -647,30 +616,50 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const isOfficial  = p.sellerAccountType === "official"
   const trustTotal  = Math.round(p.trustIndex?.total ?? p.trustScore)
 
-  // ─── دفع حقيقي عبر Pi Network — لا محاكاة ──────────────────────────────────
-  const handleBuyWithPi = useCallback(async () => {
+  // ── نافذة إتمام الطلب (Checkout) — تُجمع فيها الكمية وبيانات الشحن قبل الدفع ──
+  const [showCheckout, setShowCheckout] = useState(false)
+  const [placedOrder, setPlacedOrder]   = useState<DBOrder | null>(null)
+  const [pendingCheckout, setPendingCheckout] = useState<CheckoutData | null>(null)
+
+  // ─── دفع حقيقي عبر Pi Network — لا محاكاة. يستقبل بيانات الطلب من Checkout ──
+  const handleBuyWithPi = useCallback(async (co: CheckoutData) => {
     if (!buyerUser) { setPaymentError("Please sign in to buy"); return }
     setPaying(true); setPaymentError("")
+    const total = +(activeOffer.price * co.quantity).toFixed(4)
 
     const finalize = async (piTxId?: string) => {
       try {
-        await createOrder({
-          user_id:     buyerUser.id!,
-          product_id:  String(p.id),
-          quantity:    1,
-          total_price: activeOffer.price,
-          pi_tx_id:    piTxId,
+        const order = await createOrder({
+          user_id:        buyerUser.id!,
+          product_id:     String(p.id),
+          product_name:   p.name,
+          product_image:  p.image,
+          seller_user_id: p.sellerUserId,
+          seller_name:    p.seller,
+          quantity:       co.quantity,
+          unit_price:     activeOffer.price,
+          total_price:    total,
+          recipient_name:  co.recipient_name,
+          recipient_phone: co.recipient_phone,
+          ship_country:    co.ship_country,
+          ship_city:       co.ship_city,
+          ship_address:    co.ship_address,
+          ship_postal:     co.ship_postal,
+          shipping_address: `${co.recipient_name}, ${co.ship_address}, ${co.ship_city}, ${co.ship_country}${co.ship_postal ? " " + co.ship_postal : ""} — ${co.recipient_phone}`,
+          pi_tx_id:       piTxId,
         })
         await addWalletTransaction({
           user_id:     buyerUser.id!,
           type:        "payment",
-          amount:       activeOffer.price,
-          description: `Purchase: ${p.name}`,
+          amount:       total,
+          description: `Purchase: ${p.name}${co.quantity > 1 ? ` ×${co.quantity}` : ""}`,
           pi_tx_id:    piTxId,
           status:      "completed",
         })
+        if (order) setPlacedOrder(order)
       } catch { /* الطلب قد يفشل في السجل لكن الدفع تم — لا نوقف تجربة المستخدم */ }
       setPaying(false)
+      setShowCheckout(false)
       setDone(true)
     }
 
@@ -684,9 +673,9 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
     try {
       window.Pi!.createPayment(
         {
-          amount: activeOffer.price,
+          amount: total,
           memo: `Dabia purchase: ${p.name}`,
-          metadata: { productId: p.id, productName: p.name, buyerId: buyerUser.id },
+          metadata: { productId: p.id, productName: p.name, buyerId: buyerUser.id, quantity: co.quantity },
         },
         {
           onReadyForServerApproval: async (paymentId: string) => {
@@ -757,7 +746,13 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </span>
           )}
           {p.verified && <BadgeCheck className="h-5 w-5 text-emerald-400" />}
-          <button onClick={() => setShowShareModal(true)} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" title="Share">
+          <button onClick={toggleDLike} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dLiked ? "bg-red-500/10 border-red-500/30" : "hover:bg-secondary"}`} title="Like" aria-label="Like">
+            <Heart className={`h-3.5 w-3.5 ${dLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
+          </button>
+          <button onClick={toggleDSave} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dSaved ? "bg-amber-400/10 border-amber-400/30" : "hover:bg-secondary"}`} title="Save" aria-label="Save">
+            <Bookmark className={`h-3.5 w-3.5 ${dSaved ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+          </button>
+          <button onClick={() => setShowShareModal(true)} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" title="Share" aria-label="Share">
             <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </div>
@@ -989,29 +984,156 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </div>
             <button
               disabled={paying}
-              onClick={() => isHighValue ? setShowSecurity(true) : handleBuyWithPi()}
-              className="btn-primary w-full rounded-2xl py-3.5 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
-              {paying
-                ? <><Loader2 className="h-4 w-4 animate-spin" />Processing Payment…</>
-                : isHighValue ? <><Lock className="h-4 w-4" />Buy with Verification</> : <><ShoppingCart className="h-4 w-4" />Buy with Pi</>
-              }
-            </button>
-            <button
-              disabled={payingCard}
-              onClick={handleBuyWithCard}
-              className="w-full rounded-2xl border border-border bg-card py-3 text-[13px] font-bold text-foreground flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-transform">
-              {payingCard ? <><Loader2 className="h-4 w-4 animate-spin" />Redirecting…</> : <><CreditCard className="h-4 w-4" />Pay with Card (Visa/Mastercard)</>}
+              onClick={() => { setPaymentError(""); setShowCheckout(true) }}
+              className="btn-primary w-full rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
+              <ShoppingCart className="h-4 w-4" />Buy Now
             </button>
           </div>
         )}
       </div>
 
+      {/* نافذة إتمام الطلب — كمية + بيانات شحن + ملخص + دفع */}
+      {showCheckout && buyerUser && (
+        <CheckoutSheet
+          product={p} unitPrice={activeOffer.price} user={buyerUser} paying={paying || payingCard} error={paymentError}
+          isHighValue={isHighValue}
+          onClose={() => setShowCheckout(false)}
+          onPayPi={(co) => { setPendingCheckout(co); if (isHighValue) setShowSecurity(true); else handleBuyWithPi(co) }}
+          onPayCard={handleBuyWithCard}
+        />
+      )}
+
       {showSecurity && (
-        <SecurityModal amount={activeOffer.price} onClose={() => setShowSecurity(false)} onComplete={() => { setShowSecurity(false); handleBuyWithPi() }} />
+        <SecurityModal amount={activeOffer.price} onClose={() => setShowSecurity(false)}
+          onComplete={() => { setShowSecurity(false); if (pendingCheckout) handleBuyWithPi(pendingCheckout) }} />
+      )}
+
+      {/* تأكيد الطلب مع رقم التتبّع */}
+      {done && placedOrder && (
+        <OrderPlacedSheet order={placedOrder} onClose={() => { setDone(false); setPlacedOrder(null); onClose() }} />
       )}
     </div>
   )
 })
+
+// ── نافذة إتمام الطلب الاحترافية ─────────────────────────────────────────────
+function CheckoutSheet({ product, unitPrice, user, paying, error, isHighValue, onClose, onPayPi, onPayCard }: {
+  product: Product; unitPrice: number; user: DBUser; paying: boolean; error: string; isHighValue: boolean
+  onClose: () => void; onPayPi: (co: CheckoutData) => void; onPayCard: () => void
+}) {
+  useCloseOnBack(onClose)
+  const maxStock = (product as any).stock ?? 99
+  const [qty, setQty] = useState(1)
+  const [co, setCo] = useState<CheckoutData>({
+    quantity: 1,
+    recipient_name: user.username || "",
+    recipient_phone: (user as any).phone || "",
+    ship_country: user.country || "",
+    ship_city: "", ship_address: "", ship_postal: "",
+  })
+  const [touched, setTouched] = useState(false)
+  const set = (k: keyof CheckoutData) => (e: React.ChangeEvent<HTMLInputElement>) => setCo(c => ({ ...c, [k]: e.target.value }))
+  const total = +(unitPrice * qty).toFixed(4)
+  const valid = co.recipient_name.trim() && co.recipient_phone.trim() && co.ship_country.trim() && co.ship_city.trim() && co.ship_address.trim()
+
+  const submit = (method: "pi" | "card") => {
+    setTouched(true)
+    if (!valid) return
+    const data = { ...co, quantity: qty }
+    if (method === "pi") onPayPi(data)
+    else onPayCard()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 max-h-[92vh] overflow-y-auto space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-black">Checkout</p>
+          <button onClick={onClose}><X className="h-4 w-4" /></button>
+        </div>
+
+        {/* ملخص المنتج + الكمية */}
+        <div className="flex items-center gap-3 rounded-2xl border border-border bg-secondary/30 p-3">
+          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-2xl">
+            {product.image.startsWith("http") ? <img src={product.image} alt="" className="h-full w-full object-cover" /> : product.image}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-bold">{product.name}</p>
+            <p className="text-[12px] font-black text-amber-400">{fmtPi(unitPrice)}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setQty(q => Math.max(1, q - 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-lg font-bold active:scale-90">−</button>
+            <span className="w-6 text-center text-sm font-black">{qty}</span>
+            <button onClick={() => setQty(q => Math.min(maxStock, q + 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-lg font-bold active:scale-90">+</button>
+          </div>
+        </div>
+
+        {/* بيانات الشحن */}
+        <div className="space-y-2">
+          <p className="text-[12px] font-bold flex items-center gap-1.5"><Truck className="h-3.5 w-3.5 text-amber-400" />Shipping details</p>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={co.recipient_name} onChange={set("recipient_name")} placeholder="Full name *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.recipient_phone} onChange={set("recipient_phone")} placeholder="Phone *" inputMode="tel" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_country} onChange={set("ship_country")} placeholder="Country *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_city} onChange={set("ship_city")} placeholder="City *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_address} onChange={set("ship_address")} placeholder="Street address *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_postal} onChange={set("ship_postal")} placeholder="Postal code (optional)" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+          </div>
+          {touched && !valid && <p className="text-[11px] text-red-400">Please fill all required (*) fields</p>}
+        </div>
+
+        {/* ملخص السعر */}
+        <div className="rounded-2xl border border-border bg-secondary/20 p-3 space-y-1 text-[12px]">
+          <div className="flex justify-between text-muted-foreground"><span>{fmtPi(unitPrice)} × {qty}</span><span>{fmtPi(total)}</span></div>
+          <div className="flex justify-between text-muted-foreground"><span>Shipping</span><span>Arranged with seller</span></div>
+          <div className="flex justify-between pt-1 border-t border-border text-sm font-black"><span>Total</span><span className="text-amber-400">{fmtPi(total)}</span></div>
+        </div>
+
+        {/* حماية الطرفين */}
+        <div className="flex items-start gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-2.5">
+          <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+          <p className="text-[10px] leading-relaxed text-muted-foreground">Your payment is confirmed on Pi Network and the order is tracked end-to-end. You'll get an order number to follow shipping, and confirm receipt when it arrives.</p>
+        </div>
+
+        {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[11px] text-red-400">{error}</p>}
+
+        <button onClick={() => submit("pi")} disabled={paying}
+          className="btn-primary w-full rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
+          {paying ? <><Loader2 className="h-4 w-4 animate-spin" />Processing…</> : isHighValue ? <><Lock className="h-4 w-4" />Verify &amp; Pay {fmtPi(total)}</> : <><ShoppingCart className="h-4 w-4" />Place Order · Pay {fmtPi(total)}</>}
+        </button>
+        <button onClick={() => submit("card")} disabled={paying}
+          className="w-full rounded-2xl border border-border bg-card py-2.5 text-[13px] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+          <CreditCard className="h-4 w-4" />Pay with Card
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── تأكيد الطلب مع رقم التتبّع ───────────────────────────────────────────────
+function OrderPlacedSheet({ order, onClose }: { order: DBOrder; onClose: () => void }) {
+  useCloseOnBack(onClose)
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="fixed inset-0 z-[68] flex items-center justify-center bg-black/70 backdrop-blur-sm p-6" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-6 text-center space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500"><CheckCheck className="h-8 w-8 text-white" /></div>
+        <div>
+          <p className="text-lg font-black">Order placed!</p>
+          <p className="text-[12px] text-muted-foreground mt-1">Your payment is confirmed and the seller has been notified.</p>
+        </div>
+        <div className="rounded-2xl border border-border bg-secondary/30 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Order number</p>
+          <p className="text-lg font-black tracking-wide text-amber-400">{order.order_number}</p>
+          <button onClick={() => { navigator.clipboard?.writeText(order.order_number || ""); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+            className="mt-1 text-[11px] font-semibold text-muted-foreground">{copied ? "Copied ✓" : "Tap to copy"}</button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Track it anytime from <span className="font-bold text-foreground">Profile → My Orders</span>.</p>
+        <button onClick={onClose} className="w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black">Done</button>
+      </div>
+    </div>
+  )
+}
 
 // ─── Notification panel ───────────────────────────────────────────────────────
 const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealNotif[]; onClose: () => void }) {

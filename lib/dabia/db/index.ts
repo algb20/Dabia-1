@@ -89,8 +89,10 @@ export interface DBProduct {
   updated_at?:     string
 }
 
+export interface OrderStatusEvent { status: string; at: string; note?: string; carrier?: string; tracking?: string }
 export interface DBOrder {
   id?:              string
+  order_number?:    string  // رقم طلب فريد مقروء (يُولَّد في القاعدة)
   user_id:          string
   product_id:       string
   product_name?:     string
@@ -98,10 +100,21 @@ export interface DBOrder {
   seller_user_id?:   string
   seller_name?:      string
   quantity?:         number
+  unit_price?:       number
   total_price:       number
   status?:           'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded'
+  // معلومات الشحن المنظّمة (يُدخلها المشتري عند الطلب)
+  recipient_name?:   string
+  recipient_phone?:  string
+  ship_country?:     string
+  ship_city?:        string
+  ship_address?:     string
+  ship_postal?:      string
   shipping_address?: string
   tracking_note?:    string
+  carrier?:          string  // شركة الشحن (يُدخلها البائع)
+  tracking_number?:  string  // رقم تتبّع الشحنة الخارجي
+  status_history?:   OrderStatusEvent[]
   pi_tx_id?:         string
   created_at?:       string
   updated_at?:       string
@@ -845,14 +858,30 @@ export async function getOrderById(id: string): Promise<DBOrder | null> {
   try { const { data } = await supabase.from('orders').select('*').eq('id', id).maybeSingle(); return data as DBOrder | null } catch { return null }
 }
 
-// البائع يُحدّث حالة الطلب (قيد التحضير → شُحن → تم التسليم) — تتبع حقيقي
-export async function updateOrderStatus(orderId: string, status: DBOrder['status'], note?: string): Promise<boolean> {
+// البائع يُحدّث حالة الطلب (قيد التحضير → شُحن → تم التسليم) — تتبع حقيقي.
+// عند الشحن يمكنه إرفاق شركة الشحن ورقم التتبّع الخارجي (يُحفظان في سجل الحالة).
+export async function updateOrderStatus(orderId: string, status: DBOrder['status'], opts?: { note?: string; carrier?: string; tracking_number?: string }): Promise<boolean> {
   try {
     const payload: any = { status, updated_at: new Date().toISOString() }
-    if (note) payload.tracking_note = note
+    if (opts?.note)            payload.tracking_note   = opts.note
+    if (opts?.carrier)         payload.carrier         = opts.carrier
+    if (opts?.tracking_number) payload.tracking_number = opts.tracking_number
     const { error } = await supabase.from('orders').update(payload).eq('id', orderId)
     return !error
   } catch { return false }
+}
+
+// المشتري يؤكّد استلام الطلب — إغلاق آمن للطرفين (لا يُحسم إلا بتأكيد المشتري)
+export async function confirmOrderReceived(orderId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('orders').update({ status: 'delivered', tracking_note: 'Receipt confirmed by buyer', updated_at: new Date().toISOString() }).eq('id', orderId)
+    return !error
+  } catch { return false }
+}
+
+// تتبّع طلب برقمه — متاح للطرفين لمتابعة الشحنة
+export async function getOrderByNumber(orderNumber: string): Promise<DBOrder | null> {
+  try { const { data } = await supabase.from('orders').select('*').eq('order_number', orderNumber.trim().toUpperCase()).maybeSingle(); return data as DBOrder | null } catch { return null }
 }
 
 // المشتري يطلب إلغاء/استرداد — ضمان حقيقي بين الطرفين

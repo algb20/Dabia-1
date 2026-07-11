@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { getOrdersBySeller, updateOrderStatus, ORDER_STATUS_FLOW, type DBOrder } from "@/lib/dabia/db"
-import { X, Loader2, Package, Truck, CheckCircle2, Clock, XCircle, ChevronRight } from "lucide-react"
+import { X, Loader2, Package, Truck, CheckCircle2, Clock, XCircle, ChevronRight, MapPin } from "lucide-react"
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending", confirmed: "Confirmed", preparing: "Preparing",
@@ -25,6 +25,9 @@ export default function SellerOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>("all")
+  const [shipFor, setShipFor] = useState<DBOrder | null>(null)
+  const [carrier, setCarrier] = useState("")
+  const [trackingNo, setTrackingNo] = useState("")
 
   const load = () => {
     if (!user?.id) return
@@ -39,14 +42,28 @@ export default function SellerOrdersPage() {
     </div>
   )
 
-  const advanceStatus = async (order: DBOrder) => {
+  const advanceStatus = async (order: DBOrder, extra?: { carrier?: string; tracking_number?: string }) => {
     const idx = ORDER_STATUS_FLOW.indexOf(order.status as any)
     const next = ORDER_STATUS_FLOW[idx + 1]
     if (!next) return
     setUpdating(order.id!)
-    const ok = await updateOrderStatus(order.id!, next)
-    if (ok) setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: next } : o))
+    const ok = await updateOrderStatus(order.id!, next, extra)
+    if (ok) setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: next, ...extra } : o))
     setUpdating(null)
+  }
+
+  // الانتقال إلى "shipped" يفتح نافذة إدخال شركة الشحن ورقم التتبّع
+  const handleAdvance = (order: DBOrder) => {
+    const idx = ORDER_STATUS_FLOW.indexOf(order.status as any)
+    const next = ORDER_STATUS_FLOW[idx + 1]
+    if (next === "shipped") { setShipFor(order); setCarrier(order.carrier || ""); setTrackingNo(order.tracking_number || "") }
+    else advanceStatus(order)
+  }
+
+  const confirmShip = async () => {
+    if (!shipFor) return
+    await advanceStatus(shipFor, { carrier: carrier.trim() || undefined, tracking_number: trackingNo.trim() || undefined })
+    setShipFor(null); setCarrier(""); setTrackingNo("")
   }
 
   const filtered = filter === "all" ? orders : orders.filter(o => o.status === filter)
@@ -95,10 +112,19 @@ export default function SellerOrdersPage() {
                   <p className="text-[11px] text-muted-foreground">Qty: {o.quantity ?? 1} · {o.total_price}π</p>
                 </div>
               </div>
-              {o.tracking_note && <p className="text-[11px] text-muted-foreground bg-secondary/50 rounded-lg px-2.5 py-1.5">{o.tracking_note}</p>}
+              {/* عنوان الشحن الذي أدخله المشتري — يحتاجه البائع فعلياً */}
+              {o.shipping_address && (
+                <div className="rounded-lg bg-secondary/40 px-2.5 py-1.5">
+                  <p className="text-[10px] font-bold flex items-center gap-1 text-muted-foreground"><MapPin className="h-3 w-3" />Ship to</p>
+                  <p className="text-[11px] text-foreground leading-relaxed">{o.shipping_address}</p>
+                </div>
+              )}
+              {(o.carrier || o.tracking_number) && (
+                <p className="text-[11px] text-cyan-400 bg-cyan-400/10 rounded-lg px-2.5 py-1.5">🚚 {o.carrier} {o.tracking_number}</p>
+              )}
               <p className="text-[10px] text-muted-foreground">{new Date(o.created_at!).toLocaleDateString()}</p>
               {canAdvance && o.status !== "cancelled" && (
-                <button onClick={() => advanceStatus(o)} disabled={updating === o.id}
+                <button onClick={() => handleAdvance(o)} disabled={updating === o.id}
                   className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 py-2 text-[12px] font-bold text-black disabled:opacity-40">
                   {updating === o.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   Mark as {STATUS_LABEL[next!]}
@@ -108,6 +134,25 @@ export default function SellerOrdersPage() {
           )
         })}
       </div>
+
+      {/* نافذة الشحن — شركة الشحن ورقم التتبّع */}
+      {shipFor && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShipFor(null)}>
+          <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold flex items-center gap-2"><Truck className="h-4 w-4 text-cyan-400" />Ship order</p>
+              <button onClick={() => setShipFor(null)}><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-[12px] text-muted-foreground">Add the carrier and tracking number so the buyer can follow the shipment.</p>
+            <input value={carrier} onChange={e => setCarrier(e.target.value)} placeholder="Carrier (e.g. DHL, Aramex)" className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={trackingNo} onChange={e => setTrackingNo(e.target.value)} placeholder="Tracking number" className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <button onClick={confirmShip} disabled={updating === shipFor.id}
+              className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
+              {updating === shipFor.id ? "Saving…" : "Mark as Shipped"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
