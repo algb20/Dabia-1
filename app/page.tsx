@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
@@ -15,7 +16,7 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Link as LinkIcon, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -417,10 +418,8 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
         </button>
       </div>
       {showCardShare && (
-        <div onClick={e => e.stopPropagation()}>
-          <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowCardShare(false)}
-            shareToSocial={currentUser ? { product: { id: String(p.id), name: p.name, price: p.price, image: p.image }, user: currentUser } : undefined} />
-        </div>
+        <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowCardShare(false)}
+          shareToSocial={currentUser ? { product: { id: String(p.id), name: p.name, price: p.price, image: p.image }, user: currentUser } : undefined} />
       )}
     </article>
   )
@@ -1328,8 +1327,10 @@ function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
     if (navigator.share) { try { await navigator.share({ title, url }); onShared?.() } catch {} }
   }
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+  // تُعرض عبر Portal في جسم الصفحة: عرضها داخل بطاقة عليها transform/overflow
+  // كان يجعل fixed يتموضع داخل البطاقة ويُقص، فتفشل المشاركة من خارج صفحة المنتج
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={e => { e.stopPropagation(); onClose() }}>
       <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8" onClick={e => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <p className="text-sm font-bold">Share</p>
@@ -1376,7 +1377,8 @@ function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -1458,10 +1460,6 @@ function SocialPostCard({ product, user }: { product: Product; user: DBUser | nu
         <button onClick={() => setShowShare(true)} className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 transition-colors hover:bg-secondary">
           <Share2 className="h-5 w-5 text-muted-foreground" />
           <span className="text-[12px] font-semibold">{shareCount}</span>
-        </button>
-        <button onClick={() => setShowShare(true)} className="ml-auto flex items-center gap-1.5 rounded-xl border border-border px-2.5 py-1.5 transition-colors hover:bg-secondary">
-          <LinkIcon className="h-4 w-4 text-muted-foreground" />
-          <span className="text-[11px] font-semibold">Share / Copy Link</span>
         </button>
       </div>
 
