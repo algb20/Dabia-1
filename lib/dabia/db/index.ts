@@ -1149,8 +1149,10 @@ export async function joinGroupDeal(dealId: string, userId: string): Promise<{ o
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUBSCRIPTIONS — اشتراكات Pro/Enterprise حقيقية ودائمة (Supabase، وليس ذاكرة)
-// التحقق من الدفع الحقيقي يتم في app/api/dabia/subscriptions/route.ts عبر Pi
-// Platform API مباشرة، قبل أن تصل البيانات لهذه الدالة أصلاً
+// القراءة والكتابة تتمّان حصراً من جهة الخادم بعميل Service Role في
+// lib/dabia/db/admin.ts، بعد التحقق الحقيقي من دفعة Pi في مسار
+// app/api/dabia/subscriptions/route.ts. لا يُسمح للعميل العلني (anon) بالكتابة
+// المباشرة، لذا لا توجد هنا دوال تعمل بعميل anon. هذا التعريف للنوع فقط.
 // ═══════════════════════════════════════════════════════════════════════════════
 export interface DBSubscription {
   id?:          string
@@ -1161,22 +1163,6 @@ export interface DBSubscription {
   paid_in_pi:   number
   pi_tx_id:     string
   created_at?:  string
-}
-
-export async function upsertSubscription(s: Omit<DBSubscription, 'id' | 'created_at'>): Promise<DBSubscription | null> {
-  try {
-    const { data, error } = await supabase.from('subscriptions').upsert(s, { onConflict: 'user_id' }).select().single()
-    if (error) return null
-    return data as DBSubscription
-  } catch { return null }
-}
-
-export async function getSubscription(userId: string): Promise<DBSubscription | null> {
-  try {
-    const { data } = await supabase.from('subscriptions').select('*').eq('user_id', userId).maybeSingle()
-    if (data && new Date(data.expires_at).getTime() < Date.now()) return null // منتهية فعلياً
-    return data as DBSubscription | null
-  } catch { return null }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

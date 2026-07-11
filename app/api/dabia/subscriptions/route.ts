@@ -5,7 +5,7 @@
 // Network's own servers as actually paid for the exact required amount.
 
 import { NextRequest, NextResponse } from "next/server"
-import { upsertSubscription, getSubscription } from "@/lib/dabia/db"
+import { getAdminClient, upsertSubscriptionAdmin, getSubscriptionAdmin } from "@/lib/dabia/db/admin"
 
 const PI_API_BASE = "https://api.minepi.com/v2"
 // المفتاح السرّي يُقرأ حصراً من متغيّر البيئة — لا يُكتب داخل الكود إطلاقاً.
@@ -25,7 +25,9 @@ const SUBSCRIPTION_PLANS: Record<string, { features: string[]; pricePi: number }
 export async function GET(req: NextRequest) {
   const userId = new URL(req.url).searchParams.get("userId")
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 })
-  const subscription = await getSubscription(userId)
+  const admin = getAdminClient()
+  if (!admin) return NextResponse.json({ error: "Server is not configured (missing service role key)" }, { status: 503 })
+  const subscription = await getSubscriptionAdmin(admin, userId)
   return NextResponse.json({ subscription })
 }
 
@@ -40,6 +42,11 @@ export async function POST(req: NextRequest) {
 
   if (!PI_API_KEY) {
     return NextResponse.json({ error: "Payment verification is not configured on the server" }, { status: 503 })
+  }
+
+  const admin = getAdminClient()
+  if (!admin) {
+    return NextResponse.json({ error: "Server is not configured (missing service role key)" }, { status: 503 })
   }
 
   // التحقق الحقيقي: استدعاء Pi Platform API مباشرة للتأكد أن هذه المعاملة
@@ -68,7 +75,7 @@ export async function POST(req: NextRequest) {
   const expires = new Date(now)
   expires.setMonth(expires.getMonth() + 1)
 
-  const subscription = await upsertSubscription({
+  const subscription = await upsertSubscriptionAdmin(admin, {
     user_id:      body.userId,
     tier:         body.tier,
     activated_at: now.toISOString(),
