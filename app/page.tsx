@@ -1048,8 +1048,16 @@ const AIAssistant = memo(function AIAssistant() {
 // مستقل تماماً عن HomeTab/DiscoverTab — لا يغيّر تصميمهما إطلاقاً
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Share Modal — مشاركة حقيقية كاملة لكل وسائل التواصل + نسخ رابط دقيق للمنتج ──
+// رابط مشاركة المنتج: يستخدم معامل استعلام على الجذر (/?p=ID) بدل مسار ديناميكي
+// (/p/ID). السبب: استضافة التطبيق قد تُرجع الصفحة الرئيسية لأي مسار غير معروف،
+// فرابط المسار الديناميكي كان يفتح الرئيسية بدل المنتج. الجذر يُحمَّل دائماً
+// ويقرأ المعامل، فيفتح المنتج المطلوب بدقّة في كل الحالات. نستخدم origin الفعلي
+// حتى يعمل الرابط مهما كان النطاق (لا نطاق مكتوب بالكود).
 function buildProductShareUrl(productId: string): string {
-  return `https://dabiaacdfb2093.pinet.com/p/${productId}`
+  const origin = typeof window !== "undefined" && window.location?.origin
+    ? window.location.origin
+    : "https://dabiaacdfb2093.pinet.com"
+  return `${origin}/?p=${productId}`
 }
 
 function ShareModal({ url, title, onClose, onShared }: { url: string; title: string; onClose: () => void; onShared?: () => void }) {
@@ -2505,13 +2513,21 @@ export default function DabiaApp() {
   const notifs   = alertsData?.notifications ?? []
   const unread   = notifs.filter(n => !n.read).length
 
-  // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر (/p/[id])
+  // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
+  // مصدران: (1) معامل الاستعلام على الجذر /?p=ID (الرابط الجديد الأكثر متانة)،
+  // (2) sessionStorage الذي يضعه مسار /p/[id] القديم (توافق خلفي للروابط القديمة).
   const [deepLinkProduct, setDeepLinkProduct] = useState<Product | null>(null)
   useEffect(() => {
     try {
-      const pendingId = sessionStorage.getItem("dabia_open_product_id")
+      const queryId = new URLSearchParams(window.location.search).get("p")
+      const pendingId = queryId || sessionStorage.getItem("dabia_open_product_id")
       if (!pendingId) return
       sessionStorage.removeItem("dabia_open_product_id")
+      // إزالة المعامل من الرابط بعد قراءته حتى لا يُعاد فتح المنتج عند التنقّل
+      if (queryId) {
+        const clean = window.location.pathname + window.location.hash
+        window.history.replaceState(null, "", clean || "/")
+      }
       getProductById(pendingId).then(p => { if (p) setDeepLinkProduct(dbProductToProduct(p)) })
     } catch {}
   }, [])
