@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useCallback, useMemo, memo, useEffect } from "react"
+import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
+import { rankByImageSimilarity } from "@/lib/image-search"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -14,7 +15,7 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Link as LinkIcon, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Link as LinkIcon, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -103,6 +104,13 @@ function useTrends(category: string, sort: SortKey) {
       let ranked: Product[] = real.map(dbProductToProduct)
       if (sort === "price")  ranked = [...ranked].sort((a, b) => a.price - b.price)
       if (sort === "rating") ranked = [...ranked].sort((a, b) => b.rating - a.rating)
+      if (sort === "smart") {
+        // ترتيب حيّ بمحرّك التراند الحقيقي (إعجابات/تعليقات/مشاركات/طلبات/تقييمات)
+        const scores = await getTrendScores()
+        ranked = [...ranked].sort((a, b) =>
+          (scores.get(String(b.id))?.trend_score ?? 0) - (scores.get(String(a.id))?.trend_score ?? 0)
+        )
+      }
       return { ranked, totalEvaluated: ranked.length }
     },
     { refreshInterval: 15000 }
@@ -366,7 +374,8 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
       </div>
       {showCardShare && (
         <div onClick={e => e.stopPropagation()}>
-          <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowCardShare(false)} />
+          <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowCardShare(false)}
+            shareToSocial={currentUser ? { product: { id: String(p.id), name: p.name, price: p.price, image: p.image }, user: currentUser } : undefined} />
         </div>
       )}
     </article>
@@ -538,6 +547,34 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const { user: buyerUser } = useUserAuth()
   const [showShareModal, setShowShareModal] = useState(false)
 
+  // ── تقييمات حقيقية من القاعدة (تُحمَّل عند فتح تبويب Reviews) ──────────────
+  const [reviews, setReviews]         = useState<DBReview[]>([])
+  const [reviewsLoaded, setReviewsLoaded] = useState(false)
+  const [myRating, setMyRating]       = useState(0)
+  const [myReviewText, setMyReviewText] = useState("")
+  const [savingReview, setSavingReview] = useState(false)
+  const [reviewSaved, setReviewSaved]   = useState(false)
+  const loadReviews = useCallback(async () => {
+    const list = await getProductReviews(String(p.id))
+    setReviews(list)
+    setReviewsLoaded(true)
+    if (buyerUser?.id) {
+      const mine = list.find(r => String(r.user_id) === String(buyerUser.id))
+      if (mine) { setMyRating(mine.rating); setMyReviewText(mine.body || "") }
+    }
+  }, [p.id, buyerUser?.id])
+  useEffect(() => { if (detailTab === "reviews" && !reviewsLoaded) loadReviews() }, [detailTab, reviewsLoaded, loadReviews])
+
+  const submitReview = useCallback(async () => {
+    if (!buyerUser?.id || myRating < 1) return
+    setSavingReview(true)
+    const { review } = await addOrUpdateReview(String(p.id), buyerUser.id, buyerUser.username, myRating, myReviewText.trim() || undefined)
+    setSavingReview(false)
+    if (review) { setReviewSaved(true); setTimeout(() => setReviewSaved(false), 1800); loadReviews() }
+  }, [buyerUser, p.id, myRating, myReviewText, loadReviews])
+
+  const avgRating = reviews.length ? +(reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : p.rating
+
   const offers      = useMemo(() => getMerchantOffers(p), [p])
   const activeOffer = selectedOffer ?? offers[0]
   const isHighValue = activeOffer.price >= HIGH_VALUE
@@ -661,7 +698,8 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
       </header>
 
       {showShareModal && (
-        <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowShareModal(false)} />
+        <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowShareModal(false)}
+          shareToSocial={buyerUser ? { product: { id: String(p.id), name: p.name, price: p.price, image: p.image }, user: buyerUser } : undefined} />
       )}
 
       <div className="flex-1 overflow-y-auto">
@@ -766,34 +804,67 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </div>
           )}
 
-          {/* REVIEWS TAB */}
+          {/* REVIEWS TAB — تقييمات حقيقية من القاعدة */}
           {detailTab === "reviews" && (
             <div className="space-y-3">
               <div className="flex items-center gap-4 rounded-2xl border border-border bg-secondary/30 p-3">
-                <p className="text-4xl font-black text-amber-400">{p.rating}</p>
+                <p className="text-4xl font-black text-amber-400">{avgRating || "—"}</p>
                 <div>
                   <div className="flex gap-0.5">
                     {[1,2,3,4,5].map(i => (
-                      <Star key={i} className={`h-4 w-4 ${i <= Math.floor(p.rating) ? "fill-amber-400 text-amber-400" : "text-border"}`} />
+                      <Star key={i} className={`h-4 w-4 ${i <= Math.floor(avgRating) ? "fill-amber-400 text-amber-400" : "text-border"}`} />
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {p.reviews.filter(r => r.verified).length} purchase-verified reviews
+                    {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                    {reviews.some(r => r.verified) && ` · ${reviews.filter(r => r.verified).length} purchase-verified`}
                   </p>
                 </div>
               </div>
 
-              {p.reviews.length === 0 ? (
+              {/* أضف/عدّل تقييمك — نجوم حقيقية تُحفظ في القاعدة */}
+              {buyerUser ? (
+                <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-3 space-y-2">
+                  <p className="text-[11px] font-bold">Your rating</p>
+                  <div className="flex gap-1">
+                    {[1,2,3,4,5].map(i => (
+                      <button key={i} onClick={() => setMyRating(i)} aria-label={`Rate ${i} star${i>1?"s":""}`} className="active:scale-90 transition-transform">
+                        <Star className={`h-7 w-7 ${i <= myRating ? "fill-amber-400 text-amber-400" : "text-border"}`} />
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={myReviewText}
+                    onChange={e => setMyReviewText(e.target.value)}
+                    maxLength={300}
+                    rows={2}
+                    placeholder="Share your experience (optional)…"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50 resize-none"
+                  />
+                  <button onClick={submitReview} disabled={savingReview || myRating < 1}
+                    className={`w-full rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:opacity-50 ${reviewSaved ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
+                    {savingReview ? "Saving…" : reviewSaved ? "Saved ✓" : "Submit Rating"}
+                  </button>
+                </div>
+              ) : (
+                <p className="rounded-xl border border-border bg-secondary/30 px-3 py-3 text-[11px] text-muted-foreground text-center">
+                  Sign in to rate this product
+                </p>
+              )}
+
+              {!reviewsLoaded ? (
+                <div className="h-16 rounded-xl bg-secondary/40 animate-pulse" />
+              ) : reviews.length === 0 ? (
                 <p className="rounded-xl border border-border bg-secondary/30 px-3 py-5 text-[11px] text-muted-foreground text-center">
-                  No reviews yet — reviews require a confirmed purchase.
+                  No reviews yet — be the first to rate this product.
                 </p>
               ) : (
-                p.reviews.filter(r => r.verified).map(r => (
+                reviews.map(r => (
                   <div key={r.id} className="rounded-xl border border-border bg-secondary/30 p-3 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-semibold">{r.author}</span>
-                        <span className="rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">Verified</span>
+                        <span className="text-[11px] font-semibold">{r.username}</span>
+                        {r.verified && <span className="rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">Verified purchase</span>}
                       </div>
                       <div className="flex gap-0.5">
                         {[1,2,3,4,5].map(i => (
@@ -801,7 +872,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">{r.body}</p>
+                    {r.body && <p className="text-[11px] leading-relaxed text-muted-foreground">{r.body}</p>}
                   </div>
                 ))
               )}
@@ -899,11 +970,54 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
   const { user: searchUser } = useUserAuth()
   const [selected, setSelected] = useState<Product | null>(null)
 
+  // ── بحث بالصوت — Web Speech API، يظهر الزر فقط إن كان المتصفح يدعمه فعلياً ──
+  const [listening, setListening] = useState(false)
+  const speechSupported = typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+  const recognitionRef = useRef<any>(null)
+  const startVoiceSearch = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) return
+    try {
+      const rec = new SR()
+      recognitionRef.current = rec
+      rec.lang = document.documentElement.lang && document.documentElement.lang !== "en" ? document.documentElement.lang : "en-US"
+      rec.interimResults = true
+      rec.onresult = (e: any) => {
+        const transcript = Array.from(e.results).map((r: any) => r[0].transcript).join("")
+        setQuery(transcript)
+      }
+      rec.onend = () => setListening(false)
+      rec.onerror = () => setListening(false)
+      setListening(true)
+      rec.start()
+    } catch { setListening(false) }
+  }, [])
+  const stopVoiceSearch = useCallback(() => { try { recognitionRef.current?.stop() } catch {}; setListening(false) }, [])
+
+  // ── بحث بالصور — بصمة إدراكية محلية تقارن صورتك بصور المنتجات ────────────
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const [imageResults, setImageResults] = useState<Product[] | null>(null)
+  const [imageSearching, setImageSearching] = useState(false)
+  const handleImageSearch = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = "" // يسمح بإعادة اختيار نفس الملف
+    if (!file || !data?.ranked) return
+    setImageSearching(true); setQuery(""); setImageResults(null)
+    try {
+      const ranked = await rankByImageSimilarity(file, data.ranked)
+      setImageResults(ranked)
+    } finally { setImageSearching(false) }
+  }, [data])
+
   const results = useMemo(() => {
     if (!query.trim() || !data?.ranked) return []
     const q = query.toLowerCase()
     return data.ranked.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q))
   }, [query, data])
+
+  // أعلى المنتجات رواجاً فعلياً (المعروضة أصلاً بترتيب محرّك التراند الحقيقي)
+  const trendingTerms = useMemo(() => (data?.ranked ?? []).slice(0, 4).map(p => p.name), [data])
+  const categories = useMemo(() => Array.from(new Set((data?.ranked ?? []).map(p => p.category).filter(Boolean))).slice(0, 8), [data])
 
   if (selected) return <ProductDetail product={selected} onClose={() => setSelected(null)} />
 
@@ -912,35 +1026,78 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
       <div className="flex items-center gap-3 border-b border-border px-4 py-3 pt-safe">
         <div className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 focus-within:border-amber-400/50 transition-colors">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search products, brands, categories…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+          <input autoFocus value={query} onChange={e => { setQuery(e.target.value); setImageResults(null) }} placeholder="Search products, brands, categories…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
           {query && <button onClick={() => setQuery("")} aria-label="Clear"><X className="h-4 w-4 text-muted-foreground" /></button>}
+          {speechSupported && (
+            <button onClick={listening ? stopVoiceSearch : startVoiceSearch} aria-label="Voice search"
+              className={`shrink-0 ${listening ? "text-red-400 animate-pulse" : "text-muted-foreground"}`}>
+              <Mic className="h-4 w-4" />
+            </button>
+          )}
+          <button onClick={() => imageInputRef.current?.click()} aria-label="Search by image" className="shrink-0 text-muted-foreground">
+            <ImageIcon className="h-4 w-4" />
+          </button>
+          <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSearch} />
         </div>
         <button onClick={onClose} className="shrink-0 text-sm font-semibold text-muted-foreground hover:text-foreground">Cancel</button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {!query && (
+        {listening && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-2.5 text-[12px] text-red-400">
+            <Mic className="h-4 w-4 animate-pulse" />Listening… speak now
+          </div>
+        )}
+        {imageSearching && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+            <p className="text-sm">Matching your image against listings…</p>
+          </div>
+        )}
+        {imageResults !== null && !imageSearching && (
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[11px] text-muted-foreground">{imageResults.length} visually similar result{imageResults.length === 1 ? "" : "s"}</p>
+              <button onClick={() => setImageResults(null)} className="text-[11px] font-semibold text-amber-400">Clear image search</button>
+            </div>
+            {imageResults.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+                <ImageIcon className="h-10 w-10 opacity-30" />
+                <p className="text-sm">No visually similar products found</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+                {imageResults.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={searchUser} />)}
+              </div>
+            )}
+          </div>
+        )}
+        {!query && imageResults === null && !imageSearching && (
           <div className="space-y-4">
-            <div>
-              <p className="mb-2 text-xs font-bold text-muted-foreground">Trending searches</p>
-              <div className="space-y-1.5">
-                {["Smart Watch", "Wireless Headphones", "Pi Artisan Leather", "Solar Bag"].map(term => (
-                  <button key={term} onClick={() => setQuery(term)} className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:bg-secondary/40 transition-colors">
-                    <TrendingUp className="h-4 w-4 shrink-0 text-amber-400" />
-                    <span className="flex-1 text-sm">{term}</span>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                ))}
+            {trendingTerms.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-bold text-muted-foreground">Trending now</p>
+                <div className="space-y-1.5">
+                  {trendingTerms.map(term => (
+                    <button key={term} onClick={() => setQuery(term)} className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:bg-secondary/40 transition-colors">
+                      <TrendingUp className="h-4 w-4 shrink-0 text-amber-400" />
+                      <span className="flex-1 text-sm truncate">{term}</span>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-bold text-muted-foreground">Categories</p>
-              <div className="flex flex-wrap gap-2">
-                {["Electronics", "Fashion", "Accessories", "Home", "Health"].map(cat => (
-                  <button key={cat} onClick={() => setQuery(cat)} className="rounded-xl border border-border bg-secondary/40 px-3 py-1.5 text-xs font-medium hover:border-amber-400/30 transition-colors">{cat}</button>
-                ))}
+            )}
+            {categories.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-bold text-muted-foreground">Categories</p>
+                <div className="flex flex-wrap gap-2">
+                  {categories.map(cat => (
+                    <button key={cat} onClick={() => setQuery(cat)} className="rounded-xl border border-border bg-secondary/40 px-3 py-1.5 text-xs font-medium hover:border-amber-400/30 transition-colors">{cat}</button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
         {query && results.length === 0 && (
@@ -1057,10 +1214,24 @@ function buildProductShareUrl(productId: string): string {
   return `${origin}/?p=${productId}`
 }
 
-function ShareModal({ url, title, onClose, onShared }: { url: string; title: string; onClose: () => void; onShared?: () => void }) {
+function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
+  url: string; title: string; onClose: () => void; onShared?: () => void
+  // إن مُرّرت بيانات منتج + مستخدم مسجّل، يظهر خيار "النشر في تبويب Dabia الاجتماعي"
+  shareToSocial?: { product: { id: string; name: string; price: number; image?: string }; user: DBUser }
+}) {
   const [copied, setCopied] = useState(false)
+  const [postedToSocial, setPostedToSocial] = useState(false)
+  const [postingSocial, setPostingSocial]   = useState(false)
   const encodedUrl = encodeURIComponent(url)
   const encodedText = encodeURIComponent(title)
+
+  const postToSocial = async () => {
+    if (!shareToSocial || postingSocial || postedToSocial) return
+    setPostingSocial(true)
+    const post = await sharePostFromProduct(shareToSocial.user.id!, shareToSocial.user.username, shareToSocial.product)
+    setPostingSocial(false)
+    if (post) { setPostedToSocial(true); onShared?.() }
+  }
 
   const channels = [
     { name: "WhatsApp", color: "bg-emerald-500", icon: "💬", href: `https://wa.me/?text=${encodedText}%20${encodedUrl}` },
@@ -1086,6 +1257,13 @@ function ShareModal({ url, title, onClose, onShared }: { url: string; title: str
           <p className="text-sm font-bold">Share</p>
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
+        {shareToSocial && (
+          <button onClick={postToSocial} disabled={postingSocial || postedToSocial}
+            className={`mb-3 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] ${postedToSocial ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
+            <Users2 className="h-4 w-4" />
+            {postingSocial ? "Posting…" : postedToSocial ? "Posted to Dabia Social ✓" : "Post to Dabia Social"}
+          </button>
+        )}
         <div className="grid grid-cols-4 gap-3 mb-4">
           {channels.map(ch => (
             <button key={ch.name} onClick={() => openChannel(ch.href)} className="flex flex-col items-center gap-1.5">
@@ -1197,7 +1375,8 @@ function SocialPostCard({ product, user }: { product: Product; user: DBUser | nu
       </div>
 
       {showShare && (
-        <ShareModal url={shareUrl} title={`Check out "${product.name}" on Dabia — ${product.price}π`} onClose={() => setShowShare(false)} onShared={onSharedTracked} />
+        <ShareModal url={shareUrl} title={`Check out "${product.name}" on Dabia — ${product.price}π`} onClose={() => setShowShare(false)} onShared={onSharedTracked}
+          shareToSocial={user ? { product: { id: String(product.id), name: product.name, price: product.price, image: product.image }, user } : undefined} />
       )}
       {/* Caption */}
       <div className="px-3 pb-3 space-y-0.5">
@@ -1460,6 +1639,16 @@ function SocialTab() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
 
+  // المنتجات الرائجة الآن تظهر تلقائياً أعلى الفيد للتفاعل (إعجاب/تعليق/طلب) —
+  // محسوبة لحظياً من إشارات حقيقية (إعجابات/تعليقات/مشاركات/طلبات) عبر محرّك
+  // التراند في القاعدة، وتتحدّث تلقائياً كل ٣٠ ثانية. لا تدخّل يدوي.
+  const { data: trendingData } = useSWR(
+    "dabia-social-trending",
+    async () => (await getTrendingProducts(4)).filter(t => t.trend_score > 0).map(dbProductToProduct),
+    { refreshInterval: 30000 }
+  )
+  const trending = trendingData ?? []
+
   const load = useCallback(() => {
     setLoading(true)
     getFeedPosts().then(setPosts).finally(() => setLoading(false))
@@ -1483,9 +1672,20 @@ function SocialTab() {
         )}
       </div>
 
+      {/* رائج الآن — يظهر تلقائياً من محرّك التراند الحقيقي */}
+      {trending.length > 0 && (
+        <section className="space-y-3">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <TrendingUp className="h-3.5 w-3.5 text-amber-400" />Trending now
+            <span className="text-[9px] font-normal text-muted-foreground">auto-ranked from real activity</span>
+          </p>
+          {trending.map(tp => <SocialPostCard key={`trend-${tp.id}`} product={tp} user={user} />)}
+        </section>
+      )}
+
       {loading ? (
         <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-40 rounded-2xl bg-secondary/40 animate-pulse" />)}</div>
-      ) : posts.length === 0 ? (
+      ) : posts.length === 0 && trending.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
           <Users2 className="h-10 w-10 text-muted-foreground/30" />
           <p className="text-[12px] text-muted-foreground">No posts yet — be the first to share something</p>

@@ -516,6 +516,75 @@ export async function toggleProductActive(id: string, active: boolean): Promise<
 export async function getProductById(id: string): Promise<DBProduct | null> {
   try { const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle(); return data as DBProduct | null } catch { return null }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REVIEWS — تقييم نجوم حقيقي: تقييم واحد لكل مستخدم لكل منتج (upsert).
+// علامة verified تُحسب في القاعدة (trigger) من وجود طلب حقيقي — لا تُزوَّر من
+// العميل. متوسط النجوم وعدد التقييمات يتحدّثان تلقائياً في جدول المنتجات.
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBReview {
+  id?:         string
+  product_id:  string
+  user_id:     string
+  username:    string
+  rating:      number
+  body?:       string
+  verified?:   boolean
+  created_at?: string
+}
+
+export async function addOrUpdateReview(productId: string, userId: string, username: string, rating: number, body?: string): Promise<{ review: DBReview | null; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('product_reviews')
+      .upsert({ product_id: productId, user_id: userId, username, rating, body: body || null }, { onConflict: 'product_id,user_id' })
+      .select()
+      .single()
+    if (error) return { review: null, error: error.message }
+    return { review: data as DBReview }
+  } catch (e) { return { review: null, error: e instanceof Error ? e.message : 'Failed to save review' } }
+}
+
+export async function getProductReviews(productId: string): Promise<DBReview[]> {
+  try {
+    const { data } = await supabase.from('product_reviews').select('*')
+      .eq('product_id', productId).order('created_at', { ascending: false }).limit(50)
+    return (data ?? []) as DBReview[]
+  } catch { return [] }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TREND ENGINE — ترتيب حيّ من إشارات حقيقية فقط (إعجابات/تعليقات/مشاركات/طلبات/
+// تقييمات + حداثة النشر) عبر view في القاعدة يُحسب لحظياً — لا نقاط مخزّنة مزيفة.
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface TrendScore { product_id: string; likes: number; comments: number; shares: number; orders: number; reviews: number; trend_score: number }
+
+export async function getTrendScores(): Promise<Map<string, TrendScore>> {
+  try {
+    const { data } = await supabase.from('product_trend_scores').select('*')
+    const map = new Map<string, TrendScore>()
+    for (const row of (data ?? []) as any[]) {
+      map.set(String(row.product_id), { ...row, product_id: String(row.product_id), trend_score: Number(row.trend_score) })
+    }
+    return map
+  } catch { return new Map() }
+}
+
+// أعلى المنتجات رواجاً الآن (منتجات كاملة مرتّبة بنقاط التراند الحقيقية)
+export async function getTrendingProducts(limit = 5): Promise<Array<DBProduct & { trend_score: number }>> {
+  try {
+    const { data: scores } = await supabase.from('product_trend_scores')
+      .select('product_id, trend_score').order('trend_score', { ascending: false }).limit(limit)
+    const ids = (scores ?? []).map((s: any) => s.product_id)
+    if (ids.length === 0) return []
+    const { data: products } = await supabase.from('products').select('*').in('id', ids)
+    const byId = new Map((products ?? []).map((p: any) => [String(p.id), p]))
+    return (scores ?? [])
+      .map((s: any) => { const p = byId.get(String(s.product_id)); return p ? { ...p, trend_score: Number(s.trend_score) } : null })
+      .filter(Boolean) as Array<DBProduct & { trend_score: number }>
+  } catch { return [] }
+}
 export async function getProductsBySeller(sid: string): Promise<DBProduct[]> {
   try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return (data??[]) as DBProduct[] } catch { return [] }
 }
