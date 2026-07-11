@@ -42,7 +42,6 @@ interface TrustIndex   { total: number; breakdown: { sales: number; reviews: num
 interface Product      { id: number; name: string; price: number; originalPrice?: number; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
 interface Auction      { id: string; productName: string; image: string; currentBid: number; minIncrement: number; currency: "π"; endsAt: string; status: AuctionStatus; bidCount: number; seller: string; blockchainId: string; verified: boolean }
 interface GroupShop    { id: string; productId: number; productName: string; image: string; originalPrice: number; groupPrice: number; currency: "π"; membersJoined: number; membersNeeded: number; endsAt: string; shareCode: string; status: "open" | "full" | "completed"; createdBy: string }
-interface AIInsight    { type: "market_trend" | "price_alert" | "demand_spike" | "recommendation"; title: string; body: string; confidence: number; actionable: boolean }
 interface Notif        { id: number; type: NotifType; title: string; body: string; time: string; read: boolean }
 interface Subscription { userId: string; tier: SubTier; expiresAt: string; features: string[]; paidInPi: number }
 interface TransparencyStats { confirmedTx: number; volumePi: number; activeUsers: number; verifiedProducts: number; fraudCaught: number; serverUptimePct: number; blockHeight: number }
@@ -111,7 +110,6 @@ function useTrends(category: string, sort: SortKey) {
 }
 // تم استبدال useAuctions/useGroupShop الوهمية (API ثابت في الذاكرة) بنظام
 // مزادات/صفقات جماعية حقيقي عبر Supabase — راجع RealAuctionCard/RealGroupDealCard أدناه
-function useInsights()   { return useSWR<{ insights: AIInsight[] }>("/api/dabia/insights", fetcher, { refreshInterval: 60000 }) }
 function useAlerts(userId?: string) {
   return useSWR<{ notifications: RealNotif[] }>(
     userId ? `dabia-real-notifs-${userId}` : null,
@@ -139,7 +137,6 @@ function useRealStats() {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPi  = (n: number) => `${n.toLocaleString()}π`
 const fmtNum = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)
-const fmtPct = (n: number) => `${(n * 100).toFixed(0)}%`
 const HIGH_VALUE = 500
 
 function timeLeft(iso: string) {
@@ -1589,13 +1586,6 @@ function DiscoverTab() {
   const [selected, setSelected] = useState<Product | null>(null)
   const { user } = useUserAuth()
   const { data: trendsData, isLoading } = useTrends("All", "smart")
-  const { data: insightsData } = useInsights()
-  const insights = insightsData?.insights ?? []
-
-  const iconMap: Record<string, React.ReactNode> = {
-    demand_spike: <TrendingUp className="h-4 w-4 text-red-400" />, price_alert: <Tag className="h-4 w-4 text-emerald-400" />,
-    market_trend: <Activity className="h-4 w-4 text-blue-400" />, recommendation: <Lightbulb className="h-4 w-4 text-amber-400" />,
-  }
 
   if (selected) return <ProductDetail product={selected} onClose={() => setSelected(null)} />
 
@@ -1605,45 +1595,6 @@ function DiscoverTab() {
         <h1 className="text-lg font-black">Discover</h1>
         <p className="text-[12px] text-muted-foreground mt-0.5">Browse listings across Dabia</p>
       </div>
-
-      {/* Market insights */}
-      {insights.length > 0 && (
-        <section className="space-y-2">
-          <p className="text-xs font-bold flex items-center gap-2"><Lightbulb className="h-3.5 w-3.5 text-amber-400" />Sample Tips <span className="text-[9px] font-normal text-muted-foreground">(demo content)</span></p>
-          {insights.map((ins, i) => (
-            <div key={i} className="rounded-2xl border border-border bg-card p-3 flex items-start gap-3">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary">
-                {iconMap[ins.type] ?? <Sparkles className="h-4 w-4 text-amber-400" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-[12px] font-bold leading-tight">{ins.title}</p>
-                  <span className={`shrink-0 text-[10px] font-bold ${ins.confidence >= 0.9 ? "text-emerald-400" : "text-amber-400"}`}>{fmtPct(ins.confidence)}</span>
-                </div>
-                <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{ins.body}</p>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {/* Official brands */}
-      <section className="space-y-2">
-        <p className="text-xs font-bold flex items-center gap-2"><Building className="h-3.5 w-3.5 text-blue-400" />Official Brands <span className="ml-auto text-[10px] font-normal text-muted-foreground">Manufacturer-verified</span></p>
-        <div className="rounded-2xl border border-blue-400/20 bg-blue-400/5 p-4 space-y-3">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">Official Brand accounts are dedicated storefronts for verified manufacturers, reviewed manually by the Dabia team.</p>
-          <div className="grid grid-cols-3 gap-2">
-            {[{ name: "PiTech Corp", category: "Electronics" }, { name: "ArtisanPi", category: "Fashion" }, { name: "Pi Solar", category: "Home" }].map(b => (
-              <div key={b.name} className="flex flex-col items-center gap-1.5 rounded-xl border border-blue-400/20 bg-background/60 p-2.5 text-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/15"><Building className="h-4 w-4 text-blue-400" /></div>
-                <p className="text-[10px] font-bold leading-tight">{b.name}</p>
-                <p className="text-[9px] text-muted-foreground">{b.category}</p>
-                <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[8px] font-bold text-blue-400">Official</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* Top trending products */}
       <section className="space-y-2">
