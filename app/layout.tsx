@@ -1,0 +1,53 @@
+import type React from "react";
+import type { Metadata } from "next";
+import { APP_CONFIG } from "@/lib/app-config";
+import TranslationProvider from "@/components/translation-provider";
+import "./globals.css";
+
+const appName = APP_CONFIG.NAME;
+const appDescription = APP_CONFIG.DESCRIPTION;
+
+export const metadata: Metadata = {
+  title: "Dabia — Smart Commerce on Pi Network",
+  description: appDescription,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    title: appName,
+    description: appDescription,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: appName,
+    description: appDescription,
+  },
+    generator: 'v0.app'
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        {/* يطبَّق فوراً قبل أي رسم — يمنع الوميض ويضمن ثبات الوضع المحفوظ عند كل فتح للتطبيق */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  var t = localStorage.getItem("dabia_theme") || "dark";
+                  var dark = t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+                  document.documentElement.classList.toggle("dark", dark);
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
+      <body className="font-sans">
+        <TranslationProvider>{children}</TranslationProvider>
+      </body>
+    </html>
+  );
+}
