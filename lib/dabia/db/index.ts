@@ -83,6 +83,8 @@ export interface DBProduct {
   rating?:         number
   review_count?:   number
   active?:         boolean  // إيقاف/تفعيل المنتج دون حذفه
+  deal_ends_at?:   string | null // عرض محدود بوقت — يضبطه التاجر من إدارة متجره
+  deal_label?:     string | null
   created_at?:     string
   updated_at?:     string
 }
@@ -569,6 +571,25 @@ export async function getTrendScores(): Promise<Map<string, TrendScore>> {
     }
     return map
   } catch { return new Map() }
+}
+
+// ── العروض النشطة: منتجات مخفّضة (original_price أعلى) أو عرض محدود لم ينتهِ ──
+// يضبطها التاجر بالكامل من صفحة إدارة منتجاته (إضافة/تعديل منتج)
+export async function getActiveDeals(limit = 12): Promise<DBProduct[]> {
+  try {
+    const nowIso = new Date().toISOString()
+    const { data } = await supabase.from('products').select('*')
+      .eq('active', true)
+      .or(`deal_ends_at.gt.${nowIso},and(original_price.not.is.null,original_price.gt.0)`)
+      .order('created_at', { ascending: false })
+      .limit(limit * 2) // نجلب أكثر ثم نصفّي بدقة (شرط الخصم الحقيقي يحتاج مقارنة عمودين)
+    return ((data ?? []) as DBProduct[])
+      .filter(p =>
+        (p.deal_ends_at && new Date(p.deal_ends_at).getTime() > Date.now()) ||
+        (p.original_price != null && p.original_price > p.price)
+      )
+      .slice(0, limit)
+  } catch { return [] }
 }
 
 // أعلى المنتجات رواجاً الآن (منتجات كاملة مرتّبة بنقاط التراند الحقيقية)

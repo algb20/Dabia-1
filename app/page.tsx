@@ -5,7 +5,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import {
@@ -40,7 +40,7 @@ type NotifType   = "price_drop" | "new_arrival" | "trending" | "order" | "auctio
 interface Review       { id: number; author: string; rating: number; body: string; purchaseTxId: string; verified: boolean; timestamp: string }
 interface MerchantOffer { merchantName: string; accountType: AccountType; price: number; currency: "π"; inStock: boolean; deliveryDays: number; isOfficial: boolean; verified: boolean; rating: number; soldCount: number }
 interface TrustIndex   { total: number; breakdown: { sales: number; reviews: number; reliability: number; activity: number }; verifiedSalesCount: number }
-interface Product      { id: number; name: string; price: number; originalPrice?: number; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
+interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
 interface Auction      { id: string; productName: string; image: string; currentBid: number; minIncrement: number; currency: "π"; endsAt: string; status: AuctionStatus; bidCount: number; seller: string; blockchainId: string; verified: boolean }
 interface GroupShop    { id: string; productId: number; productName: string; image: string; originalPrice: number; groupPrice: number; currency: "π"; membersJoined: number; membersNeeded: number; endsAt: string; shareCode: string; status: "open" | "full" | "completed"; createdBy: string }
 interface Notif        { id: number; type: NotifType; title: string; body: string; time: string; read: boolean }
@@ -58,6 +58,8 @@ function dbProductToProduct(p: DBProduct): Product {
     name: p.name,
     price: p.price,
     originalPrice: (p.original_price && p.original_price > p.price) ? p.original_price : undefined,
+    dealEndsAt: p.deal_ends_at && new Date(p.deal_ends_at).getTime() > Date.now() ? p.deal_ends_at : undefined,
+    dealLabel: p.deal_label || undefined,
     currency: "π",
     image: isEmoji ? p.image! : (p.image || "📦"),
     rating: p.rating ?? 0,
@@ -1257,13 +1259,26 @@ function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
           <p className="text-sm font-bold">Share</p>
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
+
+        {/* داخل Dabia — النشر في التبويب الاجتماعي */}
         {shareToSocial && (
-          <button onClick={postToSocial} disabled={postingSocial || postedToSocial}
-            className={`mb-3 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] ${postedToSocial ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
-            <Users2 className="h-4 w-4" />
-            {postingSocial ? "Posting…" : postedToSocial ? "Posted to Dabia Social ✓" : "Post to Dabia Social"}
-          </button>
+          <div className="mb-4">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Inside Dabia</p>
+            <button onClick={postToSocial} disabled={postingSocial || postedToSocial}
+              className={`w-full flex items-center gap-3 rounded-2xl border p-3 transition-all active:scale-[0.99] ${postedToSocial ? "border-emerald-400/30 bg-emerald-400/10" : "border-amber-400/30 bg-amber-400/10"}`}>
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${postedToSocial ? "bg-emerald-400" : "bg-amber-400"}`}>
+                {postingSocial ? <Loader2 className="h-5 w-5 text-black animate-spin" /> : postedToSocial ? <CheckCheck className="h-5 w-5 text-black" /> : <Users2 className="h-5 w-5 text-black" />}
+              </div>
+              <div className="text-left flex-1">
+                <p className="text-[12px] font-bold">{postedToSocial ? "Posted to Dabia Social ✓" : "Post to Dabia Social"}</p>
+                <p className="text-[10px] text-muted-foreground">{postedToSocial ? "Your followers can now like, comment & order" : "Share this listing to the social feed"}</p>
+              </div>
+            </button>
+          </div>
         )}
+
+        {/* خارج Dabia — كل وسائل التواصل */}
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Share outside</p>
         <div className="grid grid-cols-4 gap-3 mb-4">
           {channels.map(ch => (
             <button key={ch.name} onClick={() => openChannel(ch.href)} className="flex flex-col items-center gap-1.5">
@@ -1701,6 +1716,20 @@ function SocialTab() {
   )
 }
 
+// عدّاد تنازلي حيّ لعرض محدود — يتحدّث كل ثانية
+function DealCountdown({ endsAt }: { endsAt: string }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => tick(x => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const ms = new Date(endsAt).getTime() - Date.now()
+  if (ms <= 0) return null
+  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000), sec = Math.floor((ms % 60000) / 1000)
+  const label = h >= 48 ? `${Math.floor(h / 24)}d ${h % 24}h` : h > 0 ? `${h}h ${m}m` : `${m}m ${sec}s`
+  return <span className="tabular-nums">{label}</span>
+}
+
 function HomeTab() {
   const [category, setCategory] = useState("All")
   const [sort, setSort]         = useState<SortKey>("smart")
@@ -1708,6 +1737,12 @@ function HomeTab() {
   const [selected, setSelected] = useState<Product | null>(null)
   const { data, isLoading }     = useTrends(category, sort)
   const { user: homeUser }      = useUserAuth()
+
+  // العروض النشطة (تخفيض أو عرض محدود بوقت) — يضبطها التجار من إدارة متاجرهم
+  const { data: dealsData } = useSWR<Product[]>("dabia-active-deals",
+    async () => (await getActiveDeals(12)).map(dbProductToProduct),
+    { refreshInterval: 60000 })
+  const deals = dealsData ?? []
 
   const categories  = ["All", "Electronics", "Fashion", "Accessories", "Home", "Health", "Art"]
   const sortOptions: { key: SortKey; label: string }[] = [
@@ -1740,6 +1775,41 @@ function HomeTab() {
           </button>
         ))}
       </div>
+
+      {/* Deals & Offers — تخفيضات وعروض محدودة يضبطها التجار، تظهر تلقائياً */}
+      {deals.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <Tag className="h-3.5 w-3.5 text-emerald-400" />Deals &amp; Offers
+            <span className="text-[9px] font-normal text-muted-foreground">live from sellers</span>
+          </p>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+            {deals.map(d => (
+              <button key={`deal-${d.id}`} onClick={() => setSelected(d)}
+                className="shrink-0 w-32 rounded-2xl border border-emerald-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                  {d.image.startsWith("http") ? <img src={d.image} alt="" className="h-full w-full object-cover" /> : d.image}
+                  {d.originalPrice && (
+                    <span className="absolute top-1 left-1 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-black text-white">
+                      -{Math.round((1 - d.price / d.originalPrice) * 100)}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] font-bold leading-tight line-clamp-2">{d.name}</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-[12px] font-black text-amber-400">{fmtPi(d.price)}</span>
+                  {d.originalPrice && <span className="text-[9px] text-muted-foreground line-through">{fmtPi(d.originalPrice)}</span>}
+                </div>
+                {d.dealEndsAt && (
+                  <p className="flex items-center gap-1 text-[9px] font-bold text-red-400">
+                    <Clock className="h-2.5 w-2.5" />{d.dealLabel || "Limited"} · <DealCountdown endsAt={d.dealEndsAt} />
+                  </p>
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Controls row */}
       <div className="flex items-center gap-2">
