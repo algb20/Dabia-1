@@ -609,6 +609,127 @@ export async function getTrendingProducts(limit = 5): Promise<Array<DBProduct & 
 export async function getProductsBySeller(sid: string): Promise<DBProduct[]> {
   try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return (data??[]) as DBProduct[] } catch { return [] }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIVE STREAMING COMMERCE — بث مباشر حقيقي للتجار (Supabase Realtime)
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBLiveStream {
+  id?:           string
+  host_user_id:  string
+  host_username: string
+  title:         string
+  description?:  string | null
+  cover_image?:  string | null
+  status?:       'scheduled' | 'live' | 'ended'
+  scheduled_at?: string | null
+  started_at?:   string | null
+  ended_at?:     string | null
+  viewer_count?: number
+  created_at?:   string
+}
+export interface DBStreamProduct {
+  id?:            string
+  stream_id:      string
+  product_id:     string
+  pinned?:        boolean
+  special_price?: number | null
+  offer_ends_at?: string | null
+  created_at?:    string
+  product?:       DBProduct // مُدمج عند الجلب
+}
+export interface DBStreamComment { id?: string; stream_id: string; user_id?: string | null; username: string; text: string; created_at?: string }
+
+// جدولة/إنشاء بث (تاجر). status='scheduled' مع موعد، أو 'live' للبدء الفوري
+export async function createStream(s: Omit<DBLiveStream, 'id' | 'created_at' | 'viewer_count'>): Promise<DBLiveStream | null> {
+  try {
+    const { data, error } = await supabase.from('live_streams').insert(s).select().single()
+    if (error) return null
+    return data as DBLiveStream
+  } catch { return null }
+}
+export async function updateStream(id: string, updates: Partial<DBLiveStream>): Promise<DBLiveStream | null> {
+  try {
+    const { data, error } = await supabase.from('live_streams').update(updates).eq('id', id).select().single()
+    if (error) return null
+    return data as DBLiveStream
+  } catch { return null }
+}
+export async function startStream(id: string): Promise<DBLiveStream | null> {
+  return updateStream(id, { status: 'live', started_at: new Date().toISOString() })
+}
+export async function endStream(id: string): Promise<DBLiveStream | null> {
+  return updateStream(id, { status: 'ended', ended_at: new Date().toISOString() })
+}
+export async function getLiveStreams(): Promise<DBLiveStream[]> {
+  try { const { data } = await supabase.from('live_streams').select('*').eq('status', 'live').order('started_at', { ascending: false }); return (data ?? []) as DBLiveStream[] } catch { return [] }
+}
+export async function getUpcomingStreams(): Promise<DBLiveStream[]> {
+  try {
+    const { data } = await supabase.from('live_streams').select('*')
+      .eq('status', 'scheduled').gte('scheduled_at', new Date(Date.now() - 3600000).toISOString())
+      .order('scheduled_at', { ascending: true }).limit(20)
+    return (data ?? []) as DBLiveStream[]
+  } catch { return [] }
+}
+export async function getStreamById(id: string): Promise<DBLiveStream | null> {
+  try { const { data } = await supabase.from('live_streams').select('*').eq('id', id).maybeSingle(); return data as DBLiveStream | null } catch { return null }
+}
+export async function setViewerCount(id: string, count: number): Promise<void> {
+  try { await supabase.from('live_streams').update({ viewer_count: count }).eq('id', id) } catch {}
+}
+
+// منتجات البث + العرض المميز
+export async function addStreamProduct(streamId: string, productId: string, specialPrice?: number, offerEndsAt?: string): Promise<DBStreamProduct | null> {
+  try {
+    const { data, error } = await supabase.from('stream_products')
+      .upsert({ stream_id: streamId, product_id: productId, special_price: specialPrice ?? null, offer_ends_at: offerEndsAt ?? null }, { onConflict: 'stream_id,product_id' })
+      .select().single()
+    if (error) return null
+    return data as DBStreamProduct
+  } catch { return null }
+}
+export async function removeStreamProduct(id: string): Promise<boolean> {
+  try { const { error } = await supabase.from('stream_products').delete().eq('id', id); return !error } catch { return false }
+}
+// تثبيت منتج واحد فقط على الشاشة (يلغي تثبيت البقية)
+export async function pinStreamProduct(streamId: string, streamProductId: string): Promise<boolean> {
+  try {
+    await supabase.from('stream_products').update({ pinned: false }).eq('stream_id', streamId)
+    const { error } = await supabase.from('stream_products').update({ pinned: true }).eq('id', streamProductId)
+    return !error
+  } catch { return false }
+}
+export async function getStreamProducts(streamId: string): Promise<DBStreamProduct[]> {
+  try {
+    const { data } = await supabase.from('stream_products').select('*').eq('stream_id', streamId).order('created_at', { ascending: true })
+    const rows = (data ?? []) as DBStreamProduct[]
+    const ids = rows.map(r => r.product_id)
+    if (ids.length === 0) return rows
+    const { data: products } = await supabase.from('products').select('*').in('id', ids)
+    const byId = new Map((products ?? []).map((p: any) => [String(p.id), p as DBProduct]))
+    return rows.map(r => ({ ...r, product: byId.get(String(r.product_id)) }))
+  } catch { return [] }
+}
+
+// تعليقات البث
+export async function addStreamComment(streamId: string, userId: string | null, username: string, text: string): Promise<DBStreamComment | null> {
+  try {
+    const { data, error } = await supabase.from('stream_comments').insert({ stream_id: streamId, user_id: userId, username, text }).select().single()
+    if (error) return null
+    return data as DBStreamComment
+  } catch { return null }
+}
+export async function getStreamComments(streamId: string): Promise<DBStreamComment[]> {
+  try { const { data } = await supabase.from('stream_comments').select('*').eq('stream_id', streamId).order('created_at', { ascending: true }).limit(200); return (data ?? []) as DBStreamComment[] } catch { return [] }
+}
+
+// حجز/طلب أثناء البث
+export async function addStreamReservation(streamId: string, productId: string, userId: string, username: string, kind: 'reserve' | 'order'): Promise<boolean> {
+  try { const { error } = await supabase.from('stream_reservations').insert({ stream_id: streamId, product_id: productId, user_id: userId, username, kind }); return !error } catch { return false }
+}
+export async function getStreamReservationCount(streamId: string): Promise<number> {
+  try { const { count } = await supabase.from('stream_reservations').select('*', { count: 'exact', head: true }).eq('stream_id', streamId); return count ?? 0 } catch { return 0 }
+}
 export async function deleteProduct(id: string): Promise<boolean> {
   try { const { error } = await supabase.from('products').delete().eq('id', id); return !error } catch { return false }
 }

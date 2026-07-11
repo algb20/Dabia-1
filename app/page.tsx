@@ -6,9 +6,10 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
+import { LiveStreamRoom } from "@/components/live-stream"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -16,7 +17,7 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -300,8 +301,21 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
   const isOfficial = p.sellerAccountType === "official"
 
   useEffect(() => {
-    if (currentUser?.id) isProductSaved(currentUser.id, String(p.id)).then(setSaved)
+    if (currentUser?.id) {
+      isProductSaved(currentUser.id, String(p.id)).then(setSaved)
+      isLikedByUser(currentUser.id, String(p.id)).then(setLiked)
+    }
   }, [currentUser?.id, p.id])
+
+  // إعجاب حقيقي محفوظ في القاعدة (يُحتسب في محرّك التراند) — تحديث متفائل مع تراجع عند الفشل
+  const handleToggleLike = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!currentUser?.id) return
+    const prev = liked
+    setLiked(!prev)
+    const { liked: now } = await toggleLike(currentUser.id, String(p.id))
+    setLiked(now)
+  }
 
   const handleToggleSave = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -344,7 +358,7 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
         {/* Top-right: like + trend */}
         <div className="absolute right-1.5 top-1.5 flex flex-col items-end gap-1">
           <button
-            onClick={e => { e.stopPropagation(); setLiked(l => !l) }}
+            onClick={handleToggleLike}
             className={`flex h-6 w-6 items-center justify-center rounded-full backdrop-blur-sm transition-colors ${liked ? "bg-red-500 text-white" : "bg-black/55 text-white"}`}
             aria-label={liked ? "Unlike" : "Like"}>
             <Heart className="h-3 w-3" fill={liked ? "currentColor" : "none"} />
@@ -1739,6 +1753,14 @@ function SocialTab() {
   )
   const trending = trendingData ?? []
 
+  // بثوث حية الآن — تظهر كبانر أعلى الاجتماعي وتفتح غرفة البث
+  const { data: liveData } = useSWR("dabia-social-live", () => getLiveStreams(), { refreshInterval: 20000 })
+  const liveStreams = liveData ?? []
+  const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
+
+  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
+
+
   const load = useCallback(() => {
     setLoading(true)
     getFeedPosts().then(setPosts).finally(() => setLoading(false))
@@ -1761,6 +1783,25 @@ function SocialTab() {
           </button>
         )}
       </div>
+
+      {/* بث مباشر الآن — بانر أعلى الفيد */}
+      {liveStreams.length > 0 && (
+        <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4">
+          {liveStreams.map(ls => (
+            <button key={ls.id} onClick={() => setActiveStream(ls)}
+              className="shrink-0 flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/5 px-3 py-2 active:scale-95 transition-transform">
+              <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-red-600">
+                <Radio className="h-4 w-4 text-white" />
+                <span className="absolute -inset-0.5 rounded-full border-2 border-red-500 animate-ping opacity-60" />
+              </span>
+              <div className="text-left">
+                <p className="text-[11px] font-black text-red-500 leading-none">LIVE</p>
+                <p className="text-[11px] font-bold truncate max-w-[120px]">{ls.host_username}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* رائج الآن — يظهر تلقائياً من محرّك التراند الحقيقي */}
       {trending.length > 0 && (
@@ -2135,24 +2176,84 @@ function SpaceTab() {
   const [auctions, setAuctions] = useState<DBAuction[]>([])
   const [deals, setDeals] = useState<DBGroupDeal[]>([])
   const [announcements, setAnnouncements] = useState<DBPost[]>([])
+  const [liveStreams, setLiveStreams] = useState<DBLiveStream[]>([])
+  const [upcoming, setUpcoming] = useState<DBLiveStream[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateAuction, setShowCreateAuction] = useState(false)
+  const [showCreateStream, setShowCreateStream] = useState(false)
+  const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
   const isMerchant = user && ["merchant", "company", "factory", "agent", "service_provider", "partner"].includes(user.role || "")
 
   const load = useCallback(() => {
     setLoading(true)
-    Promise.all([getLiveAuctions(), getOpenGroupDeals(), getFeedPosts(100)])
-      .then(([a, d, posts]) => { setAuctions(a); setDeals(d); setAnnouncements(posts.filter(p => p.type === "announcement")) })
+    Promise.all([getLiveAuctions(), getOpenGroupDeals(), getFeedPosts(100), getLiveStreams(), getUpcomingStreams()])
+      .then(([a, d, posts, live, up]) => { setAuctions(a); setDeals(d); setAnnouncements(posts.filter(p => p.type === "announcement")); setLiveStreams(live); setUpcoming(up) })
       .finally(() => setLoading(false))
   }, [])
   useEffect(() => { load() }, [load])
+  // تحديث دوري للبثوث الحية (تظهر فور بدء تاجر بثاً)
+  useEffect(() => { const t = setInterval(() => { getLiveStreams().then(setLiveStreams); getUpcomingStreams().then(setUpcoming) }, 20000); return () => clearInterval(t) }, [])
+
+  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => { setActiveStream(null); load() }} />
 
   return (
     <div className="space-y-6 pb-6">
       <div>
         <h1 className="text-lg font-black">Space</h1>
-        <p className="text-[12px] text-muted-foreground mt-0.5">Real auctions, group deals & announcements</p>
+        <p className="text-[12px] text-muted-foreground mt-0.5">Live streams, auctions, group deals & announcements</p>
       </div>
+
+      {/* Live streaming — بث مباشر للتجار */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-bold flex items-center gap-2 flex-1">
+            <Radio className="h-3.5 w-3.5 text-red-500 animate-pulse" />Live Now
+          </p>
+          {isMerchant && (
+            <button onClick={() => setShowCreateStream(true)} className="flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white">
+              <Video className="h-3 w-3" />Go Live
+            </button>
+          )}
+        </div>
+        {loading ? <SkeletonCard /> : liveStreams.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground text-center py-4">No live streams right now</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {liveStreams.map(ls => (
+              <button key={ls.id} onClick={() => setActiveStream(ls)} className="rounded-2xl border border-red-500/30 bg-card overflow-hidden text-left active:scale-95 transition-transform">
+                <div className="relative h-24 bg-gradient-to-br from-red-500/20 to-amber-500/10 flex items-center justify-center">
+                  {ls.cover_image?.startsWith("http") ? <img src={ls.cover_image} alt="" className="h-full w-full object-cover" /> : <Radio className="h-8 w-8 text-red-500/50" />}
+                  <span className="absolute top-1.5 left-1.5 flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-black text-white"><Radio className="h-2.5 w-2.5" />LIVE</span>
+                  <span className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white"><Users className="h-2.5 w-2.5" />{ls.viewer_count ?? 0}</span>
+                </div>
+                <div className="p-2">
+                  <p className="truncate text-[12px] font-bold">{ls.title}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">{ls.host_username}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* بثوث مجدولة قادمة — إعلان مسبق */}
+        {upcoming.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5"><CalendarClock className="h-3 w-3" />Upcoming</p>
+            {upcoming.map(u => (
+              <div key={u.id} className="flex items-center gap-2 rounded-xl border border-border bg-card p-2.5">
+                <CalendarClock className="h-4 w-4 text-amber-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12px] font-bold">{u.title}</p>
+                  <p className="text-[10px] text-muted-foreground">{u.host_username} · {u.scheduled_at ? new Date(u.scheduled_at).toLocaleString() : ""}</p>
+                </div>
+                {user && String(user.id) === String(u.host_user_id) && (
+                  <button onClick={() => startStream(String(u.id)).then(r => r && setActiveStream(r))} className="rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-bold text-white shrink-0">Start now</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Announcements — إعلانات رسمية حقيقية من المتاجر/الشركات */}
       {announcements.length > 0 && (
@@ -2200,6 +2301,69 @@ function SpaceTab() {
       {showCreateAuction && user && (
         <CreateAuctionModal onClose={() => setShowCreateAuction(false)} onCreated={load} user={user} />
       )}
+      {showCreateStream && user && (
+        <CreateStreamModal onClose={() => setShowCreateStream(false)} user={user}
+          onGoLive={(s) => { setShowCreateStream(false); setActiveStream(s) }}
+          onScheduled={() => { setShowCreateStream(false); load() }} />
+      )}
+    </div>
+  )
+}
+
+// ── إنشاء بث: بدء فوري أو جدولة مع إعلان مسبق ──────────────────────────────
+function CreateStreamModal({ onClose, user, onGoLive, onScheduled }:
+  { onClose: () => void; user: DBUser; onGoLive: (s: DBLiveStream) => void; onScheduled: () => void }) {
+  useCloseOnBack(onClose)
+  const [title, setTitle] = useState("")
+  const [desc, setDesc] = useState("")
+  const [mode, setMode] = useState<"now" | "schedule">("now")
+  const [scheduledAt, setScheduledAt] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+
+  const submit = async () => {
+    if (!title.trim()) { setError("Add a title for your stream"); return }
+    if (mode === "schedule" && !scheduledAt) { setError("Pick a date & time"); return }
+    setBusy(true); setError("")
+    const s = await createStream({
+      host_user_id: user.id!, host_username: user.username, title: title.trim(),
+      description: desc.trim() || null,
+      status: mode === "now" ? "live" : "scheduled",
+      scheduled_at: mode === "schedule" ? new Date(scheduledAt).toISOString() : null,
+      started_at: mode === "now" ? new Date().toISOString() : null,
+    })
+    setBusy(false)
+    if (!s) { setError("Could not create the stream"); return }
+    // إعلان مسبق تلقائي في الفيد الاجتماعي عند الجدولة
+    if (mode === "schedule") { try { await createAnnouncement(user.id!, user.username, `🔴 Going live soon: "${title.trim()}" — ${new Date(scheduledAt).toLocaleString()}`) } catch {} ; onScheduled() }
+    else onGoLive(s)
+  }
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold flex items-center gap-2"><Video className="h-4 w-4 text-red-500" />Start a Live Stream</p>
+          <button onClick={onClose}><X className="h-4 w-4" /></button>
+        </div>
+        {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{error}</p>}
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Stream title (e.g. New arrivals 🔥)" maxLength={80}
+          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Description (optional)" rows={2} maxLength={200}
+          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50 resize-none" />
+        <div className="flex gap-2">
+          <button onClick={() => setMode("now")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "now" ? "bg-red-600 text-white" : "border border-border text-muted-foreground"}`}>Go live now</button>
+          <button onClick={() => setMode("schedule")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "schedule" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Schedule</button>
+        </div>
+        {mode === "schedule" && (
+          <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+        )}
+        <button onClick={submit} disabled={busy}
+          className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black active:scale-[0.99] disabled:opacity-50">
+          {busy ? "Please wait…" : mode === "now" ? "Go Live Now" : "Schedule & Announce"}
+        </button>
+      </div>
     </div>
   )
 }
