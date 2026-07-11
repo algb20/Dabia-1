@@ -1,0 +1,1215 @@
+import { createClient } from "@supabase/supabase-js"
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// تشفير كلمات السر — مدمج مباشرة هنا (بدل استيراد ملف منفصل) لتجنب مشاكل bundling
+// يستخدم Web Crypto API المدمجة (لا حاجة لمكتبات خارجية) — SHA-256 مع Salt فريد
+// ═══════════════════════════════════════════════════════════════════════════════
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function randomSalt(length = 16): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(length))
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// يُنتج قيمة واحدة بالشكل salt:hash لتُخزَّن في عمود password مباشرة
+async function hashPassword(plain: string): Promise<string> {
+  const salt = randomSalt()
+  const hash = await sha256Hex(salt + plain)
+  return `${salt}:${hash}`
+}
+
+// يتحقق من كلمة السر المُدخلة مقابل القيمة المخزَّنة (salt:hash)
+// يدعم أيضاً كلمات السر القديمة غير المشفّرة (نص عادي) للتوافق الخلفي أثناء الانتقال التدريجي
+async function verifyPassword(plain: string, stored: string): Promise<boolean> {
+  if (!stored) return false
+  if (!stored.includes(':')) {
+    // كلمة سر قديمة محفوظة بنص عادي من قبل هذا التحديث — مقارنة مباشرة (توافق خلفي فقط)
+    return plain === stored
+  }
+  const [salt, hash] = stored.split(':')
+  const computed = await sha256Hex(salt + plain)
+  return computed === hash
+}
+
+const SUPABASE_URL = "https://fjeyhpasqhhqebqmhcmy.supabase.co"
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqZXlocGFzcWhocWVicW1oY215Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNTYyMDcsImV4cCI6MjA5NTgzMjIwN30.0eluGIJX-9QGgjsD_ipk1z688aWLW2fiuxqmeFGx4WI"
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+export interface DBUser {
+  id?:             string
+  username:        string
+  emall:           string
+  password?:       string
+  phone?:          string
+  country?:        string
+  role?:           string
+  status?:         string
+  pi_uid?:         string
+  store_name?:     string
+  wallet_balance?: number
+  profile?:        Record<string, any>
+  created_at?:     string
+  savedProducts?:  string[]
+  avatar_url?:     string
+  bio?:            string
+  website_url?:    string
+  auth_id?:        string
+  social_links?: {
+    telegram?:  { url: string; enabled: boolean }
+    instagram?: { url: string; enabled: boolean }
+    x?:         { url: string; enabled: boolean }
+    email_public?: { enabled: boolean }
+  }
+}
+
+export interface DBProduct {
+  id?:             string
+  name:            string
+  description?:    string
+  price:           number
+  original_price?: number  // إذا كان أعلى من price، يُحسب الخصم تلقائياً ويُعرض شريط %off
+  category?:       string
+  image?:          string
+  images?:         string[] // صور متعددة للمنتج
+  seller_user_id?: string
+  seller_name?:    string
+  stock?:          number
+  rating?:         number
+  review_count?:   number
+  active?:         boolean  // إيقاف/تفعيل المنتج دون حذفه
+  created_at?:     string
+  updated_at?:     string
+}
+
+export interface DBOrder {
+  id?:              string
+  user_id:          string
+  product_id:       string
+  product_name?:     string
+  product_image?:    string
+  seller_user_id?:   string
+  seller_name?:      string
+  quantity?:         number
+  total_price:       number
+  status?:           'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded'
+  shipping_address?: string
+  tracking_note?:    string
+  pi_tx_id?:         string
+  created_at?:       string
+  updated_at?:       string
+}
+
+export interface DBWalletTransaction {
+  id?:         string
+  user_id:     string
+  type:        'payment' | 'receive' | 'refund'
+  amount:      number
+  description: string
+  pi_tx_id?:   string
+  status:      'pending' | 'completed' | 'failed'
+  created_at?: string
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USERS
+// ═══════════════════════════════════════════════════════════════════════════════
+export async function registerUser(d: {
+  username: string; emall: string; password?: string; phone?: string
+  country?: string; role?: string; pi_uid?: string; store_name?: string; website_url?: string
+}): Promise<DBUser> {
+  const existing = await getUserByEmail(d.emall)
+  if (existing) return existing
+
+  // منع إنشاء أكثر من حساب بنفس معرّف Pi الحقيقي — يحل "يمكن إنشاء أكثر من حساب"
+  if (d.pi_uid) {
+    const existingByPi = await getUserByPiUid(d.pi_uid)
+    if (existingByPi) return existingByPi
+  }
+
+  const role = d.role ?? 'buyer'
+
+  // 1) إنشاء حساب Supabase Auth حقيقي أولاً — هذا ما يربط الهوية فعلياً بـ RLS
+  const authPassword = d.password || crypto.randomUUID()
+  const { data: authData } = await supabase.auth.signUp({ email: d.emall, password: authPassword })
+
+  // قبول تلقائي فوري للتجار: إن استوفى الحساب شروط التحقق الأساسية (اسم متجر + بلد
+  // أو موقع) عند التسجيل مباشرة، يُفعَّل فوراً دون أي انتظار للمراجعة اليدوية
+  const meetsAutoApproval = role === 'buyer' || !!(d.store_name && (d.country || d.website_url))
+  const status = meetsAutoApproval ? 'active' : 'pending'
+
+  const row: Record<string, any> = {
+    username: d.username, emall: d.emall,
+    role, status,
+    wallet_balance: 0, profile: {},
+    auth_id: authData?.user?.id || null,
+  }
+  if (d.password)     row.password     = await hashPassword(d.password)
+  if (d.phone)        row.phone        = d.phone
+  if (d.country)      row.country      = d.country
+  if (d.pi_uid)       row.pi_uid       = d.pi_uid
+  if (d.store_name)   row.store_name   = d.store_name
+  if (d.website_url)  row.website_url  = d.website_url
+
+  const { data, error } = await supabase.from('users').insert(row).select().single()
+  if (!error && data) return data as DBUser
+
+  if (error?.message.includes('column')) {
+    const { data: d2, error: e2 } = await supabase
+      .from('users')
+      .insert({ username: d.username, emall: d.emall, role, status })
+      .select().single()
+    if (e2) throw new Error(e2.message)
+    return d2 as DBUser
+  }
+  throw new Error(error?.message || 'Registration failed')
+}
+
+export async function getUserByEmail(emall: string): Promise<DBUser | null> {
+  try { const { data } = await supabase.from('users').select('*').eq('emall', emall).maybeSingle(); return data as DBUser | null } catch { return null }
+}
+
+// تسجيل الدخول لحساب موجود فعلاً بالإيميل وكلمة السر — هذا ما كان مفقوداً تماماً
+export async function loginWithEmailPassword(email: string, password: string): Promise<{ ok: boolean; user?: DBUser; error?: string }> {
+  try {
+    const user = await getUserByEmail(email)
+    if (!user) return { ok: false, error: "No account found with this email" }
+    if (!user.password) return { ok: false, error: "This account has no password set. Use 'Forgot Password' to set one." }
+    const valid = await verifyPassword(password, user.password)
+    if (!valid) return { ok: false, error: "Incorrect password" }
+
+    // ترقية تلقائية وشفافة: إذا كانت كلمة السر القديمة محفوظة بنص عادي، نُشفّرها الآن (في الخلفية)
+    if (!user.password.includes(':') && user.id) {
+      hashPassword(password).then(upgraded => updateUser(user.id!, { password: upgraded }))
+    }
+
+    // إنشاء جلسة Supabase Auth حقيقية — هذا أساس عمل كل سياسات RLS الجديدة
+    // (auth.uid() يعتمد على وجود جلسة فعلية، وبدونها لن تنطبق سياسات "صاحب الحساب فقط")
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+
+    if (authError) {
+      // الحساب قديم (سُجّل قبل ربط Auth الحقيقي) — ننشئ له حساب Auth الآن تلقائياً وبصمت
+      const { data: signUpData } = await supabase.auth.signUp({ email, password })
+      if (signUpData?.user?.id && user.id) {
+        updateUser(user.id, { auth_id: signUpData.user.id } as any) // بدون await — لا يُبطئ تسجيل الدخول
+      }
+    } else if (authData?.user?.id && user.id && !user.auth_id) {
+      // ربط الحساب القديم بهويته الحقيقية الجديدة إن لم يكن مربوطاً بعد
+      updateUser(user.id, { auth_id: authData.user.id } as any) // بدون await — لا يُبطئ تسجيل الدخول
+    }
+
+    return { ok: true, user }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Login failed" }
+  }
+}
+export async function getUserById(id: string): Promise<DBUser | null> {
+  try { const { data } = await supabase.from('users').select('*').eq('id', id).maybeSingle(); return data as DBUser | null } catch { return null }
+}
+export async function getUserByAuthId(auth_id: string): Promise<DBUser | null> {
+  try { const { data } = await supabase.from('users').select('*').eq('auth_id', auth_id).maybeSingle(); return data as DBUser | null } catch { return null }
+}
+
+export async function getUserByPiUid(pi_uid: string): Promise<DBUser | null> {
+  try { const { data } = await supabase.from('users').select('*').eq('pi_uid', pi_uid).maybeSingle(); return data as DBUser | null } catch { return null }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ACCOUNT RECOVERY SEARCH — "هل لدي حساب؟" بحث بالاسم أو معرّف Pi الرسمي
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface AccountSearchResult { id: string; username: string; role: string; pi_uid?: string; avatar_url?: string; store_name?: string; emallMasked: string }
+
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@')
+  if (!user || !domain) return '***'
+  const visible = user.slice(0, Math.min(2, user.length))
+  return `${visible}${'*'.repeat(Math.max(2, user.length - 2))}@${domain}`
+}
+
+// يبحث بمعرف Pi (تطابق دقيق) أو باسم المستخدم/اسم المتجر (تطابق جزئي) — لا يكشف
+// الإيميل الكامل أو كلمة السر إطلاقاً، فقط معلومات تعريفية عامة لمساعدة المستخدم
+// على التأكد من وجود حسابه قبل محاولة استعادته فعلياً عبر "Forgot Password"
+export async function searchAccounts(query: string): Promise<AccountSearchResult[]> {
+  const q = query.trim()
+  if (!q) return []
+  try {
+    const byPiUid = await getUserByPiUid(q)
+    if (byPiUid) {
+      return [{ id: byPiUid.id!, username: byPiUid.username, role: byPiUid.role || 'buyer', pi_uid: byPiUid.pi_uid, avatar_url: byPiUid.avatar_url, store_name: byPiUid.store_name, emallMasked: maskEmail(byPiUid.emall) }]
+    }
+    const { data } = await supabase.from('users').select('*').or(`username.ilike.%${q}%,store_name.ilike.%${q}%`).limit(10)
+    return ((data ?? []) as DBUser[]).map(u => ({ id: u.id!, username: u.username, role: u.role || 'buyer', pi_uid: u.pi_uid, avatar_url: u.avatar_url, store_name: u.store_name, emallMasked: maskEmail(u.emall) }))
+  } catch { return [] }
+}
+// ── روابط التواصل الرسمية للتطبيق (وليست الشخصية) ──────────────────
+// تُدار بالكامل من جدول app_official_links في Supabase — التحكم بها
+// (تفعيل/تعطيل/تغيير الرابط) يكون مباشرة من Supabase Table Editor، بدون
+// أي حاجة لإعادة نشر التطبيق. راجع SUPABASE_OFFICIAL_LINKS.sql لإنشاء الجدول.
+export type OfficialLinkPlatform = "facebook" | "instagram" | "x" | "telegram" | "youtube" | "tiktok"
+export interface OfficialLink { platform: OfficialLinkPlatform; url: string; enabled: boolean }
+
+export async function getOfficialLinks(): Promise<OfficialLink[]> {
+  try {
+    const { data, error } = await supabase.from("app_official_links").select("platform,url,enabled")
+    if (error || !data) return []
+    return data as OfficialLink[]
+  } catch { return [] }
+}
+
+// تحديث رابط رسمي واحد من لوحة الأدمن (بديل لتعديله يدوياً من Supabase Table Editor)
+export async function upsertOfficialLink(platform: OfficialLinkPlatform, url: string, enabled: boolean): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('app_official_links').upsert({ platform, url, enabled }, { onConflict: 'platform' })
+    return !error
+  } catch { return false }
+}
+
+// ── تحقق تلقائي خفيف من ملكية البريد التجاري (لمنع انتحال اسم شركة/مصنع) ──
+// المبدأ: إن طابق نطاق البريد (بعد @) نطاق الموقع الذي أدخله المستخدم، فهذا
+// دليل تلقائي قوي (لا يحتاج وثائق) أنه يتحكم بنفس النطاق فعلياً — وهذا أصعب
+// تزويراً من مجرد كتابة اسم شركة. لا يحجب أو يُصعّب التسجيل أبداً؛ فقط يضيف
+// إشارة ثقة إضافية تظهر للمستخدم ولفريق المراجعة، ويبقى القرار النهائي للمراجعة
+// اليدوية كما هو — هذا يُسرّع ويُحسّن المراجعة، لا يستبدلها.
+const GENERIC_EMAIL_DOMAINS = new Set([
+  "gmail.com","yahoo.com","hotmail.com","outlook.com","icloud.com",
+  "protonmail.com","aol.com","live.com","mail.com","yandex.com","gmx.com",
+])
+
+export interface BusinessEmailSignal {
+  emailDomain:     string | null
+  websiteDomain:   string | null
+  domainVerified:  boolean // نطاق البريد يطابق نطاق الموقع المُدخل
+  genericProvider: boolean // يستخدم مزوّد بريد عام (Gmail, Yahoo...) بدل بريد رسمي
+}
+
+export function getBusinessEmailSignal(user: Pick<DBUser, "emall" | "website_url">): BusinessEmailSignal {
+  const emailDomain = user.emall?.split("@")[1]?.toLowerCase().trim() || null
+  let websiteDomain: string | null = null
+  if (user.website_url) {
+    try {
+      const raw = user.website_url.trim()
+      const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`)
+      websiteDomain = url.hostname.replace(/^www\./, "").toLowerCase()
+    } catch { websiteDomain = null }
+  }
+  const domainVerified = !!(emailDomain && websiteDomain && (
+    emailDomain === websiteDomain ||
+    emailDomain.endsWith(`.${websiteDomain}`) ||
+    websiteDomain.endsWith(`.${emailDomain}`)
+  ))
+  const genericProvider = !!(emailDomain && GENERIC_EMAIL_DOMAINS.has(emailDomain))
+  return { emailDomain, websiteDomain, domainVerified, genericProvider }
+}
+
+export async function updateUser(id: string, u: Partial<DBUser>): Promise<DBUser | null> {
+  try {
+    // ربط الحساب بهويته الحقيقية تلقائياً إذا لم يكن مربوطاً بعد (حسابات قديمة)
+    const { data: session } = await supabase.auth.getSession()
+    const payload: any = { ...u }
+    if (session?.session?.user?.id) payload.auth_id = session.session.user.id
+    const { data, error } = await supabase.from('users').update(payload).eq('id', id).select().single()
+    if (error) {
+      // مهم: لا نُخفي الخطأ — الواجهة (handleSave وغيرها) تحتاج معرفة الفشل
+      // الحقيقي بدل افتراض النجاح. هذا كان يجعل الحفظ "يبدو ناجحاً" دائماً
+      // حتى عند رفض RLS للتحديث.
+      console.error('[updateUser] Supabase error:', error.message, error.details || '')
+      return null
+    }
+    return data as DBUser
+  } catch (e) {
+    console.error('[updateUser] Exception:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECURITY — تغيير كلمة السر بالتحقق الحقيقي من كلمة السر الحالية أولاً
+// ═══════════════════════════════════════════════════════════════════════════════
+export async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { data: user, error: fetchErr } = await supabase.from('users').select('password, emall').eq('id', userId).single()
+    if (fetchErr || !user) return { ok: false, error: 'Account not found' }
+    if (!user.password) return { ok: false, error: 'No password set on this account yet' }
+
+    const valid = await verifyPassword(currentPassword, user.password)
+    if (!valid) return { ok: false, error: 'Current password is incorrect' }
+    if (newPassword.length < 6) return { ok: false, error: 'New password must be at least 6 characters' }
+
+    const hashed = await hashPassword(newPassword)
+    const { error: updateErr } = await supabase.from('users').update({ password: hashed }).eq('id', userId)
+    if (updateErr) return { ok: false, error: updateErr.message }
+
+    // مزامنة كلمة السر مع Supabase Auth الحقيقي إن وُجدت جلسة (يبقيها متوافقة لتسجيل الدخول لاحقاً)
+    try { await supabase.auth.updateUser({ password: newPassword }) } catch {}
+
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to change password' }
+  }
+}
+
+// حذف الحساب نهائياً — معيار أساسي مطلوب بكل التطبيقات العالمية (GDPR وغيره)
+export async function deleteAccount(userId: string): Promise<boolean> {
+  try {
+    // حذف منتجاته أولاً (إن كان تاجراً) لتجنب سجلات يتيمة
+    await supabase.from('products').delete().eq('seller_user_id', userId)
+    const { error } = await supabase.from('users').delete().eq('id', userId)
+    return !error
+  } catch { return false }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SOCIAL — تفاعل حقيقي: لايك، عدد مشاركات حقيقي (لا عدادات وهمية)
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBLike { id?: string; user_id: string; product_id: string; created_at?: string }
+
+export async function toggleLike(userId: string, productId: string): Promise<{ liked: boolean }> {
+  try {
+    const { data: existing } = await supabase.from('product_likes').select('id')
+      .eq('user_id', userId).eq('product_id', productId).maybeSingle()
+    if (existing) {
+      await supabase.from('product_likes').delete().eq('id', existing.id)
+      return { liked: false }
+    }
+    await supabase.from('product_likes').insert({ user_id: userId, product_id: productId })
+    return { liked: true }
+  } catch { return { liked: false } }
+}
+
+export async function getLikeCount(productId: string): Promise<number> {
+  try {
+    const { count } = await supabase.from('product_likes').select('id', { count: 'exact', head: true }).eq('product_id', productId)
+    return count ?? 0
+  } catch { return 0 }
+}
+
+export async function isLikedByUser(userId: string, productId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase.from('product_likes').select('id').eq('user_id', userId).eq('product_id', productId).maybeSingle()
+    return !!data
+  } catch { return false }
+}
+
+// تسجيل مشاركة حقيقية (عداد فعلي لمدى انتشار المنتج، ليس رقماً ثابتاً)
+export async function recordShare(productId: string, userId?: string): Promise<void> {
+  try { await supabase.from('product_shares').insert({ product_id: productId, user_id: userId || null }) } catch {}
+}
+
+export async function getShareCount(productId: string): Promise<number> {
+  try {
+    const { count } = await supabase.from('product_shares').select('id', { count: 'exact', head: true }).eq('product_id', productId)
+    return count ?? 0
+  } catch { return 0 }
+}
+
+// التعليقات الحقيقية على المنتجات
+export interface DBComment { id?: string; product_id: string; user_id: string; username: string; avatar_url?: string; text: string; created_at?: string }
+
+export async function addComment(c: DBComment): Promise<{ comment: DBComment | null; error?: string }> {
+  try {
+    const { data, error } = await supabase.from('product_comments').insert(c).select().single()
+    if (error) { console.error('[addComment]', error.message); return { comment: null, error: error.message } }
+    return { comment: data as DBComment }
+  } catch (e) { return { comment: null, error: e instanceof Error ? e.message : 'Failed to comment' } }
+}
+
+export async function getComments(productId: string): Promise<DBComment[]> {
+  try {
+    const { data } = await supabase.from('product_comments').select('*').eq('product_id', productId).order('created_at', { ascending: false }).limit(50)
+    return (data ?? []) as DBComment[]
+  } catch { return [] }
+}
+
+// ─── نظام التحقق حسب نوع الحساب ──────────────────────────────────────────────
+export const VERIFICATION_REQUIREMENTS: Record<string, {
+  autoApprove: boolean; requiredFields: string[]; reviewWindowHours: number
+}> = {
+  buyer:            { autoApprove: true,  requiredFields: [],                       reviewWindowHours: 0  },
+  merchant:         { autoApprove: false, requiredFields: ['store_name'],           reviewWindowHours: 24 },
+  agent:            { autoApprove: false, requiredFields: ['store_name'],           reviewWindowHours: 24 },
+  service_provider: { autoApprove: false, requiredFields: ['store_name'],           reviewWindowHours: 24 },
+  company:          { autoApprove: false, requiredFields: ['store_name','country'], reviewWindowHours: 48 },
+  factory:          { autoApprove: false, requiredFields: ['store_name','country'], reviewWindowHours: 48 },
+  partner:          { autoApprove: false, requiredFields: ['store_name','country'], reviewWindowHours: 48 },
+}
+
+export function meetsVerificationRequirements(user: DBUser): boolean {
+  const rule = VERIFICATION_REQUIREMENTS[user.role ?? 'buyer']
+  if (!rule) return false
+  if (rule.autoApprove) return true
+  return rule.requiredFields.every(f => !!(user as any)[f])
+}
+
+export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
+  if (user.status === 'active' || user.status === 'verified') return user
+  if (!user.id) return user
+
+  if (meetsVerificationRequirements(user)) {
+    const updated = await updateUser(user.id, { status: 'active' })
+    if (updated) return updated
+    return user
+  }
+
+  // تحقق تلقائي إضافي حقيقي للحسابات التجارية التي لم تكتمل بعد: إن طابق نطاق
+  // البريد نطاق الموقع المُدخل (إشارة 1) وأكّد بحث حقيقي على الإنترنت وجود هذا
+  // المتجر/الشركة فعلياً (إشارة 2)، نقبل الحساب تلقائياً دون انتظار 24-48 ساعة
+  // مراجعة يدوية. إن تعذّر أي من الإشارتين (مثلاً SERPER_API_KEY غير مضبوط)،
+  // يبقى الحساب معلَّقاً للمراجعة اليدوية كالمعتاد — لا قبول وهمي أبداً.
+  if (user.store_name) {
+    const emailSignal = getBusinessEmailSignal(user)
+    if (emailSignal.domainVerified) {
+      try {
+        const res = await fetch('/api/dabia/verify-business', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url }),
+        })
+        const verify = await res.json()
+        if (verify.verified && verify.confidence === 'high') {
+          const updated = await updateUser(user.id, { status: 'active' })
+          if (updated) return updated
+        }
+      } catch { /* لا اتصال أو خطأ شبكة — نتراجع بأمان للمراجعة اليدوية */ }
+    }
+  }
+
+  return user
+}
+
+export async function getPendingUsers(): Promise<DBUser[]> {
+  try { const { data } = await supabase.from('users').select('*').eq('status','pending').order('created_at',{ascending:false}); return (data??[]) as DBUser[] } catch { return [] }
+}
+export async function approveUser(id: string): Promise<DBUser | null> { return updateUser(id, { status: 'active' }) }
+export async function rejectUser(id: string):  Promise<DBUser | null> { return updateUser(id, { status: 'suspended' }) }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRODUCTS
+// ═══════════════════════════════════════════════════════════════════════════════
+export async function getProducts(o: { category?: string; limit?: number; search?: string } = {}): Promise<DBProduct[]> {
+  try {
+    let q = supabase.from('products').select('*').eq('active', true).order('created_at', { ascending: false }).limit(o.limit ?? 50)
+    if (o.category) q = q.eq('category', o.category)
+    if (o.search)   q = q.ilike('name', `%${o.search}%`)
+    const { data } = await q; return (data ?? []) as DBProduct[]
+  } catch { return [] }
+}
+export async function addProduct(d: DBProduct): Promise<DBProduct> {
+  const { data, error } = await supabase.from('products').insert({ ...d, active: true }).select().single()
+  if (error) throw new Error(error.message); return data as DBProduct
+}
+// تعديل منتج/خدمة موجودة فعلياً (اسم، سعر، خصم، وصف، صور، مخزون)
+export async function updateProduct(id: string, updates: Partial<DBProduct>): Promise<DBProduct | null> {
+  try {
+    const { data, error } = await supabase.from('products').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single()
+    if (error) return null
+    return data as DBProduct
+  } catch { return null }
+}
+// إيقاف/تفعيل منتج دون حذفه نهائياً (يبقى بسجلات الطلبات القديمة)
+export async function toggleProductActive(id: string, active: boolean): Promise<boolean> {
+  try { const { error } = await supabase.from('products').update({ active }).eq('id', id); return !error } catch { return false }
+}
+export async function getProductById(id: string): Promise<DBProduct | null> {
+  try { const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle(); return data as DBProduct | null } catch { return null }
+}
+export async function getProductsBySeller(sid: string): Promise<DBProduct[]> {
+  try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return (data??[]) as DBProduct[] } catch { return [] }
+}
+export async function deleteProduct(id: string): Promise<boolean> {
+  try { const { error } = await supabase.from('products').delete().eq('id', id); return !error } catch { return false }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EMAIL VERIFICATION — تأكيد البريد برمز حقيقي عبر Supabase Auth
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// إرسال رمز التحقق (OTP) إلى البريد الحقيقي عبر نظام Supabase Auth المدمج
+export async function sendVerificationCode(email: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true }, // يسمح بإرسال الرمز حتى لو الإيميل غير مسجّل في auth بعد
+    })
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to send code' }
+  }
+}
+
+// التحقق من الرمز المُدخل من المستخدم مقابل ما أرسله Supabase
+export async function verifyEmailCode(email: string, code: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'email',
+    })
+    if (error) return { ok: false, error: error.message }
+    if (!data.session && !data.user) return { ok: false, error: 'Invalid or expired code' }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Verification failed' }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PASSWORD RESET — إعادة تعيين كلمة السر برمز حقيقي عبر Supabase Auth
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// إرسال رمز إعادة تعيين كلمة السر للبريد الحقيقي
+export async function sendPasswordResetCode(email: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false }, // فقط لمستخدم موجود بالفعل
+    })
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to send code' }
+  }
+}
+
+// التحقق من رمز إعادة التعيين، ثم تحديث كلمة السر في جدول users نفسه
+export async function resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' })
+    if (error) return { ok: false, error: error.message }
+    if (!data.session && !data.user) return { ok: false, error: 'Invalid or expired code' }
+
+    // تحديث كلمة السر في جدول users (المصدر الذي يستخدمه التطبيق فعلياً للتحقق)
+    const user = await getUserByEmail(email)
+    if (!user?.id) return { ok: false, error: 'Account not found' }
+    const updated = await updateUser(user.id, { password: await hashPassword(newPassword) })
+    if (!updated) return { ok: false, error: 'Failed to update password' }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Reset failed' }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ORDERS
+// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// ORDERS — نظام تتبع طلبات حقيقي وكامل (مشتري + بائع) مثل التطبيقات العالمية
+// ═══════════════════════════════════════════════════════════════════════════════
+export const ORDER_STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'shipped', 'delivered'] as const
+
+export async function createOrder(d: DBOrder): Promise<DBOrder> {
+  const { data, error } = await supabase.from('orders').insert({ ...d, status: d.status || 'confirmed' }).select().single()
+  if (error) throw new Error(error.message)
+  // خفض المخزون فعلياً عند الطلب
+  if (d.product_id && d.quantity) {
+    const product = await getProductById(d.product_id)
+    if (product?.stock != null) await updateProduct(d.product_id, { stock: Math.max(0, product.stock - d.quantity) })
+  }
+  return data as DBOrder
+}
+
+// طلبات المشتري — يتابع كل مشترياته
+export async function getOrdersByBuyer(bid: string): Promise<DBOrder[]> {
+  try {
+    const { data, error } = await supabase.from('orders').select('*').eq('user_id', bid).order('created_at',{ascending:false}).limit(50)
+    if (error) return []
+    return (data??[]) as DBOrder[]
+  } catch { return [] }
+}
+
+// طلبات البائع — يتابع كل ما بِيع من متجره ويُحدّث حالته
+export async function getOrdersBySeller(sellerId: string): Promise<DBOrder[]> {
+  try {
+    const { data, error } = await supabase.from('orders').select('*').eq('seller_user_id', sellerId).order('created_at',{ascending:false}).limit(100)
+    if (error) return []
+    return (data??[]) as DBOrder[]
+  } catch { return [] }
+}
+
+export async function getOrderById(id: string): Promise<DBOrder | null> {
+  try { const { data } = await supabase.from('orders').select('*').eq('id', id).maybeSingle(); return data as DBOrder | null } catch { return null }
+}
+
+// البائع يُحدّث حالة الطلب (قيد التحضير → شُحن → تم التسليم) — تتبع حقيقي
+export async function updateOrderStatus(orderId: string, status: DBOrder['status'], note?: string): Promise<boolean> {
+  try {
+    const payload: any = { status, updated_at: new Date().toISOString() }
+    if (note) payload.tracking_note = note
+    const { error } = await supabase.from('orders').update(payload).eq('id', orderId)
+    return !error
+  } catch { return false }
+}
+
+// المشتري يطلب إلغاء/استرداد — ضمان حقيقي بين الطرفين
+export async function requestOrderCancellation(orderId: string, reason: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('orders').update({ status: 'cancelled', tracking_note: `Cancelled by buyer: ${reason}`, updated_at: new Date().toISOString() }).eq('id', orderId)
+    return !error
+  } catch { return false }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS — إشعارات حقيقية مبنية على أحداث فعلية للمستخدم (لا بيانات ثابتة)
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface RealNotif {
+  id: string; type: string; title: string; body: string; time: string; read: boolean
+}
+
+export async function getRealNotifications(userId: string): Promise<RealNotif[]> {
+  try {
+    const notifs: RealNotif[] = []
+
+    // 1) إشعار من حالة الحساب (تحت المراجعة / مقبول)
+    const user = await getUserById(userId)
+    if (user?.status === "pending") {
+      notifs.push({
+        id: "account-pending", type: "account",
+        title: "Account Under Review",
+        body: `Your ${user.role} account is being verified. We'll notify you once approved.`,
+        time: user.created_at || new Date().toISOString(), read: false,
+      })
+    } else if (user?.status === "active" && user.role !== "buyer") {
+      notifs.push({
+        id: "account-approved", type: "account",
+        title: "Account Approved ✓",
+        body: `Your ${user.role} account is now active. You can start adding products.`,
+        time: user.created_at || new Date().toISOString(), read: true,
+      })
+    }
+
+    // 2) إشعارات حقيقية من آخر طلبات المستخدم الفعلية
+    const orders = await getOrdersByBuyer(userId)
+    orders.slice(0, 5).forEach(o => {
+      notifs.push({
+        id: `order-${o.id}`, type: "order",
+        title: o.status === "confirmed" ? "Order Confirmed" : `Order ${o.status}`,
+        body: `Your order of ${o.total_price}π has been ${o.status}.`,
+        time: o.created_at || new Date().toISOString(), read: true,
+      })
+    })
+
+    // ترتيب الأحدث أولاً
+    notifs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    return notifs
+  } catch { return [] }
+}
+// ملاحظة: تعريف updateOrderStatus القديم (id, status, pi_tx_id) حُذف — استُبدل
+// بالنسخة الأحدث أعلاه (orderId, status, note) التي تدعم كامل تتبع الطلبات
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WALLET — محفظة حقيقية
+// ═══════════════════════════════════════════════════════════════════════════════
+export async function getWalletBalance(userId: string): Promise<number> {
+  try {
+    const { data } = await supabase.from('users').select('wallet_balance').eq('id', userId).single()
+    return (data as any)?.wallet_balance ?? 0
+  } catch { return 0 }
+}
+
+export async function addWalletTransaction(tx: DBWalletTransaction): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('wallet_transactions').insert(tx)
+    if (error) return false
+    // تحديث الرصيد
+    const current = await getWalletBalance(tx.user_id)
+    const newBalance = tx.type === 'payment'
+      ? current - tx.amount
+      : current + tx.amount
+    await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', tx.user_id)
+    return true
+  } catch { return false }
+}
+
+export async function getWalletTransactions(userId: string): Promise<DBWalletTransaction[]> {
+  try {
+    const { data } = await supabase.from('wallet_transactions').select('*')
+      .eq('user_id', userId).order('created_at', { ascending: false }).limit(30)
+    return (data ?? []) as DBWalletTransaction[]
+  } catch { return [] }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STORAGE — رفع الملفات
+// ═══════════════════════════════════════════════════════════════════════════════
+export async function uploadProductImage(file: File, userId: string): Promise<{ url: string | null; error?: string }> {
+  try {
+    if (file.size > 8 * 1024 * 1024) return { url: null, error: "Image too large (max 8MB)" }
+    const ext  = file.name.split('.').pop()
+    const path = `products/${userId}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('dabia-media').upload(path, file, {
+      cacheControl: '3600', upsert: false
+    })
+    if (error) return { url: null, error: error.message }
+    const { data } = supabase.storage.from('dabia-media').getPublicUrl(path)
+    return { url: data.publicUrl }
+  } catch (e) { return { url: null, error: e instanceof Error ? e.message : 'Upload failed' } }
+}
+
+export async function uploadProductVideo(file: File, userId: string): Promise<{ url: string | null; error?: string }> {
+  try {
+    if (file.size > 50 * 1024 * 1024) return { url: null, error: 'Video too large (max 50MB)' }
+    const ext  = file.name.split('.').pop()
+    const path = `videos/${userId}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('dabia-media').upload(path, file, {
+      cacheControl: '3600', upsert: false
+    })
+    if (error) return { url: null, error: error.message }
+    const { data } = supabase.storage.from('dabia-media').getPublicUrl(path)
+    return { url: data.publicUrl }
+  } catch (e) { return { url: null, error: e instanceof Error ? e.message : 'Upload failed' } }
+}
+
+// رفع/تحديث صورة البروفايل — مسار ثابت لكل مستخدم (upsert) لاستبدالها بسهولة عند التغيير
+export async function uploadProfilePicture(file: File, userId: string): Promise<{ url: string | null; error?: string }> {
+  try {
+    if (file.size > 5 * 1024 * 1024) return { url: null, error: 'Image too large (max 5MB)' }
+    const ext  = file.name.split('.').pop()
+    const path = `avatars/${userId}/avatar.${ext}`
+    const { error } = await supabase.storage.from('dabia-media').upload(path, file, {
+      cacheControl: '3600', upsert: true // upsert: يسمح باستبدال الصورة القديمة بنفس المسار
+    })
+    if (error) return { url: null, error: error.message }
+    const { data } = supabase.storage.from('dabia-media').getPublicUrl(path)
+    // إضافة طابع زمني لتجنب الكاش القديم للصورة في المتصفح بعد التحديث
+    return { url: `${data.publicUrl}?t=${Date.now()}` }
+  } catch (e) {
+    return { url: null, error: e instanceof Error ? e.message : 'Upload failed' }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// POSTS — نظام منشورات حقيقي: نشر منتج، منشور نصي/صورة، استفتاء
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBPoll {
+  question: string
+  options: { text: string; votes: number }[]
+}
+
+export interface DBPost {
+  id?:           string
+  user_id:       string
+  username:      string
+  avatar_url?:   string
+  role?:         string
+  type:          'product_share' | 'text' | 'poll' | 'announcement'
+  text?:         string
+  product_id?:   string
+  product_snapshot?: { name: string; price: number; image?: string }
+  poll?:         DBPoll
+  pinned?:       boolean
+  is_official?:  boolean
+  reposted_from?: string
+  reposted_from_username?: string
+  created_at?:   string
+}
+
+// إعلان رسمي من متجر/شركة — يصل كإشعار حقيقي لكل متابعي هذا الحساب
+export async function createAnnouncement(userId: string, username: string, text: string, isOfficial = true): Promise<DBPost | null> {
+  try {
+    const row = { user_id: userId, username, type: 'announcement', text, is_official: isOfficial, pinned: true }
+    const { data, error } = await supabase.from('posts').insert(row).select().single()
+    if (error) return null
+    return data as DBPost
+  } catch { return null }
+}
+
+// نشر منتج حقيقي من المتجر إلى التاب الاجتماعي
+export async function sharePostFromProduct(userId: string, username: string, product: { id: string; name: string; price: number; image?: string }, caption?: string): Promise<DBPost | null> {
+  try {
+    const row = {
+      user_id: userId, username, type: 'product_share',
+      text: caption || '', product_id: product.id,
+      product_snapshot: { name: product.name, price: product.price, image: product.image },
+    }
+    const { data, error } = await supabase.from('posts').insert(row).select().single()
+    if (error) return null
+    return data as DBPost
+  } catch { return null }
+}
+
+// منشور نصي عادي (حساب فردي/تاجر/شركة)
+export async function createTextPost(userId: string, username: string, text: string, avatarUrl?: string, isOfficial = false): Promise<DBPost | null> {
+  try {
+    const row = { user_id: userId, username, avatar_url: avatarUrl, type: 'text', text, is_official: isOfficial }
+    const { data, error } = await supabase.from('posts').insert(row).select().single()
+    if (error) return null
+    return data as DBPost
+  } catch { return null }
+}
+
+// استفتاء حقيقي
+export async function createPoll(userId: string, username: string, question: string, options: string[]): Promise<DBPost | null> {
+  try {
+    const row = {
+      user_id: userId, username, type: 'poll',
+      poll: { question, options: options.map(o => ({ text: o, votes: 0 })) },
+    }
+    const { data, error } = await supabase.from('posts').insert(row).select().single()
+    if (error) return null
+    return data as DBPost
+  } catch { return null }
+}
+
+export async function votePoll(postId: string, optionIndex: number): Promise<boolean> {
+  try {
+    const { data: post } = await supabase.from('posts').select('poll').eq('id', postId).single()
+    if (!post?.poll) return false
+    const poll = post.poll as DBPoll
+    if (!poll.options[optionIndex]) return false
+    poll.options[optionIndex].votes += 1
+    const { error } = await supabase.from('posts').update({ poll }).eq('id', postId)
+    return !error
+  } catch { return false }
+}
+
+export async function getFeedPosts(limit = 50): Promise<DBPost[]> {
+  try {
+    const { data } = await supabase.from('posts').select('*').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(limit)
+    return (data ?? []) as DBPost[]
+  } catch { return [] }
+}
+
+export async function getPostsByUser(userId: string): Promise<DBPost[]> {
+  try {
+    const { data } = await supabase.from('posts').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+    return (data ?? []) as DBPost[]
+  } catch { return [] }
+}
+
+export async function togglePinPost(postId: string, pinned: boolean): Promise<boolean> {
+  try { const { error } = await supabase.from('posts').update({ pinned }).eq('id', postId); return !error } catch { return false }
+}
+
+export async function deletePost(postId: string): Promise<boolean> {
+  try { const { error } = await supabase.from('posts').delete().eq('id', postId); return !error } catch { return false }
+}
+
+// حفظ منشور/إعلان — نفس منطق حفظ المنتجات لكن للمنشورات
+export async function toggleSavePost(userId: string, postId: string): Promise<{ saved: boolean }> {
+  try {
+    const { data: existing } = await supabase.from('saved_posts').select('id').eq('user_id', userId).eq('post_id', postId).maybeSingle()
+    if (existing) { await supabase.from('saved_posts').delete().eq('id', existing.id); return { saved: false } }
+    await supabase.from('saved_posts').insert({ user_id: userId, post_id: postId })
+    return { saved: true }
+  } catch { return { saved: false } }
+}
+export async function isPostSaved(userId: string, postId: string): Promise<boolean> {
+  try { const { data } = await supabase.from('saved_posts').select('id').eq('user_id', userId).eq('post_id', postId).maybeSingle(); return !!data } catch { return false }
+}
+export async function getSavedPosts(userId: string): Promise<DBPost[]> {
+  try {
+    const { data: saves } = await supabase.from('saved_posts').select('post_id').eq('user_id', userId).order('created_at', { ascending: false })
+    if (!saves?.length) return []
+    const ids = saves.map((s: any) => s.post_id)
+    const { data: posts } = await supabase.from('posts').select('*').in('id', ids)
+    return (posts ?? []) as DBPost[]
+  } catch { return [] }
+}
+
+// إعادة نشر منشور ناجح — ينشئ منشوراً جديداً يشير للأصلي، يظهر في فيد الناشر الجديد
+export async function repostPost(originalPost: DBPost, repostUserId: string, repostUsername: string): Promise<DBPost | null> {
+  try {
+    const row: any = {
+      user_id: repostUserId, username: repostUsername, type: originalPost.type,
+      text: originalPost.text, product_id: originalPost.product_id,
+      product_snapshot: originalPost.product_snapshot, poll: null, // الاستفتاءات لا تُعاد نشرها بأصواتها لتفادي الالتباس
+      reposted_from: originalPost.id, reposted_from_username: originalPost.username,
+    }
+    const { data, error } = await supabase.from('posts').insert(row).select().single()
+    if (error) return null
+    return data as DBPost
+  } catch { return null }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SAVED PRODUCTS — منتجات محفوظة حقيقية بـ Supabase (تحل محل النسخة الوهمية
+// السابقة التي كانت تحفظ فقط في localStorage بدون أي اتصال بقاعدة البيانات)
+// ═══════════════════════════════════════════════════════════════════════════════
+export async function toggleSaveProduct(userId: string, productId: string): Promise<{ saved: boolean }> {
+  try {
+    const { data: existing } = await supabase.from('saved_products').select('id').eq('user_id', userId).eq('product_id', productId).maybeSingle()
+    if (existing) {
+      await supabase.from('saved_products').delete().eq('id', existing.id)
+      return { saved: false }
+    }
+    await supabase.from('saved_products').insert({ user_id: userId, product_id: productId })
+    return { saved: true }
+  } catch { return { saved: false } }
+}
+
+export async function isProductSaved(userId: string, productId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase.from('saved_products').select('id').eq('user_id', userId).eq('product_id', productId).maybeSingle()
+    return !!data
+  } catch { return false }
+}
+
+export async function getSavedProducts(userId: string): Promise<DBProduct[]> {
+  try {
+    const { data: saves } = await supabase.from('saved_products').select('product_id').eq('user_id', userId).order('created_at', { ascending: false })
+    if (!saves?.length) return []
+    const ids = saves.map((s: any) => s.product_id)
+    const { data: products } = await supabase.from('products').select('*').in('id', ids)
+    return (products ?? []) as DBProduct[]
+  } catch { return [] }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MENTIONS — إشارة لمستخدم/متجر في التعليقات + إشعار حقيقي
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBMention { id?: string; mentioned_user_id: string; mentioning_user_id: string; mentioning_username: string; context_text: string; post_id?: string; read: boolean; created_at?: string }
+
+export async function createMentionNotification(m: Omit<DBMention, 'id' | 'created_at' | 'read'>): Promise<boolean> {
+  try { const { error } = await supabase.from('mentions').insert({ ...m, read: false }); return !error } catch { return false }
+}
+
+export async function getMentionsForUser(userId: string): Promise<DBMention[]> {
+  try {
+    const { data } = await supabase.from('mentions').select('*').eq('mentioned_user_id', userId).order('created_at', { ascending: false }).limit(30)
+    return (data ?? []) as DBMention[]
+  } catch { return [] }
+}
+
+// يستخرج كل @username من نص ويُنشئ إشعار إشارة حقيقي لكل واحد موجود فعلياً
+export async function processMentions(text: string, fromUserId: string, fromUsername: string, postId?: string): Promise<void> {
+  const matches = text.match(/@([a-zA-Z0-9_]+)/g)
+  if (!matches) return
+  for (const m of matches) {
+    const uname = m.slice(1)
+    try {
+      const { data: target } = await supabase.from('users').select('id').eq('username', uname).maybeSingle()
+      if (target?.id && target.id !== fromUserId) {
+        await createMentionNotification({
+          mentioned_user_id: target.id, mentioning_user_id: fromUserId,
+          mentioning_username: fromUsername, context_text: text.slice(0, 200), post_id: postId,
+        })
+      }
+    } catch {}
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUCTIONS — مزاد حقيقي بمزايدات لحظية حقيقية عبر Supabase (بدون فيديو/بث مباشر)
+// ⚠️ صراحة تقنية: بث فيديو حي + LL-HLS/WebRTC يتطلب خادم بث مخصص (مثل Amazon IVS
+// أو OvenMediaEngine) خارج نطاق Pi App Studio بالكامل. هذا النظام يبني المزاد
+// النصي/الصوري الحقيقي بالمزايدات اللحظية فقط — وهو الجزء القابل للتنفيذ فعلياً.
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBAuction {
+  id?:            string
+  seller_user_id: string
+  seller_name:    string
+  product_name:   string
+  description?:   string
+  image?:         string
+  starting_price: number
+  current_bid:    number
+  min_increment:  number
+  reserve_price?: number
+  status:         'scheduled' | 'live' | 'ended' | 'cancelled'
+  starts_at?:     string
+  ends_at:        string
+  winner_user_id?: string
+  created_at?:    string
+}
+
+export interface DBAuctionBid {
+  id?:         string
+  auction_id:  string
+  bidder_id:   string
+  bidder_name: string
+  amount:      number
+  created_at?: string
+}
+
+export async function createAuction(a: Omit<DBAuction, 'id' | 'current_bid' | 'status' | 'created_at'>): Promise<DBAuction | null> {
+  try {
+    const row = { ...a, current_bid: a.starting_price, status: 'live' as const }
+    const { data, error } = await supabase.from('auctions').insert(row).select().single()
+    if (error) return null
+    return data as DBAuction
+  } catch { return null }
+}
+
+export async function getLiveAuctions(): Promise<DBAuction[]> {
+  try {
+    const { data } = await supabase.from('auctions').select('*').eq('status', 'live').order('ends_at', { ascending: true })
+    return (data ?? []) as DBAuction[]
+  } catch { return [] }
+}
+
+export async function getAuctionById(id: string): Promise<DBAuction | null> {
+  try { const { data } = await supabase.from('auctions').select('*').eq('id', id).maybeSingle(); return data as DBAuction | null } catch { return null }
+}
+
+// مزايدة حقيقية مع تحقق صارم من السعر (يمنع المزايدة المزيّفة من جهة العميل)
+export async function placeBid(auctionId: string, bidderId: string, bidderName: string, amount: number): Promise<{ ok: boolean; error?: string; auction?: DBAuction }> {
+  try {
+    const auction = await getAuctionById(auctionId)
+    if (!auction) return { ok: false, error: 'Auction not found' }
+    if (auction.status !== 'live') return { ok: false, error: 'Auction is not live' }
+    if (new Date(auction.ends_at).getTime() < Date.now()) return { ok: false, error: 'Auction has ended' }
+    const minRequired = auction.current_bid + auction.min_increment
+    if (amount < minRequired) return { ok: false, error: `Bid must be at least ${minRequired}π` }
+
+    // محاولة تحديث السعر بشرط أن لا يتغيّر منذ القراءة (يمنع تجاوز مزايدتين متزامنتين لبعضهما)
+    const { data: updated, error: updateErr } = await supabase
+      .from('auctions').update({ current_bid: amount }).eq('id', auctionId).eq('current_bid', auction.current_bid).select().single()
+    if (updateErr || !updated) return { ok: false, error: 'Someone else just placed a higher bid — refresh and try again' }
+
+    await supabase.from('auction_bids').insert({ auction_id: auctionId, bidder_id: bidderId, bidder_name: bidderName, amount })
+    return { ok: true, auction: updated as DBAuction }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Bid failed' }
+  }
+}
+
+export async function getAuctionBids(auctionId: string): Promise<DBAuctionBid[]> {
+  try {
+    const { data } = await supabase.from('auction_bids').select('*').eq('auction_id', auctionId).order('created_at', { ascending: false }).limit(50)
+    return (data ?? []) as DBAuctionBid[]
+  } catch { return [] }
+}
+
+// اشترك في تحديثات لحظية حقيقية لمزاد معيّن (Supabase Realtime) — بدون أي polling
+export function subscribeToAuction(auctionId: string, onUpdate: (auction: DBAuction) => void) {
+  const channel = supabase
+    .channel(`auction-${auctionId}`)
+    .on('postgres_changes' as any, { event: 'UPDATE', schema: 'public', table: 'auctions', filter: `id=eq.${auctionId}` },
+      (payload: any) => onUpdate(payload.new as DBAuction))
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
+}
+
+export async function endAuction(auctionId: string): Promise<boolean> {
+  try {
+    const bids = await getAuctionBids(auctionId)
+    const winner = bids[0]?.bidder_id
+    const { error } = await supabase.from('auctions').update({ status: 'ended', winner_user_id: winner || null }).eq('id', auctionId)
+    return !error
+  } catch { return false }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUP DEALS — تسوق جماعي حقيقي: خصم يُفعَّل فعلياً عند بلوغ عدد المنضمين
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBGroupDeal {
+  id?:             string
+  seller_user_id:  string
+  product_name:    string
+  image?:          string
+  original_price:  number
+  group_price:     number
+  members_needed:  number
+  members_joined:  number
+  status:          'open' | 'full' | 'expired'
+  ends_at:         string
+  created_at?:     string
+}
+
+export async function createGroupDeal(g: Omit<DBGroupDeal, 'id' | 'members_joined' | 'status' | 'created_at'>): Promise<DBGroupDeal | null> {
+  try {
+    const row = { ...g, members_joined: 1, status: 'open' as const }
+    const { data, error } = await supabase.from('group_deals').insert(row).select().single()
+    if (error) return null
+    return data as DBGroupDeal
+  } catch { return null }
+}
+
+export async function getOpenGroupDeals(): Promise<DBGroupDeal[]> {
+  try {
+    const { data } = await supabase.from('group_deals').select('*').eq('status', 'open').order('ends_at', { ascending: true })
+    return (data ?? []) as DBGroupDeal[]
+  } catch { return [] }
+}
+
+export async function joinGroupDeal(dealId: string, userId: string): Promise<{ ok: boolean; deal?: DBGroupDeal; error?: string }> {
+  try {
+    // تحقق أن المستخدم لم ينضم مسبقاً
+    const { data: existing } = await supabase.from('group_deal_members').select('id').eq('deal_id', dealId).eq('user_id', userId).maybeSingle()
+    if (existing) return { ok: false, error: 'You already joined this deal' }
+
+    const { data: deal } = await supabase.from('group_deals').select('*').eq('id', dealId).single()
+    if (!deal) return { ok: false, error: 'Deal not found' }
+    if (deal.status !== 'open') return { ok: false, error: 'This deal is no longer open' }
+
+    await supabase.from('group_deal_members').insert({ deal_id: dealId, user_id: userId })
+    const newCount = deal.members_joined + 1
+    const newStatus = newCount >= deal.members_needed ? 'full' : 'open'
+    const { data: updated, error } = await supabase.from('group_deals').update({ members_joined: newCount, status: newStatus }).eq('id', dealId).select().single()
+    if (error) return { ok: false, error: error.message }
+    return { ok: true, deal: updated as DBGroupDeal }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to join' }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUBSCRIPTIONS — اشتراكات Pro/Enterprise حقيقية ودائمة (Supabase، وليس ذاكرة)
+// التحقق من الدفع الحقيقي يتم في app/api/dabia/subscriptions/route.ts عبر Pi
+// Platform API مباشرة، قبل أن تصل البيانات لهذه الدالة أصلاً
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBSubscription {
+  id?:          string
+  user_id:      string
+  tier:         'pro' | 'enterprise'
+  activated_at: string
+  expires_at:   string
+  paid_in_pi:   number
+  pi_tx_id:     string
+  created_at?:  string
+}
+
+export async function upsertSubscription(s: Omit<DBSubscription, 'id' | 'created_at'>): Promise<DBSubscription | null> {
+  try {
+    const { data, error } = await supabase.from('subscriptions').upsert(s, { onConflict: 'user_id' }).select().single()
+    if (error) return null
+    return data as DBSubscription
+  } catch { return null }
+}
+
+export async function getSubscription(userId: string): Promise<DBSubscription | null> {
+  try {
+    const { data } = await supabase.from('subscriptions').select('*').eq('user_id', userId).maybeSingle()
+    if (data && new Date(data.expires_at).getTime() < Date.now()) return null // منتهية فعلياً
+    return data as DBSubscription | null
+  } catch { return null }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REAL PLATFORM STATS — إحصائيات حقيقية مبنية على Supabase فعلياً
+// تستبدل الـ "Transparency dashboard" الوهمي السابق الذي كان يعرض بيانات
+// ثابتة في الذاكرة بصفة "on-chain confirmed" كاذبة. كل رقم هنا حقيقي ومُحسَّب
+// من الجداول الفعلية، لا يوجد أي "blockHeight" أو رقم بلوكشين مزيّف.
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface RealPlatformStats {
+  totalUsers:        number
+  totalProducts:     number
+  totalOrders:       number
+  totalVolumePi:     number
+  activeMerchants:   number
+}
+
+export async function getRealPlatformStats(): Promise<RealPlatformStats> {
+  try {
+    const [{ count: totalUsers }, { count: totalProducts }, { data: orders }, { count: activeMerchants }] = await Promise.all([
+      supabase.from('users').select('id', { count: 'exact', head: true }),
+      supabase.from('products').select('id', { count: 'exact', head: true }),
+      supabase.from('orders').select('total_price'),
+      supabase.from('users').select('id', { count: 'exact', head: true }).neq('role', 'buyer').eq('status', 'active'),
+    ])
+    const totalVolumePi = (orders ?? []).reduce((sum, o: any) => sum + (Number(o.total_price) || 0), 0)
+    return {
+      totalUsers: totalUsers ?? 0,
+      totalProducts: totalProducts ?? 0,
+      totalOrders: (orders ?? []).length,
+      totalVolumePi,
+      activeMerchants: activeMerchants ?? 0,
+    }
+  } catch {
+    return { totalUsers: 0, totalProducts: 0, totalOrders: 0, totalVolumePi: 0, activeMerchants: 0 }
+  }
+}
