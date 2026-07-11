@@ -1579,6 +1579,7 @@ function HomeTab() {
 // ═══════════════════════════════════════════════════════════════════════════════
 function DiscoverTab() {
   const [selected, setSelected] = useState<Product | null>(null)
+  const { user } = useUserAuth()
   const { data: trendsData, isLoading } = useTrends("All", "smart")
   const { data: insightsData } = useInsights()
   const insights = insightsData?.insights ?? []
@@ -1642,7 +1643,7 @@ function DiscoverTab() {
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {isLoading
             ? Array.from({ length: 9 }).map((_, i) => <SkeletonCard key={i} />)
-            : trendsData?.ranked.slice(0, 9).map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={homeUser} />)
+            : trendsData?.ranked.slice(0, 9).map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={user} />)
           }
         </div>
       </section>
