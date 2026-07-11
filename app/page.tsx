@@ -95,6 +95,47 @@ function greeting() {
   return "Good evening"
 }
 
+// ─── زر الرجوع داخل التطبيق ──────────────────────────────────────────────────
+// المشكلة الجذرية: صفحات المنتج والنوافذ تُفتح كحالة React فقط بدون إدخال في
+// سجل المتصفح، فكان زر الرجوع (في الهاتف/المتصفح) يُخرج المستخدم من التطبيق
+// كله. الحل — نمط التطبيقات العالمية: كل طبقة مفتوحة تسجّل إدخالاً في history،
+// وزر الرجوع يغلق الطبقة العليا فقط. مستمع popstate واحد على مستوى الوحدة +
+// مكدس إغلاقات، فلا تتضارب الطبقات المتداخلة (منتج ← مشاركة ← ...).
+type OverlayEntry = { id: number; close: () => void }
+const overlayStack: OverlayEntry[] = []
+let overlaySeq = 0
+let suppressNextPop = false
+let overlayListenerInstalled = false
+function ensureOverlayListener() {
+  if (overlayListenerInstalled || typeof window === "undefined") return
+  overlayListenerInstalled = true
+  window.addEventListener("popstate", () => {
+    if (suppressNextPop) { suppressNextPop = false; return }
+    const top = overlayStack.pop()
+    if (top) top.close()
+  })
+}
+function useCloseOnBack(onClose: () => void) {
+  const ref = useRef(onClose)
+  ref.current = onClose
+  useEffect(() => {
+    ensureOverlayListener()
+    const entry: OverlayEntry = { id: ++overlaySeq, close: () => ref.current() }
+    overlayStack.push(entry)
+    window.history.pushState({ dabiaOverlay: entry.id }, "")
+    return () => {
+      const idx = overlayStack.indexOf(entry)
+      if (idx !== -1) {
+        // أُغلقت الطبقة برمجياً (زر X مثلاً) — نستهلك إدخال history الخاص بها
+        // بصمت حتى لا يحتاج المستخدم ضغطة رجوع إضافية لاحقاً
+        overlayStack.splice(idx, 1)
+        suppressNextPop = true
+        window.history.back()
+      }
+    }
+  }, [])
+}
+
 // ─── Fetcher & SWR hooks ──────────────────────────────────────────────────────
 const fetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
 
@@ -199,6 +240,7 @@ function GoogleTranslateIcon({ size = 18 }: { size?: number }) {
 function LanguageModal({ onClose, lang, setLang, translating }: {
   onClose: () => void; lang: string; setLang: (l: string) => void; translating: boolean
 }) {
+  useCloseOnBack(onClose)
   const [search, setSearch] = useState("")
   const filtered = LANGUAGES.filter(l =>
     l.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -540,7 +582,16 @@ const SecurityModal = memo(function SecurityModal({ amount, onClose, onComplete 
 })
 
 const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { product: Product; onClose: () => void }) {
+  useCloseOnBack(onClose) // زر الرجوع يغلق صفحة المنتج بدل الخروج من التطبيق
   const [detailTab, setDetailTab]     = useState<"compare" | "overview" | "reviews">("compare")
+  // منتجات مشابهة من نفس الفئة — فتحها يعرض تفاصيلها فوق الحالية (والرجوع يعيدك)
+  const [similarSelected, setSimilarSelected] = useState<Product | null>(null)
+  const { data: similarData } = useSWR<Product[]>(`dabia-similar-${p.category}-${p.id}`,
+    async () => (await getProducts({ category: p.category, limit: 12 }))
+      .map(dbProductToProduct)
+      .filter(x => x.id !== p.id)
+      .slice(0, 8))
+  const similar = similarData ?? []
   const [selectedOffer, setSelectedOffer] = useState<MerchantOffer | null>(null)
   const [showSecurity, setShowSecurity]   = useState(false)
   const [done, setDone]               = useState(false)
@@ -880,8 +931,31 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
               )}
             </div>
           )}
+
+          {/* منتجات مشابهة — نفس الفئة */}
+          {similar.length > 0 && (
+            <section className="space-y-2 pt-1">
+              <p className="text-xs font-bold flex items-center gap-2">
+                <LayoutGrid className="h-3.5 w-3.5 text-amber-400" />Similar products
+              </p>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+                {similar.map(sp => (
+                  <button key={`sim-${sp.id}`} onClick={() => setSimilarSelected(sp)}
+                    className="shrink-0 w-28 rounded-2xl border border-border bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                    <div className="h-16 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-2xl">
+                      {sp.image.startsWith("http") ? <img src={sp.image} alt="" className="h-full w-full object-cover" /> : sp.image}
+                    </div>
+                    <p className="text-[10px] font-bold leading-tight line-clamp-2">{sp.name}</p>
+                    <p className="text-[11px] font-black text-amber-400">{fmtPi(sp.price)}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
+
+      {similarSelected && <ProductDetail product={similarSelected} onClose={() => setSimilarSelected(null)} />}
 
       {/* CTA */}
       <div className="border-t border-border p-4 pb-safe shrink-0">
@@ -967,6 +1041,7 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
 
 // ─── Search overlay ───────────────────────────────────────────────────────────
 const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => void }) {
+  useCloseOnBack(onClose)
   const [query, setQuery] = useState("")
   const { data } = useTrends("All", "smart")
   const { user: searchUser } = useUserAuth()
@@ -1221,6 +1296,7 @@ function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
   // إن مُرّرت بيانات منتج + مستخدم مسجّل، يظهر خيار "النشر في تبويب Dabia الاجتماعي"
   shareToSocial?: { product: { id: string; name: string; price: number; image?: string }; user: DBUser }
 }) {
+  useCloseOnBack(onClose)
   const [copied, setCopied] = useState(false)
   const [postedToSocial, setPostedToSocial] = useState(false)
   const [postingSocial, setPostingSocial]   = useState(false)
@@ -1595,6 +1671,7 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
 }
 
 function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; onCreated: () => void; user: DBUser }) {
+  useCloseOnBack(onClose)
   const [mode, setMode] = useState<"text" | "poll">("text")
   const [text, setText] = useState("")
   const [question, setQuestion] = useState("")
