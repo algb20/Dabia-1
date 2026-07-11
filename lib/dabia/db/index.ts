@@ -950,17 +950,19 @@ export async function getWalletBalance(userId: string): Promise<number> {
   } catch { return 0 }
 }
 
+// تسجيل معاملة محفظة + تحديث الرصيد ذرّياً عبر دالة موثوقة في القاعدة.
+// لم يعد التطبيق يكتب wallet_balance مباشرة (حارس القاعدة يمنع ذلك)، فالرصيد
+// لا يمكن العبث به من الواجهة. تتطلب جلسة مصادقة صاحب الحساب.
 export async function addWalletTransaction(tx: DBWalletTransaction): Promise<boolean> {
   try {
-    const { error } = await supabase.from('wallet_transactions').insert(tx)
-    if (error) return false
-    // تحديث الرصيد
-    const current = await getWalletBalance(tx.user_id)
-    const newBalance = tx.type === 'payment'
-      ? current - tx.amount
-      : current + tx.amount
-    await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', tx.user_id)
-    return true
+    const { error } = await supabase.rpc('apply_wallet_tx', {
+      p_user_id:     Number(tx.user_id),
+      p_type:        tx.type,
+      p_amount:      tx.amount,
+      p_description: tx.description,
+      p_pi_tx_id:    tx.pi_tx_id ?? null,
+    })
+    return !error
   } catch { return false }
 }
 
