@@ -229,19 +229,21 @@ export async function loginWithEmailPassword(email: string, password: string): P
       hashPassword(password).then(upgraded => updateUser(user.id!, { password: upgraded }))
     }
 
-    // إنشاء جلسة Supabase Auth حقيقية — هذا أساس عمل كل سياسات RLS الجديدة
-    // (auth.uid() يعتمد على وجود جلسة فعلية، وبدونها لن تنطبق سياسات "صاحب الحساب فقط")
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
-
+    // إنشاء جلسة Supabase Auth حقيقية — أساس عمل كل سياسات RLS والحمايات
+    // (auth.uid() يعتمد على جلسة فعلية). مع التأكيد التلقائي للبريد تُنشأ الجلسة
+    // فوراً. الحسابات القديمة (بلا حساب Auth) يُنشأ لها الآن تلقائياً وبصمت.
+    let { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) {
-      // الحساب قديم (سُجّل قبل ربط Auth الحقيقي) — ننشئ له حساب Auth الآن تلقائياً وبصمت
-      const { data: signUpData } = await supabase.auth.signUp({ email, password })
-      if (signUpData?.user?.id && user.id) {
-        updateUser(user.id, { auth_id: signUpData.user.id } as any) // بدون await — لا يُبطئ تسجيل الدخول
-      }
-    } else if (authData?.user?.id && user.id && !user.auth_id) {
-      // ربط الحساب القديم بهويته الحقيقية الجديدة إن لم يكن مربوطاً بعد
-      updateUser(user.id, { auth_id: authData.user.id } as any) // بدون await — لا يُبطئ تسجيل الدخول
+      await supabase.auth.signUp({ email, password })
+      // بعض الإعدادات تتطلب دخولاً صريحاً بعد الإنشاء
+      await supabase.auth.signInWithPassword({ email, password }).catch(() => {})
+    }
+
+    // ربط الحساب بهويته عبر دالة آمنة (تطابق البريد) — تعمل حتى للصفوف غير المربوطة
+    if (user.id) {
+      try { await supabase.rpc('link_auth_id', { p_user_id: Number(user.id) }) } catch {}
+      const fresh = await getUserById(user.id)
+      if (fresh) return { ok: true, user: fresh }
     }
 
     return { ok: true, user }
