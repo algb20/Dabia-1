@@ -15,24 +15,49 @@ function randomSalt(length = 16): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-// يُنتج قيمة واحدة بالشكل salt:hash لتُخزَّن في عمود password مباشرة
-async function hashPassword(plain: string): Promise<string> {
-  const salt = randomSalt()
-  const hash = await sha256Hex(salt + plain)
-  return `${salt}:${hash}`
+function toHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-// يتحقق من كلمة السر المُدخلة مقابل القيمة المخزَّنة (salt:hash)
-// يدعم أيضاً كلمات السر القديمة غير المشفّرة (نص عادي) للتوافق الخلفي أثناء الانتقال التدريجي
+// PBKDF2-SHA256 بعدد جولات مرتفع — أبطأ بكثير على المهاجم (كسر القوة الغاشمة)
+// من SHA-256 بجولة واحدة، وبدون أي مكتبة خارجية (Web Crypto المدمجة).
+const PBKDF2_ITERATIONS = 100_000
+async function pbkdf2Hex(plain: string, salt: string, iterations = PBKDF2_ITERATIONS): Promise<string> {
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(plain), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations, hash: 'SHA-256' },
+    keyMaterial, 256,
+  )
+  return toHex(bits)
+}
+
+// يُنتج قيمة بالشكل pbkdf2$iterations$salt$hash لتُخزَّن في عمود password
+async function hashPassword(plain: string): Promise<string> {
+  const salt = randomSalt()
+  const hash = await pbkdf2Hex(plain, salt)
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${salt}$${hash}`
+}
+
+// يعيد true إن كانت القيمة المخزَّنة تحتاج إعادة تجزئة إلى الصيغة الأحدث (ترقية شفّافة)
+export function needsRehash(stored: string): boolean {
+  return !stored.startsWith('pbkdf2$')
+}
+
+// يتحقق من كلمة السر مقابل المخزَّن — يدعم كل الصيغ للتوافق أثناء الانتقال:
+//  pbkdf2$iter$salt$hash (الأحدث) · salt:hash (SHA-256 قديم) · نص عادي (أقدم)
 async function verifyPassword(plain: string, stored: string): Promise<boolean> {
   if (!stored) return false
-  if (!stored.includes(':')) {
-    // كلمة سر قديمة محفوظة بنص عادي من قبل هذا التحديث — مقارنة مباشرة (توافق خلفي فقط)
-    return plain === stored
+  if (stored.startsWith('pbkdf2$')) {
+    const [, iterStr, salt, hash] = stored.split('$')
+    const computed = await pbkdf2Hex(plain, salt, parseInt(iterStr, 10) || PBKDF2_ITERATIONS)
+    return computed === hash
   }
-  const [salt, hash] = stored.split(':')
-  const computed = await sha256Hex(salt + plain)
-  return computed === hash
+  if (stored.includes(':')) {
+    const [salt, hash] = stored.split(':')
+    return (await sha256Hex(salt + plain)) === hash
+  }
+  // كلمة سر قديمة بنص عادي (توافق خلفي فقط)
+  return plain === stored
 }
 
 const SUPABASE_URL = "https://fjeyhpasqhhqebqmhcmy.supabase.co"
@@ -198,8 +223,9 @@ export async function loginWithEmailPassword(email: string, password: string): P
     const valid = await verifyPassword(password, user.password)
     if (!valid) return { ok: false, error: "Incorrect password" }
 
-    // ترقية تلقائية وشفافة: إذا كانت كلمة السر القديمة محفوظة بنص عادي، نُشفّرها الآن (في الخلفية)
-    if (!user.password.includes(':') && user.id) {
+    // ترقية تلقائية شفّافة: أي كلمة سر بصيغة قديمة (نص عادي أو SHA-256) تُعاد
+    // تجزئتها إلى PBKDF2 الآن في الخلفية دون إزعاج المستخدم.
+    if (needsRehash(user.password) && user.id) {
       hashPassword(password).then(upgraded => updateUser(user.id!, { password: upgraded }))
     }
 
