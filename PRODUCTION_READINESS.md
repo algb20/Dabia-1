@@ -49,18 +49,22 @@ items, so future sessions have full context.
 - Added covering indexes for all unindexed foreign keys + hot filter columns.
 - Optimized high-traffic RLS policies (auth.uid() wrapped in a subselect).
 
+## ✅ RLS lockdown (extended)
+- `products` (owner-only write; stock decrement via order trigger),
+  `orders` (buyer+seller only), `posts` & `product_comments` &
+  `product_reviews` (author-only edit/delete). Poll voting moved to an
+  atomic `vote_poll` RPC.
+
 ## ⚠️ Remaining — do WITH live Pi Browser testing (not blind)
-1. Per-table RLS lockdown for `products`, `orders`, and social tables
-   (posts/likes/comments/reviews/shares/saved_*/stream_*/mentions). These
-   still allow permissive writes. Locking them needs owner-based policies
-   plus moving cross-user writes (product stock decrement on purchase,
-   rating rollup already server-side) into SECURITY DEFINER RPCs. Higher
-   breakage risk — validate order creation & product management after each.
+1. Low-risk permissive tables still open (per-user toggles / ephemeral):
+   product_likes, product_shares, saved_products, saved_posts, mentions,
+   stream_* , live_streams, app_official_links. Optional owner-locks.
 2. Fully hide password hashes from public read (move to a server-only path
    / drop the custom column once Supabase Auth is the sole authority).
 3. Pi App-to-User (A2U) payout to release escrowed funds to sellers —
    requires Pi A2U credentials + testing.
-4. Enable Supabase Auth leaked-password protection + MFA (dashboard).
+4. Enable Supabase Auth leaked-password protection (needs paid plan) — MFA
+   already enabled.
 5. Rotate the previously-exposed Pi API key in the Pi Developer portal.
 
 ## Env vars required (Netlify / host)
