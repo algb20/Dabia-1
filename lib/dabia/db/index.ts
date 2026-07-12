@@ -874,11 +874,8 @@ export const ORDER_STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'shipped'
 export async function createOrder(d: DBOrder): Promise<DBOrder> {
   const { data, error } = await supabase.from('orders').insert({ ...d, status: d.status || 'confirmed' }).select().single()
   if (error) throw new Error(error.message)
-  // خفض المخزون فعلياً عند الطلب
-  if (d.product_id && d.quantity) {
-    const product = await getProductById(d.product_id)
-    if (product?.stock != null) await updateProduct(d.product_id, { stock: Math.max(0, product.stock - d.quantity) })
-  }
+  // خصم المخزون يتم تلقائياً في القاعدة عبر trigger عند إدراج الطلب
+  // (لم يعد العميل يكتب عمود stock مباشرة — جدول المنتجات مقفل على المالك).
   return data as DBOrder
 }
 
@@ -1154,15 +1151,11 @@ export async function createPoll(userId: string, username: string, question: str
   } catch { return null }
 }
 
+// التصويت عبر دالة موثوقة (المصوّت ليس صاحب المنشور، والجدول مقفل على المالك)
 export async function votePoll(postId: string, optionIndex: number): Promise<boolean> {
   try {
-    const { data: post } = await supabase.from('posts').select('poll').eq('id', postId).single()
-    if (!post?.poll) return false
-    const poll = post.poll as DBPoll
-    if (!poll.options[optionIndex]) return false
-    poll.options[optionIndex].votes += 1
-    const { error } = await supabase.from('posts').update({ poll }).eq('id', postId)
-    return !error
+    const { data, error } = await supabase.rpc('vote_poll', { p_post_id: Number(postId), p_option: optionIndex })
+    return !error && data === true
   } catch { return false }
 }
 
