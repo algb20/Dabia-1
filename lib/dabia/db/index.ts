@@ -140,6 +140,8 @@ export interface DBOrder {
   carrier?:          string  // شركة الشحن (يُدخلها البائع)
   tracking_number?:  string  // رقم تتبّع الشحنة الخارجي
   status_history?:   OrderStatusEvent[]
+  escrow_status?:    'held' | 'released' | 'refunded' // ضمان: محتجز/محرَّر/مسترجَع
+  escrow_released_at?: string
   pi_tx_id?:         string
   created_at?:       string
   updated_at?:       string
@@ -906,10 +908,17 @@ export async function updateOrderStatus(orderId: string, status: DBOrder['status
   } catch { return false }
 }
 
-// المشتري يؤكّد استلام الطلب — إغلاق آمن للطرفين (لا يُحسم إلا بتأكيد المشتري)
+// المشتري يؤكّد استلام الطلب — إغلاق آمن للطرفين. عند التأكيد يُحرَّر مبلغ
+// الضمان للبائع (escrow released). لا يُحرَّر المال إلا بتأكيد المشتري.
 export async function confirmOrderReceived(orderId: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from('orders').update({ status: 'delivered', tracking_note: 'Receipt confirmed by buyer', updated_at: new Date().toISOString() }).eq('id', orderId)
+    const { error } = await supabase.from('orders').update({
+      status: 'delivered',
+      escrow_status: 'released',
+      escrow_released_at: new Date().toISOString(),
+      tracking_note: 'Receipt confirmed by buyer — payment released to seller',
+      updated_at: new Date().toISOString(),
+    }).eq('id', orderId)
     return !error
   } catch { return false }
 }
@@ -919,10 +928,15 @@ export async function getOrderByNumber(orderNumber: string): Promise<DBOrder | n
   try { const { data } = await supabase.from('orders').select('*').eq('order_number', orderNumber.trim().toUpperCase()).maybeSingle(); return data as DBOrder | null } catch { return null }
 }
 
-// المشتري يطلب إلغاء/استرداد — ضمان حقيقي بين الطرفين
+// المشتري يطلب إلغاء/استرداد — يُعاد مبلغ الضمان المحتجز للمشتري (escrow refunded)
 export async function requestOrderCancellation(orderId: string, reason: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from('orders').update({ status: 'cancelled', tracking_note: `Cancelled by buyer: ${reason}`, updated_at: new Date().toISOString() }).eq('id', orderId)
+    const { error } = await supabase.from('orders').update({
+      status: 'cancelled',
+      escrow_status: 'refunded',
+      tracking_note: `Cancelled by buyer: ${reason}`,
+      updated_at: new Date().toISOString(),
+    }).eq('id', orderId)
     return !error
   } catch { return false }
 }

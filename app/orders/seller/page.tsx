@@ -122,6 +122,15 @@ export default function SellerOrdersPage() {
               {(o.carrier || o.tracking_number) && (
                 <p className="text-[11px] text-cyan-400 bg-cyan-400/10 rounded-lg px-2.5 py-1.5">🚚 {o.carrier} {o.tracking_number}</p>
               )}
+              {/* حالة الضمان للبائع */}
+              <p className={`text-[10px] rounded-lg px-2.5 py-1.5 ${
+                o.escrow_status === "released" ? "text-emerald-400 bg-emerald-400/10" :
+                o.escrow_status === "refunded" ? "text-red-400 bg-red-400/10" :
+                "text-amber-400 bg-amber-400/10"}`}>
+                {o.escrow_status === "released" ? "✓ Payment released to you"
+                  : o.escrow_status === "refunded" ? "↩ Payment refunded to buyer"
+                  : "🔒 Payment held in escrow — released when the buyer confirms receipt"}
+              </p>
               <p className="text-[10px] text-muted-foreground">{new Date(o.created_at!).toLocaleDateString()}</p>
               {canAdvance && o.status !== "cancelled" && (
                 <button onClick={() => handleAdvance(o)} disabled={updating === o.id}

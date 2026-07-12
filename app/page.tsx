@@ -1089,10 +1089,10 @@ function CheckoutSheet({ product, unitPrice, user, paying, error, isHighValue, o
           <div className="flex justify-between pt-1 border-t border-border text-sm font-black"><span>Total</span><span className="text-amber-400">{fmtPi(total)}</span></div>
         </div>
 
-        {/* حماية الطرفين */}
+        {/* حماية المشتري — ضمان (Escrow) */}
         <div className="flex items-start gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-2.5">
           <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-          <p className="text-[10px] leading-relaxed text-muted-foreground">Your payment is confirmed on Pi Network and the order is tracked end-to-end. You'll get an order number to follow shipping, and confirm receipt when it arrives.</p>
+          <p className="text-[10px] leading-relaxed text-muted-foreground"><span className="font-bold text-emerald-400">Buyer protection:</span> your payment is held securely and only released to the seller after you confirm you received the order. Track it end-to-end with your order number.</p>
         </div>
 
         {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[11px] text-red-400">{error}</p>}

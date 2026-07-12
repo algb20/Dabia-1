@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { getOrdersByBuyer, confirmOrderReceived, type DBOrder } from "@/lib/dabia/db"
-import { X, Loader2, Package, CheckCircle2, Truck, Clock, MapPin, Copy, ChevronDown } from "lucide-react"
+import { X, Loader2, Package, CheckCircle2, Truck, Clock, MapPin, Copy, ChevronDown, ShieldCheck } from "lucide-react"
 
 const STEPS = ["pending", "confirmed", "preparing", "shipped", "delivered"] as const
 const STEP_LABEL: Record<string, string> = {
@@ -114,13 +114,28 @@ function OrderCard({ order, onConfirm }: { order: DBOrder; onConfirm: (id: strin
             </div>
           )}
 
+          {/* حالة الضمان (Escrow) — حماية المشتري */}
+          <div className={`flex items-center gap-2 rounded-xl border p-2.5 ${
+            order.escrow_status === "released" ? "border-emerald-400/20 bg-emerald-400/5" :
+            order.escrow_status === "refunded" ? "border-red-400/20 bg-red-400/5" :
+            "border-amber-400/20 bg-amber-400/5"}`}>
+            <ShieldCheck className={`h-4 w-4 shrink-0 ${
+              order.escrow_status === "released" ? "text-emerald-400" :
+              order.escrow_status === "refunded" ? "text-red-400" : "text-amber-400"}`} />
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              {order.escrow_status === "released" ? "Payment released to the seller after your confirmation."
+                : order.escrow_status === "refunded" ? "Payment refunded to you."
+                : "Payment is held securely and released to the seller only after you confirm receipt."}
+            </p>
+          </div>
+
           {order.pi_tx_id && <p className="text-[10px] text-muted-foreground font-mono truncate">Pi Tx: {order.pi_tx_id}</p>}
 
-          {/* تأكيد الاستلام — إغلاق آمن للطرفين */}
+          {/* تأكيد الاستلام — يُحرِّر مبلغ الضمان للبائع */}
           {status === "shipped" && (
             <button onClick={doConfirm} disabled={confirming}
               className="w-full rounded-xl bg-emerald-500 py-2.5 text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50">
-              {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Confirm received
+              {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Confirm received &amp; release payment
             </button>
           )}
         </div>
