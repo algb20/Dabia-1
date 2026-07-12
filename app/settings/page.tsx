@@ -186,7 +186,7 @@ export default function SettingsPage() {
 
         {/* Legal */}
         <div className="rounded-2xl border border-border bg-card overflow-hidden">
-          {[{href:"/forgot-password",label:"Forgot Password?"},{href:"/terms",label:"Terms & Conditions"},{href:"/privacy",label:"Privacy Policy"}].map((item,i) => (
+          {[{href:"/forgot-password",label:"Forgot Password?"},{href:"/terms",label:"Terms & Conditions"},{href:"/privacy",label:"Privacy Policy"},{href:"/refund",label:"Refund & Shipping Policy"}].map((item,i) => (
             <Link key={item.href} href={item.href}>
               <button className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary transition-colors ${i<2?"border-b border-border":""}`}>
                 <Lock className="h-4 w-4 text-muted-foreground" />

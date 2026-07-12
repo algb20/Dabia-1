@@ -7,7 +7,7 @@ import { addProduct, updateProduct, getProductById, uploadProductImage, uploadPr
 import {
   X, Package, Tag, DollarSign, Hash, AlignLeft,
   CheckCircle2, Loader2, AlertCircle, ImageIcon,
-  Video, Box, Building, Factory, Store, Handshake, Briefcase, Users, Percent
+  Video, Box, Building, Factory, Store, Handshake, Briefcase, Users, Percent, Clock
 } from "lucide-react"
 
 import { Suspense } from "react"
@@ -52,7 +52,8 @@ function AddProductInner() {
 
   const [form, setForm] = useState({
     name:"", description:"", price:"", originalPrice:"", category:"Electronics",
-    stock:"1", emoji:"📱", model3dUrl:"", moq:"", cert:"", duration:""
+    stock:"1", emoji:"📱", model3dUrl:"", moq:"", cert:"", duration:"",
+    dealEndsAt:"", dealLabel:""
   })
   const s = (k:string) => (e:React.ChangeEvent<HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement>) =>
     setForm(f => ({...f,[k]:e.target.value}))
@@ -68,6 +69,9 @@ function AddProductInner() {
           category: p.category || "Electronics", stock: String(p.stock ?? 1),
           emoji: p.image && p.image.length <= 4 ? p.image : "📦",
           model3dUrl: "", moq: "", cert: "", duration: "",
+          // datetime-local يتوقع صيغة محلية YYYY-MM-DDTHH:mm بدون منطقة زمنية
+          dealEndsAt: p.deal_ends_at ? new Date(new Date(p.deal_ends_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "",
+          dealLabel: p.deal_label || "",
         })
         if (p.images?.length) setUploadedImages(p.images)
         else if (p.image && p.image.startsWith("http")) setUploadedImages([p.image])
@@ -167,6 +171,8 @@ function AddProductInner() {
         description:     descParts.join(" · "),
         price:           parseFloat(form.price),
         original_price:  form.originalPrice ? parseFloat(form.originalPrice) : undefined,
+        deal_ends_at:    form.dealEndsAt ? new Date(form.dealEndsAt).toISOString() : null as any,
+        deal_label:      form.dealLabel.trim() || (form.dealEndsAt ? "Limited offer" : null as any),
         category:        form.category,
         image:           uploadedImages[0] || form.emoji,
         images:          uploadedImages.length ? uploadedImages : undefined,
@@ -202,7 +208,7 @@ function AddProductInner() {
         {uploadedVideo && <div className="flex justify-between"><span className="text-muted-foreground">Video</span><span className="font-bold text-emerald-400">✓ Uploaded</span></div>}
       </div>
       <div className="flex gap-3 w-full max-w-sm">
-        <button onClick={() => { setDone(false); setForm({name:"",description:"",price:"",originalPrice:"",category:"Electronics",stock:"1",emoji:"📱",model3dUrl:"",moq:"",cert:"",duration:""}); setUploadedImages([]); setUploadedVideo("") }}
+        <button onClick={() => { setDone(false); setForm({name:"",description:"",price:"",originalPrice:"",category:"Electronics",stock:"1",emoji:"📱",model3dUrl:"",moq:"",cert:"",duration:"",dealEndsAt:"",dealLabel:""}); setUploadedImages([]); setUploadedVideo("") }}
           className="flex-1 rounded-2xl border border-border py-3 text-sm font-bold active:scale-95">Add Another</button>
         <button onClick={() => router.push("/products/my")} className="flex-1 rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black active:scale-95">My Products →</button>
       </div>
@@ -282,6 +288,32 @@ function AddProductInner() {
             <p className="text-[11px] text-emerald-400 font-semibold">
               -{Math.round((1 - +form.price / +form.originalPrice) * 100)}% off — will show as a discount badge
             </p>
+          )}
+        </div>
+
+        {/* عرض محدود بوقت — يتحكم به التاجر بالكامل ويظهر للمشترين بعدّاد */}
+        <div className="space-y-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-3">
+          <label className="text-[12px] font-bold flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-amber-400" />Limited-Time Offer <span className="font-normal text-muted-foreground">(optional)</span>
+          </label>
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-muted-foreground">Offer ends at</label>
+            <input type="datetime-local" value={form.dealEndsAt} onChange={s("dealEndsAt")}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+          </div>
+          {form.dealEndsAt && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">Offer label</label>
+              <input type="text" value={form.dealLabel} onChange={s("dealLabel")} maxLength={30} placeholder="Limited offer"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            </div>
+          )}
+          {form.dealEndsAt && new Date(form.dealEndsAt).getTime() > Date.now() && (
+            <p className="text-[11px] text-amber-400 font-semibold">Buyers will see a live countdown until the offer ends</p>
+          )}
+          {form.dealEndsAt && (
+            <button type="button" onClick={() => setForm(f => ({ ...f, dealEndsAt: "", dealLabel: "" }))}
+              className="text-[11px] font-semibold text-red-400">Remove offer</button>
           )}
         </div>
 

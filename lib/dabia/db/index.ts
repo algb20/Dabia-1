@@ -15,24 +15,49 @@ function randomSalt(length = 16): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-// يُنتج قيمة واحدة بالشكل salt:hash لتُخزَّن في عمود password مباشرة
-async function hashPassword(plain: string): Promise<string> {
-  const salt = randomSalt()
-  const hash = await sha256Hex(salt + plain)
-  return `${salt}:${hash}`
+function toHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-// يتحقق من كلمة السر المُدخلة مقابل القيمة المخزَّنة (salt:hash)
-// يدعم أيضاً كلمات السر القديمة غير المشفّرة (نص عادي) للتوافق الخلفي أثناء الانتقال التدريجي
+// PBKDF2-SHA256 بعدد جولات مرتفع — أبطأ بكثير على المهاجم (كسر القوة الغاشمة)
+// من SHA-256 بجولة واحدة، وبدون أي مكتبة خارجية (Web Crypto المدمجة).
+const PBKDF2_ITERATIONS = 100_000
+async function pbkdf2Hex(plain: string, salt: string, iterations = PBKDF2_ITERATIONS): Promise<string> {
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(plain), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations, hash: 'SHA-256' },
+    keyMaterial, 256,
+  )
+  return toHex(bits)
+}
+
+// يُنتج قيمة بالشكل pbkdf2$iterations$salt$hash لتُخزَّن في عمود password
+async function hashPassword(plain: string): Promise<string> {
+  const salt = randomSalt()
+  const hash = await pbkdf2Hex(plain, salt)
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${salt}$${hash}`
+}
+
+// يعيد true إن كانت القيمة المخزَّنة تحتاج إعادة تجزئة إلى الصيغة الأحدث (ترقية شفّافة)
+export function needsRehash(stored: string): boolean {
+  return !stored.startsWith('pbkdf2$')
+}
+
+// يتحقق من كلمة السر مقابل المخزَّن — يدعم كل الصيغ للتوافق أثناء الانتقال:
+//  pbkdf2$iter$salt$hash (الأحدث) · salt:hash (SHA-256 قديم) · نص عادي (أقدم)
 async function verifyPassword(plain: string, stored: string): Promise<boolean> {
   if (!stored) return false
-  if (!stored.includes(':')) {
-    // كلمة سر قديمة محفوظة بنص عادي من قبل هذا التحديث — مقارنة مباشرة (توافق خلفي فقط)
-    return plain === stored
+  if (stored.startsWith('pbkdf2$')) {
+    const [, iterStr, salt, hash] = stored.split('$')
+    const computed = await pbkdf2Hex(plain, salt, parseInt(iterStr, 10) || PBKDF2_ITERATIONS)
+    return computed === hash
   }
-  const [salt, hash] = stored.split(':')
-  const computed = await sha256Hex(salt + plain)
-  return computed === hash
+  if (stored.includes(':')) {
+    const [salt, hash] = stored.split(':')
+    return (await sha256Hex(salt + plain)) === hash
+  }
+  // كلمة سر قديمة بنص عادي (توافق خلفي فقط)
+  return plain === stored
 }
 
 const SUPABASE_URL = "https://fjeyhpasqhhqebqmhcmy.supabase.co"
@@ -83,12 +108,16 @@ export interface DBProduct {
   rating?:         number
   review_count?:   number
   active?:         boolean  // إيقاف/تفعيل المنتج دون حذفه
+  deal_ends_at?:   string | null // عرض محدود بوقت — يضبطه التاجر من إدارة متجره
+  deal_label?:     string | null
   created_at?:     string
   updated_at?:     string
 }
 
+export interface OrderStatusEvent { status: string; at: string; note?: string; carrier?: string; tracking?: string }
 export interface DBOrder {
   id?:              string
+  order_number?:    string  // رقم طلب فريد مقروء (يُولَّد في القاعدة)
   user_id:          string
   product_id:       string
   product_name?:     string
@@ -96,10 +125,23 @@ export interface DBOrder {
   seller_user_id?:   string
   seller_name?:      string
   quantity?:         number
+  unit_price?:       number
   total_price:       number
   status?:           'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded'
+  // معلومات الشحن المنظّمة (يُدخلها المشتري عند الطلب)
+  recipient_name?:   string
+  recipient_phone?:  string
+  ship_country?:     string
+  ship_city?:        string
+  ship_address?:     string
+  ship_postal?:      string
   shipping_address?: string
   tracking_note?:    string
+  carrier?:          string  // شركة الشحن (يُدخلها البائع)
+  tracking_number?:  string  // رقم تتبّع الشحنة الخارجي
+  status_history?:   OrderStatusEvent[]
+  escrow_status?:    'held' | 'released' | 'refunded' // ضمان: محتجز/محرَّر/مسترجَع
+  escrow_released_at?: string
   pi_tx_id?:         string
   created_at?:       string
   updated_at?:       string
@@ -183,24 +225,27 @@ export async function loginWithEmailPassword(email: string, password: string): P
     const valid = await verifyPassword(password, user.password)
     if (!valid) return { ok: false, error: "Incorrect password" }
 
-    // ترقية تلقائية وشفافة: إذا كانت كلمة السر القديمة محفوظة بنص عادي، نُشفّرها الآن (في الخلفية)
-    if (!user.password.includes(':') && user.id) {
+    // ترقية تلقائية شفّافة: أي كلمة سر بصيغة قديمة (نص عادي أو SHA-256) تُعاد
+    // تجزئتها إلى PBKDF2 الآن في الخلفية دون إزعاج المستخدم.
+    if (needsRehash(user.password) && user.id) {
       hashPassword(password).then(upgraded => updateUser(user.id!, { password: upgraded }))
     }
 
-    // إنشاء جلسة Supabase Auth حقيقية — هذا أساس عمل كل سياسات RLS الجديدة
-    // (auth.uid() يعتمد على وجود جلسة فعلية، وبدونها لن تنطبق سياسات "صاحب الحساب فقط")
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
-
+    // إنشاء جلسة Supabase Auth حقيقية — أساس عمل كل سياسات RLS والحمايات
+    // (auth.uid() يعتمد على جلسة فعلية). مع التأكيد التلقائي للبريد تُنشأ الجلسة
+    // فوراً. الحسابات القديمة (بلا حساب Auth) يُنشأ لها الآن تلقائياً وبصمت.
+    let { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) {
-      // الحساب قديم (سُجّل قبل ربط Auth الحقيقي) — ننشئ له حساب Auth الآن تلقائياً وبصمت
-      const { data: signUpData } = await supabase.auth.signUp({ email, password })
-      if (signUpData?.user?.id && user.id) {
-        updateUser(user.id, { auth_id: signUpData.user.id } as any) // بدون await — لا يُبطئ تسجيل الدخول
-      }
-    } else if (authData?.user?.id && user.id && !user.auth_id) {
-      // ربط الحساب القديم بهويته الحقيقية الجديدة إن لم يكن مربوطاً بعد
-      updateUser(user.id, { auth_id: authData.user.id } as any) // بدون await — لا يُبطئ تسجيل الدخول
+      await supabase.auth.signUp({ email, password })
+      // بعض الإعدادات تتطلب دخولاً صريحاً بعد الإنشاء
+      await supabase.auth.signInWithPassword({ email, password }).catch(() => {})
+    }
+
+    // ربط الحساب بهويته عبر دالة آمنة (تطابق البريد) — تعمل حتى للصفوف غير المربوطة
+    if (user.id) {
+      try { await supabase.rpc('link_auth_id', { p_user_id: Number(user.id) }) } catch {}
+      const fresh = await getUserById(user.id)
+      if (fresh) return { ok: true, user: fresh }
     }
 
     return { ok: true, user }
@@ -449,31 +494,33 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
   if (user.status === 'active' || user.status === 'verified') return user
   if (!user.id) return user
 
-  if (meetsVerificationRequirements(user)) {
-    const updated = await updateUser(user.id, { status: 'active' })
-    if (updated) return updated
-    return user
-  }
+  // التفعيل التلقائي يتمّ الآن عبر دالة موثوقة في القاعدة تفرض القواعد على
+  // الخادم (لا يستطيع العميل تفعيل نفسه بتجاوز الشروط، وحارس status يمنع ذلك).
+  try {
+    const { data, error } = await supabase.rpc('auto_verify_self', { p_user_id: Number(user.id) })
+    if (!error && data) {
+      const updated = data as DBUser
+      if (updated.status === 'active') return updated
+      user = updated
+    }
+  } catch { /* نتراجع بأمان */ }
 
-  // تحقق تلقائي إضافي حقيقي للحسابات التجارية التي لم تكتمل بعد: إن طابق نطاق
-  // البريد نطاق الموقع المُدخل (إشارة 1) وأكّد بحث حقيقي على الإنترنت وجود هذا
-  // المتجر/الشركة فعلياً (إشارة 2)، نقبل الحساب تلقائياً دون انتظار 24-48 ساعة
-  // مراجعة يدوية. إن تعذّر أي من الإشارتين (مثلاً SERPER_API_KEY غير مضبوط)،
-  // يبقى الحساب معلَّقاً للمراجعة اليدوية كالمعتاد — لا قبول وهمي أبداً.
-  if (user.store_name) {
+  // تحقّق تجاري بالنطاق: القرار والتفعيل يتمّان بالكامل على الخادم في مسار
+  // verify-business (service_role) — لا قبول وهمي، ولا يثق التطبيق بادعاء العميل.
+  if (user.store_name && user.status !== 'active') {
     const emailSignal = getBusinessEmailSignal(user)
     if (emailSignal.domainVerified) {
       try {
         const res = await fetch('/api/dabia/verify-business', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url }),
+          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url, userId: user.id }),
         })
         const verify = await res.json()
-        if (verify.verified && verify.confidence === 'high') {
-          const updated = await updateUser(user.id, { status: 'active' })
-          if (updated) return updated
+        if (verify.activated) {
+          const fresh = await getUserById(user.id!)
+          if (fresh) return fresh
         }
-      } catch { /* لا اتصال أو خطأ شبكة — نتراجع بأمان للمراجعة اليدوية */ }
+      } catch { /* لا اتصال — نتراجع بأمان للمراجعة اليدوية */ }
     }
   }
 
@@ -483,8 +530,13 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
 export async function getPendingUsers(): Promise<DBUser[]> {
   try { const { data } = await supabase.from('users').select('*').eq('status','pending').order('created_at',{ascending:false}); return (data??[]) as DBUser[] } catch { return [] }
 }
-export async function approveUser(id: string): Promise<DBUser | null> { return updateUser(id, { status: 'active' }) }
-export async function rejectUser(id: string):  Promise<DBUser | null> { return updateUser(id, { status: 'suspended' }) }
+// موافقة/رفض الأدمن — عبر دالة موثوقة تتحقق أن المُنفِّذ حسابه admin فعلاً
+export async function approveUser(id: string): Promise<DBUser | null> {
+  try { const { data, error } = await supabase.rpc('admin_set_user_status', { p_user_id: Number(id), p_status: 'active' }); return error ? null : (data as DBUser) } catch { return null }
+}
+export async function rejectUser(id: string): Promise<DBUser | null> {
+  try { const { data, error } = await supabase.rpc('admin_set_user_status', { p_user_id: Number(id), p_status: 'suspended' }); return error ? null : (data as DBUser) } catch { return null }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRODUCTS
@@ -516,8 +568,217 @@ export async function toggleProductActive(id: string, active: boolean): Promise<
 export async function getProductById(id: string): Promise<DBProduct | null> {
   try { const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle(); return data as DBProduct | null } catch { return null }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REVIEWS — تقييم نجوم حقيقي: تقييم واحد لكل مستخدم لكل منتج (upsert).
+// علامة verified تُحسب في القاعدة (trigger) من وجود طلب حقيقي — لا تُزوَّر من
+// العميل. متوسط النجوم وعدد التقييمات يتحدّثان تلقائياً في جدول المنتجات.
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBReview {
+  id?:         string
+  product_id:  string
+  user_id:     string
+  username:    string
+  rating:      number
+  body?:       string
+  verified?:   boolean
+  created_at?: string
+}
+
+export async function addOrUpdateReview(productId: string, userId: string, username: string, rating: number, body?: string): Promise<{ review: DBReview | null; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('product_reviews')
+      .upsert({ product_id: productId, user_id: userId, username, rating, body: body || null }, { onConflict: 'product_id,user_id' })
+      .select()
+      .single()
+    if (error) return { review: null, error: error.message }
+    return { review: data as DBReview }
+  } catch (e) { return { review: null, error: e instanceof Error ? e.message : 'Failed to save review' } }
+}
+
+export async function getProductReviews(productId: string): Promise<DBReview[]> {
+  try {
+    const { data } = await supabase.from('product_reviews').select('*')
+      .eq('product_id', productId).order('created_at', { ascending: false }).limit(50)
+    return (data ?? []) as DBReview[]
+  } catch { return [] }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TREND ENGINE — ترتيب حيّ من إشارات حقيقية فقط (إعجابات/تعليقات/مشاركات/طلبات/
+// تقييمات + حداثة النشر) عبر view في القاعدة يُحسب لحظياً — لا نقاط مخزّنة مزيفة.
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface TrendScore { product_id: string; likes: number; comments: number; shares: number; orders: number; reviews: number; trend_score: number }
+
+export async function getTrendScores(): Promise<Map<string, TrendScore>> {
+  try {
+    const { data } = await supabase.from('product_trend_scores').select('*')
+    const map = new Map<string, TrendScore>()
+    for (const row of (data ?? []) as any[]) {
+      map.set(String(row.product_id), { ...row, product_id: String(row.product_id), trend_score: Number(row.trend_score) })
+    }
+    return map
+  } catch { return new Map() }
+}
+
+// ── العروض النشطة: منتجات مخفّضة (original_price أعلى) أو عرض محدود لم ينتهِ ──
+// يضبطها التاجر بالكامل من صفحة إدارة منتجاته (إضافة/تعديل منتج)
+export async function getActiveDeals(limit = 12): Promise<DBProduct[]> {
+  try {
+    const nowIso = new Date().toISOString()
+    const { data } = await supabase.from('products').select('*')
+      .eq('active', true)
+      .or(`deal_ends_at.gt.${nowIso},and(original_price.not.is.null,original_price.gt.0)`)
+      .order('created_at', { ascending: false })
+      .limit(limit * 2) // نجلب أكثر ثم نصفّي بدقة (شرط الخصم الحقيقي يحتاج مقارنة عمودين)
+    return ((data ?? []) as DBProduct[])
+      .filter(p =>
+        (p.deal_ends_at && new Date(p.deal_ends_at).getTime() > Date.now()) ||
+        (p.original_price != null && p.original_price > p.price)
+      )
+      .slice(0, limit)
+  } catch { return [] }
+}
+
+// أعلى المنتجات رواجاً الآن (منتجات كاملة مرتّبة بنقاط التراند الحقيقية)
+export async function getTrendingProducts(limit = 5): Promise<Array<DBProduct & { trend_score: number }>> {
+  try {
+    const { data: scores } = await supabase.from('product_trend_scores')
+      .select('product_id, trend_score').order('trend_score', { ascending: false }).limit(limit)
+    const ids = (scores ?? []).map((s: any) => s.product_id)
+    if (ids.length === 0) return []
+    const { data: products } = await supabase.from('products').select('*').in('id', ids)
+    const byId = new Map((products ?? []).map((p: any) => [String(p.id), p]))
+    return (scores ?? [])
+      .map((s: any) => { const p = byId.get(String(s.product_id)); return p ? { ...p, trend_score: Number(s.trend_score) } : null })
+      .filter(Boolean) as Array<DBProduct & { trend_score: number }>
+  } catch { return [] }
+}
 export async function getProductsBySeller(sid: string): Promise<DBProduct[]> {
   try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return (data??[]) as DBProduct[] } catch { return [] }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIVE STREAMING COMMERCE — بث مباشر حقيقي للتجار (Supabase Realtime)
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBLiveStream {
+  id?:           string
+  host_user_id:  string
+  host_username: string
+  title:         string
+  description?:  string | null
+  cover_image?:  string | null
+  status?:       'scheduled' | 'live' | 'ended'
+  scheduled_at?: string | null
+  started_at?:   string | null
+  ended_at?:     string | null
+  viewer_count?: number
+  created_at?:   string
+}
+export interface DBStreamProduct {
+  id?:            string
+  stream_id:      string
+  product_id:     string
+  pinned?:        boolean
+  special_price?: number | null
+  offer_ends_at?: string | null
+  created_at?:    string
+  product?:       DBProduct // مُدمج عند الجلب
+}
+export interface DBStreamComment { id?: string; stream_id: string; user_id?: string | null; username: string; text: string; created_at?: string }
+
+// جدولة/إنشاء بث (تاجر). status='scheduled' مع موعد، أو 'live' للبدء الفوري
+export async function createStream(s: Omit<DBLiveStream, 'id' | 'created_at' | 'viewer_count'>): Promise<DBLiveStream | null> {
+  try {
+    const { data, error } = await supabase.from('live_streams').insert(s).select().single()
+    if (error) return null
+    return data as DBLiveStream
+  } catch { return null }
+}
+export async function updateStream(id: string, updates: Partial<DBLiveStream>): Promise<DBLiveStream | null> {
+  try {
+    const { data, error } = await supabase.from('live_streams').update(updates).eq('id', id).select().single()
+    if (error) return null
+    return data as DBLiveStream
+  } catch { return null }
+}
+export async function startStream(id: string): Promise<DBLiveStream | null> {
+  return updateStream(id, { status: 'live', started_at: new Date().toISOString() })
+}
+export async function endStream(id: string): Promise<DBLiveStream | null> {
+  return updateStream(id, { status: 'ended', ended_at: new Date().toISOString() })
+}
+export async function getLiveStreams(): Promise<DBLiveStream[]> {
+  try { const { data } = await supabase.from('live_streams').select('*').eq('status', 'live').order('started_at', { ascending: false }); return (data ?? []) as DBLiveStream[] } catch { return [] }
+}
+export async function getUpcomingStreams(): Promise<DBLiveStream[]> {
+  try {
+    const { data } = await supabase.from('live_streams').select('*')
+      .eq('status', 'scheduled').gte('scheduled_at', new Date(Date.now() - 3600000).toISOString())
+      .order('scheduled_at', { ascending: true }).limit(20)
+    return (data ?? []) as DBLiveStream[]
+  } catch { return [] }
+}
+export async function getStreamById(id: string): Promise<DBLiveStream | null> {
+  try { const { data } = await supabase.from('live_streams').select('*').eq('id', id).maybeSingle(); return data as DBLiveStream | null } catch { return null }
+}
+export async function setViewerCount(id: string, count: number): Promise<void> {
+  try { await supabase.from('live_streams').update({ viewer_count: count }).eq('id', id) } catch {}
+}
+
+// منتجات البث + العرض المميز
+export async function addStreamProduct(streamId: string, productId: string, specialPrice?: number, offerEndsAt?: string): Promise<DBStreamProduct | null> {
+  try {
+    const { data, error } = await supabase.from('stream_products')
+      .upsert({ stream_id: streamId, product_id: productId, special_price: specialPrice ?? null, offer_ends_at: offerEndsAt ?? null }, { onConflict: 'stream_id,product_id' })
+      .select().single()
+    if (error) return null
+    return data as DBStreamProduct
+  } catch { return null }
+}
+export async function removeStreamProduct(id: string): Promise<boolean> {
+  try { const { error } = await supabase.from('stream_products').delete().eq('id', id); return !error } catch { return false }
+}
+// تثبيت منتج واحد فقط على الشاشة (يلغي تثبيت البقية)
+export async function pinStreamProduct(streamId: string, streamProductId: string): Promise<boolean> {
+  try {
+    await supabase.from('stream_products').update({ pinned: false }).eq('stream_id', streamId)
+    const { error } = await supabase.from('stream_products').update({ pinned: true }).eq('id', streamProductId)
+    return !error
+  } catch { return false }
+}
+export async function getStreamProducts(streamId: string): Promise<DBStreamProduct[]> {
+  try {
+    const { data } = await supabase.from('stream_products').select('*').eq('stream_id', streamId).order('created_at', { ascending: true })
+    const rows = (data ?? []) as DBStreamProduct[]
+    const ids = rows.map(r => r.product_id)
+    if (ids.length === 0) return rows
+    const { data: products } = await supabase.from('products').select('*').in('id', ids)
+    const byId = new Map((products ?? []).map((p: any) => [String(p.id), p as DBProduct]))
+    return rows.map(r => ({ ...r, product: byId.get(String(r.product_id)) }))
+  } catch { return [] }
+}
+
+// تعليقات البث
+export async function addStreamComment(streamId: string, userId: string | null, username: string, text: string): Promise<DBStreamComment | null> {
+  try {
+    const { data, error } = await supabase.from('stream_comments').insert({ stream_id: streamId, user_id: userId, username, text }).select().single()
+    if (error) return null
+    return data as DBStreamComment
+  } catch { return null }
+}
+export async function getStreamComments(streamId: string): Promise<DBStreamComment[]> {
+  try { const { data } = await supabase.from('stream_comments').select('*').eq('stream_id', streamId).order('created_at', { ascending: true }).limit(200); return (data ?? []) as DBStreamComment[] } catch { return [] }
+}
+
+// حجز/طلب أثناء البث
+export async function addStreamReservation(streamId: string, productId: string, userId: string, username: string, kind: 'reserve' | 'order'): Promise<boolean> {
+  try { const { error } = await supabase.from('stream_reservations').insert({ stream_id: streamId, product_id: productId, user_id: userId, username, kind }); return !error } catch { return false }
+}
+export async function getStreamReservationCount(streamId: string): Promise<number> {
+  try { const { count } = await supabase.from('stream_reservations').select('*', { count: 'exact', head: true }).eq('stream_id', streamId); return count ?? 0 } catch { return 0 }
 }
 export async function deleteProduct(id: string): Promise<boolean> {
   try { const { error } = await supabase.from('products').delete().eq('id', id); return !error } catch { return false }
@@ -634,20 +895,48 @@ export async function getOrderById(id: string): Promise<DBOrder | null> {
   try { const { data } = await supabase.from('orders').select('*').eq('id', id).maybeSingle(); return data as DBOrder | null } catch { return null }
 }
 
-// البائع يُحدّث حالة الطلب (قيد التحضير → شُحن → تم التسليم) — تتبع حقيقي
-export async function updateOrderStatus(orderId: string, status: DBOrder['status'], note?: string): Promise<boolean> {
+// البائع يُحدّث حالة الطلب (قيد التحضير → شُحن → تم التسليم) — تتبع حقيقي.
+// عند الشحن يمكنه إرفاق شركة الشحن ورقم التتبّع الخارجي (يُحفظان في سجل الحالة).
+export async function updateOrderStatus(orderId: string, status: DBOrder['status'], opts?: { note?: string; carrier?: string; tracking_number?: string }): Promise<boolean> {
   try {
     const payload: any = { status, updated_at: new Date().toISOString() }
-    if (note) payload.tracking_note = note
+    if (opts?.note)            payload.tracking_note   = opts.note
+    if (opts?.carrier)         payload.carrier         = opts.carrier
+    if (opts?.tracking_number) payload.tracking_number = opts.tracking_number
     const { error } = await supabase.from('orders').update(payload).eq('id', orderId)
     return !error
   } catch { return false }
 }
 
-// المشتري يطلب إلغاء/استرداد — ضمان حقيقي بين الطرفين
+// المشتري يؤكّد استلام الطلب — إغلاق آمن للطرفين. عند التأكيد يُحرَّر مبلغ
+// الضمان للبائع (escrow released). لا يُحرَّر المال إلا بتأكيد المشتري.
+export async function confirmOrderReceived(orderId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('orders').update({
+      status: 'delivered',
+      escrow_status: 'released',
+      escrow_released_at: new Date().toISOString(),
+      tracking_note: 'Receipt confirmed by buyer — payment released to seller',
+      updated_at: new Date().toISOString(),
+    }).eq('id', orderId)
+    return !error
+  } catch { return false }
+}
+
+// تتبّع طلب برقمه — متاح للطرفين لمتابعة الشحنة
+export async function getOrderByNumber(orderNumber: string): Promise<DBOrder | null> {
+  try { const { data } = await supabase.from('orders').select('*').eq('order_number', orderNumber.trim().toUpperCase()).maybeSingle(); return data as DBOrder | null } catch { return null }
+}
+
+// المشتري يطلب إلغاء/استرداد — يُعاد مبلغ الضمان المحتجز للمشتري (escrow refunded)
 export async function requestOrderCancellation(orderId: string, reason: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from('orders').update({ status: 'cancelled', tracking_note: `Cancelled by buyer: ${reason}`, updated_at: new Date().toISOString() }).eq('id', orderId)
+    const { error } = await supabase.from('orders').update({
+      status: 'cancelled',
+      escrow_status: 'refunded',
+      tracking_note: `Cancelled by buyer: ${reason}`,
+      updated_at: new Date().toISOString(),
+    }).eq('id', orderId)
     return !error
   } catch { return false }
 }
@@ -710,17 +999,19 @@ export async function getWalletBalance(userId: string): Promise<number> {
   } catch { return 0 }
 }
 
+// تسجيل معاملة محفظة + تحديث الرصيد ذرّياً عبر دالة موثوقة في القاعدة.
+// لم يعد التطبيق يكتب wallet_balance مباشرة (حارس القاعدة يمنع ذلك)، فالرصيد
+// لا يمكن العبث به من الواجهة. تتطلب جلسة مصادقة صاحب الحساب.
 export async function addWalletTransaction(tx: DBWalletTransaction): Promise<boolean> {
   try {
-    const { error } = await supabase.from('wallet_transactions').insert(tx)
-    if (error) return false
-    // تحديث الرصيد
-    const current = await getWalletBalance(tx.user_id)
-    const newBalance = tx.type === 'payment'
-      ? current - tx.amount
-      : current + tx.amount
-    await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', tx.user_id)
-    return true
+    const { error } = await supabase.rpc('apply_wallet_tx', {
+      p_user_id:     Number(tx.user_id),
+      p_type:        tx.type,
+      p_amount:      tx.amount,
+      p_description: tx.description,
+      p_pi_tx_id:    tx.pi_tx_id ?? null,
+    })
+    return !error
   } catch { return false }
 }
 

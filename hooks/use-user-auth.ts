@@ -29,6 +29,28 @@ function loadCache(): DBUser | null {
   }
 }
 
+// ── كشف بلد المستخدم تلقائياً وحفظه في حسابه ──────────────────────────────
+// إن لم يكن للحساب بلد محفوظ (لم يُدخله عند التسجيل)، نكشفه مرة واحدة عبر
+// خدمة تحديد الموقع بالـ IP (ipwho.is — مجانية بدون مفتاح) ونحفظه في users.country.
+// يُستخدم لخدمة المستخدم (عروض/شحن حسب بلده) ولإحصاءات المنصة. محاولة واحدة
+// لكل جلسة متصفح حتى لا نكرر الطلب، وفشلها صامت لا يؤثر على التطبيق.
+let countryDetectTried = false
+async function detectAndSaveCountry(u: DBUser, onSaved: (fresh: DBUser) => void) {
+  if (countryDetectTried || !u.id || u.country) return
+  countryDetectTried = true
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 5000)
+    const res = await fetch('https://ipwho.is/', { signal: ctrl.signal })
+    clearTimeout(timer)
+    const geo = await res.json()
+    if (geo?.success && typeof geo.country === 'string' && geo.country) {
+      const fresh = await updateUser(u.id, { country: geo.country })
+      if (fresh) onSaved(fresh)
+    }
+  } catch { /* كشف البلد ميزة تكميلية — لا نزعج المستخدم بفشلها */ }
+}
+
 export function useUserAuth() {
   const router  = useRouter()
   const [user,    setUser]    = useState<DBUser | null>(null)
@@ -45,7 +67,10 @@ export function useUserAuth() {
           if (active) setUser(cached) // عرض فوري من الكاش
           // تحديث من Supabase في الخلفية بدون إعاقة التحميل
           getUserById(cached.id!).then(fresh => {
-            if (active && fresh) { setUser(fresh); saveCache(fresh) }
+            if (active && fresh) {
+              setUser(fresh); saveCache(fresh)
+              detectAndSaveCountry(fresh, updated => { if (active) { setUser(updated); saveCache(updated) } })
+            }
           }).catch(() => {})
           return
         }
@@ -57,7 +82,10 @@ export function useUserAuth() {
         const authId = sessionData?.session?.user?.id
         if (authId) {
           const fresh = await getUserByAuthId(authId)
-          if (active && fresh) { setUser(fresh); saveCache(fresh) }
+          if (active && fresh) {
+            setUser(fresh); saveCache(fresh)
+            detectAndSaveCountry(fresh, updated => { if (active) { setUser(updated); saveCache(updated) } })
+          }
         }
       } finally {
         if (active) setLoading(false)
@@ -78,6 +106,7 @@ export function useUserAuth() {
       saveCache(res.user)
       if (res.user.id) localStorage.setItem(K_UID, res.user.id)
       setUser(res.user)
+      detectAndSaveCountry(res.user, updated => { setUser(updated); saveCache(updated) })
       return res.user
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Login failed'
@@ -139,6 +168,7 @@ export function useUserAuth() {
       saveCache(u)
       if (u.id) localStorage.setItem(K_UID, u.id)
       setUser(u)
+      detectAndSaveCountry(u, updated => { setUser(updated); saveCache(updated) })
       return u
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Registration failed'

@@ -36,7 +36,7 @@ async function compressImage(file: File, maxSize = 800): Promise<File> {
   })
 }
 import {
-  X, Camera, Loader2, AlertCircle, CheckCircle2,
+  X, Loader2, AlertCircle, CheckCircle2,
   Globe, AlignLeft, Save, ImageIcon, Pin, ExternalLink, Sparkles
 } from "lucide-react"
 import { getIdentityFields } from "@/lib/dabia/identity-fields"
@@ -46,8 +46,6 @@ export default function EditProfilePage() {
   const router = useRouter()
   const { user, updateProfile } = useUserAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
-  const [showPhotoMenu, setShowPhotoMenu] = useState(false)
 
   const [avatarUrl,  setAvatarUrl]  = useState(user?.avatar_url || "")
   const [bio,        setBio]        = useState(user?.bio || "")
@@ -148,32 +146,15 @@ export default function EditProfilePage() {
                 : (user.username || "U")[0].toUpperCase()
               }
             </div>
-            <button onClick={() => setShowPhotoMenu(true)} disabled={uploading}
+            <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              aria-label="Upload profile photo"
               className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full bg-amber-400 border-2 border-background active:scale-95 disabled:opacity-50">
-              {uploading ? <Loader2 className="h-4 w-4 text-black animate-spin" /> : <Camera className="h-4 w-4 text-black" />}
+              {uploading ? <Loader2 className="h-4 w-4 text-black animate-spin" /> : <ImageIcon className="h-4 w-4 text-black" />}
             </button>
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleAvatarChange} />
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           </div>
 
-          {/* قائمة اختيار: كاميرا أم معرض الصور — تحل مشكلة عدم ظهور خيار الكاميرا */}
-          {showPhotoMenu && (
-            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setShowPhotoMenu(false)}>
-              <div className="w-full max-w-lg rounded-t-3xl bg-card p-4 pb-8 space-y-2" onClick={e => e.stopPropagation()}>
-                <button onClick={() => { setShowPhotoMenu(false); cameraInputRef.current?.click() }}
-                  className="w-full flex items-center gap-3 rounded-xl border border-border px-4 py-3 active:scale-95">
-                  <Camera className="h-4 w-4 text-amber-400" /><span className="text-sm font-semibold">Take Photo</span>
-                </button>
-                <button onClick={() => { setShowPhotoMenu(false); fileInputRef.current?.click() }}
-                  className="w-full flex items-center gap-3 rounded-xl border border-border px-4 py-3 active:scale-95">
-                  <ImageIcon className="h-4 w-4 text-amber-400" /><span className="text-sm font-semibold">Choose from Gallery</span>
-                </button>
-                <button onClick={() => setShowPhotoMenu(false)}
-                  className="w-full rounded-xl py-3 text-sm font-semibold text-muted-foreground">Cancel</button>
-              </div>
-            </div>
-          )}
-          <p className="text-[11px] text-muted-foreground">Tap the camera to upload or change your photo</p>
+          <p className="text-[11px] text-muted-foreground">Tap to upload or change your photo</p>
         </div>
 
         {/* نبذة عن الحساب */}

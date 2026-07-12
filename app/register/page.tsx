@@ -373,8 +373,13 @@ export default function RegisterPage() {
         </div>
         <div className="rounded-xl border border-border bg-card p-4 space-y-2">
           <p className="text-[12px] font-bold">🔒 Privacy Policy</p>
-          <p className="text-[11px] text-muted-foreground">Your data is encrypted and never sold to third parties.</p>
+          <p className="text-[11px] text-muted-foreground">Your data is protected, and never sold to third parties.</p>
           <Link href="/privacy" className="text-[11px] text-amber-400 underline">Read Privacy →</Link>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+          <p className="text-[12px] font-bold">🛡️ Marketplace &amp; Refunds</p>
+          <p className="text-[11px] text-muted-foreground">Dabia connects buyers and sellers; each purchase is a direct contract with the seller. See how shipping, refunds and disputes work.</p>
+          <Link href="/refund" className="text-[11px] text-amber-400 underline">Read Refund &amp; Shipping Policy →</Link>
         </div>
         <div className="space-y-2.5 pt-1">
           <label className="flex items-center gap-3 cursor-pointer">

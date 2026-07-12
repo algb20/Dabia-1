@@ -1,12 +1,15 @@
 "use client"
 
-import { useState, useCallback, useMemo, memo, useEffect } from "react"
+import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
+import { rankByImageSimilarity } from "@/lib/image-search"
+import { LiveStreamRoom } from "@/components/live-stream"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -14,7 +17,7 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Link as LinkIcon, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -39,10 +42,9 @@ type NotifType   = "price_drop" | "new_arrival" | "trending" | "order" | "auctio
 interface Review       { id: number; author: string; rating: number; body: string; purchaseTxId: string; verified: boolean; timestamp: string }
 interface MerchantOffer { merchantName: string; accountType: AccountType; price: number; currency: "π"; inStock: boolean; deliveryDays: number; isOfficial: boolean; verified: boolean; rating: number; soldCount: number }
 interface TrustIndex   { total: number; breakdown: { sales: number; reviews: number; reliability: number; activity: number }; verifiedSalesCount: number }
-interface Product      { id: number; name: string; price: number; originalPrice?: number; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
+interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerUserId?: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
 interface Auction      { id: string; productName: string; image: string; currentBid: number; minIncrement: number; currency: "π"; endsAt: string; status: AuctionStatus; bidCount: number; seller: string; blockchainId: string; verified: boolean }
 interface GroupShop    { id: string; productId: number; productName: string; image: string; originalPrice: number; groupPrice: number; currency: "π"; membersJoined: number; membersNeeded: number; endsAt: string; shareCode: string; status: "open" | "full" | "completed"; createdBy: string }
-interface AIInsight    { type: "market_trend" | "price_alert" | "demand_spike" | "recommendation"; title: string; body: string; confidence: number; actionable: boolean }
 interface Notif        { id: number; type: NotifType; title: string; body: string; time: string; read: boolean }
 interface Subscription { userId: string; tier: SubTier; expiresAt: string; features: string[]; paidInPi: number }
 interface TransparencyStats { confirmedTx: number; volumePi: number; activeUsers: number; verifiedProducts: number; fraudCaught: number; serverUptimePct: number; blockHeight: number }
@@ -58,6 +60,8 @@ function dbProductToProduct(p: DBProduct): Product {
     name: p.name,
     price: p.price,
     originalPrice: (p.original_price && p.original_price > p.price) ? p.original_price : undefined,
+    dealEndsAt: p.deal_ends_at && new Date(p.deal_ends_at).getTime() > Date.now() ? p.deal_ends_at : undefined,
+    dealLabel: p.deal_label || undefined,
     currency: "π",
     image: isEmoji ? p.image! : (p.image || "📦"),
     rating: p.rating ?? 0,
@@ -75,6 +79,7 @@ function dbProductToProduct(p: DBProduct): Product {
     },
     category: p.category || "Other",
     seller: p.seller_name || "Dabia Seller",
+    sellerUserId: p.seller_user_id ? String(p.seller_user_id) : undefined,
     sellerTrust: 80,
     sold: p.review_count ?? 0,
     liked: false,
@@ -93,6 +98,47 @@ function greeting() {
   return "Good evening"
 }
 
+// ─── زر الرجوع داخل التطبيق ──────────────────────────────────────────────────
+// المشكلة الجذرية: صفحات المنتج والنوافذ تُفتح كحالة React فقط بدون إدخال في
+// سجل المتصفح، فكان زر الرجوع (في الهاتف/المتصفح) يُخرج المستخدم من التطبيق
+// كله. الحل — نمط التطبيقات العالمية: كل طبقة مفتوحة تسجّل إدخالاً في history،
+// وزر الرجوع يغلق الطبقة العليا فقط. مستمع popstate واحد على مستوى الوحدة +
+// مكدس إغلاقات، فلا تتضارب الطبقات المتداخلة (منتج ← مشاركة ← ...).
+type OverlayEntry = { id: number; close: () => void }
+const overlayStack: OverlayEntry[] = []
+let overlaySeq = 0
+let suppressNextPop = false
+let overlayListenerInstalled = false
+function ensureOverlayListener() {
+  if (overlayListenerInstalled || typeof window === "undefined") return
+  overlayListenerInstalled = true
+  window.addEventListener("popstate", () => {
+    if (suppressNextPop) { suppressNextPop = false; return }
+    const top = overlayStack.pop()
+    if (top) top.close()
+  })
+}
+function useCloseOnBack(onClose: () => void) {
+  const ref = useRef(onClose)
+  ref.current = onClose
+  useEffect(() => {
+    ensureOverlayListener()
+    const entry: OverlayEntry = { id: ++overlaySeq, close: () => ref.current() }
+    overlayStack.push(entry)
+    window.history.pushState({ dabiaOverlay: entry.id }, "")
+    return () => {
+      const idx = overlayStack.indexOf(entry)
+      if (idx !== -1) {
+        // أُغلقت الطبقة برمجياً (زر X مثلاً) — نستهلك إدخال history الخاص بها
+        // بصمت حتى لا يحتاج المستخدم ضغطة رجوع إضافية لاحقاً
+        overlayStack.splice(idx, 1)
+        suppressNextPop = true
+        window.history.back()
+      }
+    }
+  }, [])
+}
+
 // ─── Fetcher & SWR hooks ──────────────────────────────────────────────────────
 const fetcher = (url: string) => fetch(url).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
 
@@ -104,6 +150,13 @@ function useTrends(category: string, sort: SortKey) {
       let ranked: Product[] = real.map(dbProductToProduct)
       if (sort === "price")  ranked = [...ranked].sort((a, b) => a.price - b.price)
       if (sort === "rating") ranked = [...ranked].sort((a, b) => b.rating - a.rating)
+      if (sort === "smart") {
+        // ترتيب حيّ بمحرّك التراند الحقيقي (إعجابات/تعليقات/مشاركات/طلبات/تقييمات)
+        const scores = await getTrendScores()
+        ranked = [...ranked].sort((a, b) =>
+          (scores.get(String(b.id))?.trend_score ?? 0) - (scores.get(String(a.id))?.trend_score ?? 0)
+        )
+      }
       return { ranked, totalEvaluated: ranked.length }
     },
     { refreshInterval: 15000 }
@@ -111,7 +164,6 @@ function useTrends(category: string, sort: SortKey) {
 }
 // تم استبدال useAuctions/useGroupShop الوهمية (API ثابت في الذاكرة) بنظام
 // مزادات/صفقات جماعية حقيقي عبر Supabase — راجع RealAuctionCard/RealGroupDealCard أدناه
-function useInsights()   { return useSWR<{ insights: AIInsight[] }>("/api/dabia/insights", fetcher, { refreshInterval: 60000 }) }
 function useAlerts(userId?: string) {
   return useSWR<{ notifications: RealNotif[] }>(
     userId ? `dabia-real-notifs-${userId}` : null,
@@ -139,7 +191,6 @@ function useRealStats() {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPi  = (n: number) => `${n.toLocaleString()}π`
 const fmtNum = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)
-const fmtPct = (n: number) => `${(n * 100).toFixed(0)}%`
 const HIGH_VALUE = 500
 
 function timeLeft(iso: string) {
@@ -192,6 +243,7 @@ function GoogleTranslateIcon({ size = 18 }: { size?: number }) {
 function LanguageModal({ onClose, lang, setLang, translating }: {
   onClose: () => void; lang: string; setLang: (l: string) => void; translating: boolean
 }) {
+  useCloseOnBack(onClose)
   const [search, setSearch] = useState("")
   const filtered = LANGUAGES.filter(l =>
     l.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -244,21 +296,7 @@ const SkeletonCard = memo(function SkeletonCard() {
 
 // ─── Product card ─────────────────────────────────────────────────────────────
 const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser }: { product: Product; onOpen: (p: Product) => void; currentUser?: DBUser | null }) {
-  const [liked, setLiked] = useState(p.liked)
-  const [showCardShare, setShowCardShare] = useState(false)
-  const [saved, setSaved] = useState(false)
   const isOfficial = p.sellerAccountType === "official"
-
-  useEffect(() => {
-    if (currentUser?.id) isProductSaved(currentUser.id, String(p.id)).then(setSaved)
-  }, [currentUser?.id, p.id])
-
-  const handleToggleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!currentUser?.id) return
-    const { saved: nowSaved } = await toggleSaveProduct(currentUser.id, String(p.id))
-    setSaved(nowSaved)
-  }
   const isPremium  = p.sellerAccountType === "premium"
   const discount   = p.originalPrice ? Math.round((1 - p.price / p.originalPrice) * 100) : 0
 
@@ -291,26 +329,9 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
           )}
         </div>
 
-        {/* Top-right: like + trend */}
+        {/* Top-right: trend indicator only (أزرار الإعجاب/الحفظ/المشاركة انتقلت
+            إلى داخل صفحة المنتج لتفادي التشويش البصري على الشبكة) */}
         <div className="absolute right-1.5 top-1.5 flex flex-col items-end gap-1">
-          <button
-            onClick={e => { e.stopPropagation(); setLiked(l => !l) }}
-            className={`flex h-6 w-6 items-center justify-center rounded-full backdrop-blur-sm transition-colors ${liked ? "bg-red-500 text-white" : "bg-black/55 text-white"}`}
-            aria-label={liked ? "Unlike" : "Like"}>
-            <Heart className="h-3 w-3" fill={liked ? "currentColor" : "none"} />
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); setShowCardShare(true) }}
-            className="flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm"
-            aria-label="Share">
-            <Share2 className="h-3 w-3" />
-          </button>
-          <button
-            onClick={handleToggleSave}
-            className={`flex h-6 w-6 items-center justify-center rounded-full backdrop-blur-sm transition-colors ${saved ? "bg-amber-400 text-black" : "bg-black/55 text-white"}`}
-            aria-label={saved ? "Unsave" : "Save"}>
-            <Bookmark className="h-3 w-3" fill={saved ? "currentColor" : "none"} />
-          </button>
           {p.trend === "hot" && (
             <span className="flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] backdrop-blur-sm">
               <Flame className="h-2.5 w-2.5 text-red-400" />
@@ -354,24 +375,13 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
           <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
         </div>
 
-        <div className="flex items-baseline gap-1">
+        <div className="mt-auto flex items-baseline gap-1">
           <span className="text-xs font-black text-amber-400 sm:text-sm">{fmtPi(p.price)}</span>
           {p.originalPrice && (
-            <span className="hidden text-[9px] text-muted-foreground line-through sm:inline">{fmtPi(p.originalPrice)}</span>
+            <span className="text-[9px] text-muted-foreground line-through">{fmtPi(p.originalPrice)}</span>
           )}
         </div>
-
-        <button
-          onClick={e => { e.stopPropagation(); onOpen(p) }}
-          className="btn-primary mt-auto w-full rounded-xl py-2 text-[11px] font-bold text-black">
-          Compare Prices
-        </button>
       </div>
-      {showCardShare && (
-        <div onClick={e => e.stopPropagation()}>
-          <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowCardShare(false)} />
-        </div>
-      )}
     </article>
   )
 })
@@ -531,8 +541,27 @@ const SecurityModal = memo(function SecurityModal({ amount, onClose, onComplete 
   )
 })
 
+interface CheckoutData {
+  quantity: number
+  recipient_name: string
+  recipient_phone: string
+  ship_country: string
+  ship_city: string
+  ship_address: string
+  ship_postal: string
+}
+
 const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { product: Product; onClose: () => void }) {
+  useCloseOnBack(onClose) // زر الرجوع يغلق صفحة المنتج بدل الخروج من التطبيق
   const [detailTab, setDetailTab]     = useState<"compare" | "overview" | "reviews">("compare")
+  // منتجات مشابهة من نفس الفئة — فتحها يعرض تفاصيلها فوق الحالية (والرجوع يعيدك)
+  const [similarSelected, setSimilarSelected] = useState<Product | null>(null)
+  const { data: similarData } = useSWR<Product[]>(`dabia-similar-${p.category}-${p.id}`,
+    async () => (await getProducts({ category: p.category, limit: 12 }))
+      .map(dbProductToProduct)
+      .filter(x => x.id !== p.id)
+      .slice(0, 8))
+  const similar = similarData ?? []
   const [selectedOffer, setSelectedOffer] = useState<MerchantOffer | null>(null)
   const [showSecurity, setShowSecurity]   = useState(false)
   const [done, setDone]               = useState(false)
@@ -541,36 +570,96 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const { user: buyerUser } = useUserAuth()
   const [showShareModal, setShowShareModal] = useState(false)
 
+  // إعجاب/حفظ حقيقيان — انتقلا إلى صفحة المنتج (لا يظهران على البطاقة لتفادي التشويش)
+  const [dLiked, setDLiked] = useState(false)
+  const [dSaved, setDSaved] = useState(false)
+  useEffect(() => {
+    if (buyerUser?.id) {
+      isLikedByUser(buyerUser.id, String(p.id)).then(setDLiked)
+      isProductSaved(buyerUser.id, String(p.id)).then(setDSaved)
+    }
+  }, [buyerUser?.id, p.id])
+  const toggleDLike = async () => { if (!buyerUser?.id) return; setDLiked(v => !v); const { liked } = await toggleLike(buyerUser.id, String(p.id)); setDLiked(liked) }
+  const toggleDSave = async () => { if (!buyerUser?.id) return; setDSaved(v => !v); const { saved } = await toggleSaveProduct(buyerUser.id, String(p.id)); setDSaved(saved) }
+
+  // ── تقييمات حقيقية من القاعدة (تُحمَّل عند فتح تبويب Reviews) ──────────────
+  const [reviews, setReviews]         = useState<DBReview[]>([])
+  const [reviewsLoaded, setReviewsLoaded] = useState(false)
+  const [myRating, setMyRating]       = useState(0)
+  const [myReviewText, setMyReviewText] = useState("")
+  const [savingReview, setSavingReview] = useState(false)
+  const [reviewSaved, setReviewSaved]   = useState(false)
+  const loadReviews = useCallback(async () => {
+    const list = await getProductReviews(String(p.id))
+    setReviews(list)
+    setReviewsLoaded(true)
+    if (buyerUser?.id) {
+      const mine = list.find(r => String(r.user_id) === String(buyerUser.id))
+      if (mine) { setMyRating(mine.rating); setMyReviewText(mine.body || "") }
+    }
+  }, [p.id, buyerUser?.id])
+  useEffect(() => { if (detailTab === "reviews" && !reviewsLoaded) loadReviews() }, [detailTab, reviewsLoaded, loadReviews])
+
+  const submitReview = useCallback(async () => {
+    if (!buyerUser?.id || myRating < 1) return
+    setSavingReview(true)
+    const { review } = await addOrUpdateReview(String(p.id), buyerUser.id, buyerUser.username, myRating, myReviewText.trim() || undefined)
+    setSavingReview(false)
+    if (review) { setReviewSaved(true); setTimeout(() => setReviewSaved(false), 1800); loadReviews() }
+  }, [buyerUser, p.id, myRating, myReviewText, loadReviews])
+
+  const avgRating = reviews.length ? +(reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : p.rating
+
   const offers      = useMemo(() => getMerchantOffers(p), [p])
   const activeOffer = selectedOffer ?? offers[0]
   const isHighValue = activeOffer.price >= HIGH_VALUE
   const isOfficial  = p.sellerAccountType === "official"
   const trustTotal  = Math.round(p.trustIndex?.total ?? p.trustScore)
 
-  // ─── دفع حقيقي عبر Pi Network — لا محاكاة ──────────────────────────────────
-  const handleBuyWithPi = useCallback(async () => {
+  // ── نافذة إتمام الطلب (Checkout) — تُجمع فيها الكمية وبيانات الشحن قبل الدفع ──
+  const [showCheckout, setShowCheckout] = useState(false)
+  const [placedOrder, setPlacedOrder]   = useState<DBOrder | null>(null)
+  const [pendingCheckout, setPendingCheckout] = useState<CheckoutData | null>(null)
+
+  // ─── دفع حقيقي عبر Pi Network — لا محاكاة. يستقبل بيانات الطلب من Checkout ──
+  const handleBuyWithPi = useCallback(async (co: CheckoutData) => {
     if (!buyerUser) { setPaymentError("Please sign in to buy"); return }
     setPaying(true); setPaymentError("")
+    const total = +(activeOffer.price * co.quantity).toFixed(4)
 
     const finalize = async (piTxId?: string) => {
       try {
-        await createOrder({
-          user_id:     buyerUser.id!,
-          product_id:  String(p.id),
-          quantity:    1,
-          total_price: activeOffer.price,
-          pi_tx_id:    piTxId,
+        const order = await createOrder({
+          user_id:        buyerUser.id!,
+          product_id:     String(p.id),
+          product_name:   p.name,
+          product_image:  p.image,
+          seller_user_id: p.sellerUserId,
+          seller_name:    p.seller,
+          quantity:       co.quantity,
+          unit_price:     activeOffer.price,
+          total_price:    total,
+          recipient_name:  co.recipient_name,
+          recipient_phone: co.recipient_phone,
+          ship_country:    co.ship_country,
+          ship_city:       co.ship_city,
+          ship_address:    co.ship_address,
+          ship_postal:     co.ship_postal,
+          shipping_address: `${co.recipient_name}, ${co.ship_address}, ${co.ship_city}, ${co.ship_country}${co.ship_postal ? " " + co.ship_postal : ""} — ${co.recipient_phone}`,
+          pi_tx_id:       piTxId,
         })
         await addWalletTransaction({
           user_id:     buyerUser.id!,
           type:        "payment",
-          amount:       activeOffer.price,
-          description: `Purchase: ${p.name}`,
+          amount:       total,
+          description: `Purchase: ${p.name}${co.quantity > 1 ? ` ×${co.quantity}` : ""}`,
           pi_tx_id:    piTxId,
           status:      "completed",
         })
+        if (order) setPlacedOrder(order)
       } catch { /* الطلب قد يفشل في السجل لكن الدفع تم — لا نوقف تجربة المستخدم */ }
       setPaying(false)
+      setShowCheckout(false)
       setDone(true)
     }
 
@@ -584,9 +673,9 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
     try {
       window.Pi!.createPayment(
         {
-          amount: activeOffer.price,
+          amount: total,
           memo: `Dabia purchase: ${p.name}`,
-          metadata: { productId: p.id, productName: p.name, buyerId: buyerUser.id },
+          metadata: { productId: p.id, productName: p.name, buyerId: buyerUser.id, quantity: co.quantity },
         },
         {
           onReadyForServerApproval: async (paymentId: string) => {
@@ -657,14 +746,21 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </span>
           )}
           {p.verified && <BadgeCheck className="h-5 w-5 text-emerald-400" />}
-          <button onClick={() => setShowShareModal(true)} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" title="Share">
+          <button onClick={toggleDLike} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dLiked ? "bg-red-500/10 border-red-500/30" : "hover:bg-secondary"}`} title="Like" aria-label="Like">
+            <Heart className={`h-3.5 w-3.5 ${dLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
+          </button>
+          <button onClick={toggleDSave} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dSaved ? "bg-amber-400/10 border-amber-400/30" : "hover:bg-secondary"}`} title="Save" aria-label="Save">
+            <Bookmark className={`h-3.5 w-3.5 ${dSaved ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+          </button>
+          <button onClick={() => setShowShareModal(true)} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" title="Share" aria-label="Share">
             <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </div>
       </header>
 
       {showShareModal && (
-        <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowShareModal(false)} />
+        <ShareModal url={buildProductShareUrl(String(p.id))} title={`Check out "${p.name}" on Dabia — ${p.price}π`} onClose={() => setShowShareModal(false)}
+          shareToSocial={buyerUser ? { product: { id: String(p.id), name: p.name, price: p.price, image: p.image }, user: buyerUser } : undefined} />
       )}
 
       <div className="flex-1 overflow-y-auto">
@@ -769,34 +865,67 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </div>
           )}
 
-          {/* REVIEWS TAB */}
+          {/* REVIEWS TAB — تقييمات حقيقية من القاعدة */}
           {detailTab === "reviews" && (
             <div className="space-y-3">
               <div className="flex items-center gap-4 rounded-2xl border border-border bg-secondary/30 p-3">
-                <p className="text-4xl font-black text-amber-400">{p.rating}</p>
+                <p className="text-4xl font-black text-amber-400">{avgRating || "—"}</p>
                 <div>
                   <div className="flex gap-0.5">
                     {[1,2,3,4,5].map(i => (
-                      <Star key={i} className={`h-4 w-4 ${i <= Math.floor(p.rating) ? "fill-amber-400 text-amber-400" : "text-border"}`} />
+                      <Star key={i} className={`h-4 w-4 ${i <= Math.floor(avgRating) ? "fill-amber-400 text-amber-400" : "text-border"}`} />
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {p.reviews.filter(r => r.verified).length} purchase-verified reviews
+                    {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                    {reviews.some(r => r.verified) && ` · ${reviews.filter(r => r.verified).length} purchase-verified`}
                   </p>
                 </div>
               </div>
 
-              {p.reviews.length === 0 ? (
+              {/* أضف/عدّل تقييمك — نجوم حقيقية تُحفظ في القاعدة */}
+              {buyerUser ? (
+                <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-3 space-y-2">
+                  <p className="text-[11px] font-bold">Your rating</p>
+                  <div className="flex gap-1">
+                    {[1,2,3,4,5].map(i => (
+                      <button key={i} onClick={() => setMyRating(i)} aria-label={`Rate ${i} star${i>1?"s":""}`} className="active:scale-90 transition-transform">
+                        <Star className={`h-7 w-7 ${i <= myRating ? "fill-amber-400 text-amber-400" : "text-border"}`} />
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={myReviewText}
+                    onChange={e => setMyReviewText(e.target.value)}
+                    maxLength={300}
+                    rows={2}
+                    placeholder="Share your experience (optional)…"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50 resize-none"
+                  />
+                  <button onClick={submitReview} disabled={savingReview || myRating < 1}
+                    className={`w-full rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:opacity-50 ${reviewSaved ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
+                    {savingReview ? "Saving…" : reviewSaved ? "Saved ✓" : "Submit Rating"}
+                  </button>
+                </div>
+              ) : (
+                <p className="rounded-xl border border-border bg-secondary/30 px-3 py-3 text-[11px] text-muted-foreground text-center">
+                  Sign in to rate this product
+                </p>
+              )}
+
+              {!reviewsLoaded ? (
+                <div className="h-16 rounded-xl bg-secondary/40 animate-pulse" />
+              ) : reviews.length === 0 ? (
                 <p className="rounded-xl border border-border bg-secondary/30 px-3 py-5 text-[11px] text-muted-foreground text-center">
-                  No reviews yet — reviews require a confirmed purchase.
+                  No reviews yet — be the first to rate this product.
                 </p>
               ) : (
-                p.reviews.filter(r => r.verified).map(r => (
+                reviews.map(r => (
                   <div key={r.id} className="rounded-xl border border-border bg-secondary/30 p-3 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-semibold">{r.author}</span>
-                        <span className="rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">Verified</span>
+                        <span className="text-[11px] font-semibold">{r.username}</span>
+                        {r.verified && <span className="rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">Verified purchase</span>}
                       </div>
                       <div className="flex gap-0.5">
                         {[1,2,3,4,5].map(i => (
@@ -804,14 +933,37 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                         ))}
                       </div>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">{r.body}</p>
+                    {r.body && <p className="text-[11px] leading-relaxed text-muted-foreground">{r.body}</p>}
                   </div>
                 ))
               )}
             </div>
           )}
+
+          {/* منتجات مشابهة — نفس الفئة */}
+          {similar.length > 0 && (
+            <section className="space-y-2 pt-1">
+              <p className="text-xs font-bold flex items-center gap-2">
+                <LayoutGrid className="h-3.5 w-3.5 text-amber-400" />Similar products
+              </p>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+                {similar.map(sp => (
+                  <button key={`sim-${sp.id}`} onClick={() => setSimilarSelected(sp)}
+                    className="shrink-0 w-28 rounded-2xl border border-border bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                    <div className="h-16 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-2xl">
+                      {sp.image.startsWith("http") ? <img src={sp.image} alt="" className="h-full w-full object-cover" /> : sp.image}
+                    </div>
+                    <p className="text-[10px] font-bold leading-tight line-clamp-2">{sp.name}</p>
+                    <p className="text-[11px] font-black text-amber-400">{fmtPi(sp.price)}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
+
+      {similarSelected && <ProductDetail product={similarSelected} onClose={() => setSimilarSelected(null)} />}
 
       {/* CTA */}
       <div className="border-t border-border p-4 pb-safe shrink-0">
@@ -832,29 +984,156 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </div>
             <button
               disabled={paying}
-              onClick={() => isHighValue ? setShowSecurity(true) : handleBuyWithPi()}
-              className="btn-primary w-full rounded-2xl py-3.5 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
-              {paying
-                ? <><Loader2 className="h-4 w-4 animate-spin" />Processing Payment…</>
-                : isHighValue ? <><Lock className="h-4 w-4" />Buy with Verification</> : <><ShoppingCart className="h-4 w-4" />Buy with Pi</>
-              }
-            </button>
-            <button
-              disabled={payingCard}
-              onClick={handleBuyWithCard}
-              className="w-full rounded-2xl border border-border bg-card py-3 text-[13px] font-bold text-foreground flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-transform">
-              {payingCard ? <><Loader2 className="h-4 w-4 animate-spin" />Redirecting…</> : <><CreditCard className="h-4 w-4" />Pay with Card (Visa/Mastercard)</>}
+              onClick={() => { setPaymentError(""); setShowCheckout(true) }}
+              className="btn-primary w-full rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
+              <ShoppingCart className="h-4 w-4" />Buy Now
             </button>
           </div>
         )}
       </div>
 
+      {/* نافذة إتمام الطلب — كمية + بيانات شحن + ملخص + دفع */}
+      {showCheckout && buyerUser && (
+        <CheckoutSheet
+          product={p} unitPrice={activeOffer.price} user={buyerUser} paying={paying || payingCard} error={paymentError}
+          isHighValue={isHighValue}
+          onClose={() => setShowCheckout(false)}
+          onPayPi={(co) => { setPendingCheckout(co); if (isHighValue) setShowSecurity(true); else handleBuyWithPi(co) }}
+          onPayCard={handleBuyWithCard}
+        />
+      )}
+
       {showSecurity && (
-        <SecurityModal amount={activeOffer.price} onClose={() => setShowSecurity(false)} onComplete={() => { setShowSecurity(false); handleBuyWithPi() }} />
+        <SecurityModal amount={activeOffer.price} onClose={() => setShowSecurity(false)}
+          onComplete={() => { setShowSecurity(false); if (pendingCheckout) handleBuyWithPi(pendingCheckout) }} />
+      )}
+
+      {/* تأكيد الطلب مع رقم التتبّع */}
+      {done && placedOrder && (
+        <OrderPlacedSheet order={placedOrder} onClose={() => { setDone(false); setPlacedOrder(null); onClose() }} />
       )}
     </div>
   )
 })
+
+// ── نافذة إتمام الطلب الاحترافية ─────────────────────────────────────────────
+function CheckoutSheet({ product, unitPrice, user, paying, error, isHighValue, onClose, onPayPi, onPayCard }: {
+  product: Product; unitPrice: number; user: DBUser; paying: boolean; error: string; isHighValue: boolean
+  onClose: () => void; onPayPi: (co: CheckoutData) => void; onPayCard: () => void
+}) {
+  useCloseOnBack(onClose)
+  const maxStock = (product as any).stock ?? 99
+  const [qty, setQty] = useState(1)
+  const [co, setCo] = useState<CheckoutData>({
+    quantity: 1,
+    recipient_name: user.username || "",
+    recipient_phone: (user as any).phone || "",
+    ship_country: user.country || "",
+    ship_city: "", ship_address: "", ship_postal: "",
+  })
+  const [touched, setTouched] = useState(false)
+  const set = (k: keyof CheckoutData) => (e: React.ChangeEvent<HTMLInputElement>) => setCo(c => ({ ...c, [k]: e.target.value }))
+  const total = +(unitPrice * qty).toFixed(4)
+  const valid = co.recipient_name.trim() && co.recipient_phone.trim() && co.ship_country.trim() && co.ship_city.trim() && co.ship_address.trim()
+
+  const submit = (method: "pi" | "card") => {
+    setTouched(true)
+    if (!valid) return
+    const data = { ...co, quantity: qty }
+    if (method === "pi") onPayPi(data)
+    else onPayCard()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 max-h-[92vh] overflow-y-auto space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-black">Checkout</p>
+          <button onClick={onClose}><X className="h-4 w-4" /></button>
+        </div>
+
+        {/* ملخص المنتج + الكمية */}
+        <div className="flex items-center gap-3 rounded-2xl border border-border bg-secondary/30 p-3">
+          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-2xl">
+            {product.image.startsWith("http") ? <img src={product.image} alt="" className="h-full w-full object-cover" /> : product.image}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-bold">{product.name}</p>
+            <p className="text-[12px] font-black text-amber-400">{fmtPi(unitPrice)}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setQty(q => Math.max(1, q - 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-lg font-bold active:scale-90">−</button>
+            <span className="w-6 text-center text-sm font-black">{qty}</span>
+            <button onClick={() => setQty(q => Math.min(maxStock, q + 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-lg font-bold active:scale-90">+</button>
+          </div>
+        </div>
+
+        {/* بيانات الشحن */}
+        <div className="space-y-2">
+          <p className="text-[12px] font-bold flex items-center gap-1.5"><Truck className="h-3.5 w-3.5 text-amber-400" />Shipping details</p>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={co.recipient_name} onChange={set("recipient_name")} placeholder="Full name *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.recipient_phone} onChange={set("recipient_phone")} placeholder="Phone *" inputMode="tel" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_country} onChange={set("ship_country")} placeholder="Country *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_city} onChange={set("ship_city")} placeholder="City *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_address} onChange={set("ship_address")} placeholder="Street address *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.ship_postal} onChange={set("ship_postal")} placeholder="Postal code (optional)" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+          </div>
+          {touched && !valid && <p className="text-[11px] text-red-400">Please fill all required (*) fields</p>}
+        </div>
+
+        {/* ملخص السعر */}
+        <div className="rounded-2xl border border-border bg-secondary/20 p-3 space-y-1 text-[12px]">
+          <div className="flex justify-between text-muted-foreground"><span>{fmtPi(unitPrice)} × {qty}</span><span>{fmtPi(total)}</span></div>
+          <div className="flex justify-between text-muted-foreground"><span>Shipping</span><span>Arranged with seller</span></div>
+          <div className="flex justify-between pt-1 border-t border-border text-sm font-black"><span>Total</span><span className="text-amber-400">{fmtPi(total)}</span></div>
+        </div>
+
+        {/* حماية المشتري — ضمان (Escrow) */}
+        <div className="flex items-start gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-2.5">
+          <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+          <p className="text-[10px] leading-relaxed text-muted-foreground"><span className="font-bold text-emerald-400">Buyer protection:</span> your payment is held securely and only released to the seller after you confirm you received the order. Track it end-to-end with your order number.</p>
+        </div>
+
+        {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[11px] text-red-400">{error}</p>}
+
+        <button onClick={() => submit("pi")} disabled={paying}
+          className="btn-primary w-full rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
+          {paying ? <><Loader2 className="h-4 w-4 animate-spin" />Processing…</> : isHighValue ? <><Lock className="h-4 w-4" />Verify &amp; Pay {fmtPi(total)}</> : <><ShoppingCart className="h-4 w-4" />Place Order · Pay {fmtPi(total)}</>}
+        </button>
+        <button onClick={() => submit("card")} disabled={paying}
+          className="w-full rounded-2xl border border-border bg-card py-2.5 text-[13px] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+          <CreditCard className="h-4 w-4" />Pay with Card
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── تأكيد الطلب مع رقم التتبّع ───────────────────────────────────────────────
+function OrderPlacedSheet({ order, onClose }: { order: DBOrder; onClose: () => void }) {
+  useCloseOnBack(onClose)
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="fixed inset-0 z-[68] flex items-center justify-center bg-black/70 backdrop-blur-sm p-6" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-6 text-center space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500"><CheckCheck className="h-8 w-8 text-white" /></div>
+        <div>
+          <p className="text-lg font-black">Order placed!</p>
+          <p className="text-[12px] text-muted-foreground mt-1">Your payment is confirmed and the seller has been notified.</p>
+        </div>
+        <div className="rounded-2xl border border-border bg-secondary/30 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Order number</p>
+          <p className="text-lg font-black tracking-wide text-amber-400">{order.order_number}</p>
+          <button onClick={() => { navigator.clipboard?.writeText(order.order_number || ""); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+            className="mt-1 text-[11px] font-semibold text-muted-foreground">{copied ? "Copied ✓" : "Tap to copy"}</button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Track it anytime from <span className="font-bold text-foreground">Profile → My Orders</span>.</p>
+        <button onClick={onClose} className="w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black">Done</button>
+      </div>
+    </div>
+  )
+}
 
 // ─── Notification panel ───────────────────────────────────────────────────────
 const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealNotif[]; onClose: () => void }) {
@@ -897,16 +1176,60 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
 
 // ─── Search overlay ───────────────────────────────────────────────────────────
 const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => void }) {
+  useCloseOnBack(onClose)
   const [query, setQuery] = useState("")
   const { data } = useTrends("All", "smart")
   const { user: searchUser } = useUserAuth()
   const [selected, setSelected] = useState<Product | null>(null)
+
+  // ── بحث بالصوت — Web Speech API، يظهر الزر فقط إن كان المتصفح يدعمه فعلياً ──
+  const [listening, setListening] = useState(false)
+  const speechSupported = typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+  const recognitionRef = useRef<any>(null)
+  const startVoiceSearch = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) return
+    try {
+      const rec = new SR()
+      recognitionRef.current = rec
+      rec.lang = document.documentElement.lang && document.documentElement.lang !== "en" ? document.documentElement.lang : "en-US"
+      rec.interimResults = true
+      rec.onresult = (e: any) => {
+        const transcript = Array.from(e.results).map((r: any) => r[0].transcript).join("")
+        setQuery(transcript)
+      }
+      rec.onend = () => setListening(false)
+      rec.onerror = () => setListening(false)
+      setListening(true)
+      rec.start()
+    } catch { setListening(false) }
+  }, [])
+  const stopVoiceSearch = useCallback(() => { try { recognitionRef.current?.stop() } catch {}; setListening(false) }, [])
+
+  // ── بحث بالصور — بصمة إدراكية محلية تقارن صورتك بصور المنتجات ────────────
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const [imageResults, setImageResults] = useState<Product[] | null>(null)
+  const [imageSearching, setImageSearching] = useState(false)
+  const handleImageSearch = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = "" // يسمح بإعادة اختيار نفس الملف
+    if (!file || !data?.ranked) return
+    setImageSearching(true); setQuery(""); setImageResults(null)
+    try {
+      const ranked = await rankByImageSimilarity(file, data.ranked)
+      setImageResults(ranked)
+    } finally { setImageSearching(false) }
+  }, [data])
 
   const results = useMemo(() => {
     if (!query.trim() || !data?.ranked) return []
     const q = query.toLowerCase()
     return data.ranked.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q))
   }, [query, data])
+
+  // أعلى المنتجات رواجاً فعلياً (المعروضة أصلاً بترتيب محرّك التراند الحقيقي)
+  const trendingTerms = useMemo(() => (data?.ranked ?? []).slice(0, 4).map(p => p.name), [data])
+  const categories = useMemo(() => Array.from(new Set((data?.ranked ?? []).map(p => p.category).filter(Boolean))).slice(0, 8), [data])
 
   if (selected) return <ProductDetail product={selected} onClose={() => setSelected(null)} />
 
@@ -915,35 +1238,78 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
       <div className="flex items-center gap-3 border-b border-border px-4 py-3 pt-safe">
         <div className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 focus-within:border-amber-400/50 transition-colors">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search products, brands, categories…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+          <input autoFocus value={query} onChange={e => { setQuery(e.target.value); setImageResults(null) }} placeholder="Search products, brands, categories…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
           {query && <button onClick={() => setQuery("")} aria-label="Clear"><X className="h-4 w-4 text-muted-foreground" /></button>}
+          {speechSupported && (
+            <button onClick={listening ? stopVoiceSearch : startVoiceSearch} aria-label="Voice search"
+              className={`shrink-0 ${listening ? "text-red-400 animate-pulse" : "text-muted-foreground"}`}>
+              <Mic className="h-4 w-4" />
+            </button>
+          )}
+          <button onClick={() => imageInputRef.current?.click()} aria-label="Search by image" className="shrink-0 text-muted-foreground">
+            <ImageIcon className="h-4 w-4" />
+          </button>
+          <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSearch} />
         </div>
         <button onClick={onClose} className="shrink-0 text-sm font-semibold text-muted-foreground hover:text-foreground">Cancel</button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {!query && (
+        {listening && (
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/5 px-3 py-2.5 text-[12px] text-red-400">
+            <Mic className="h-4 w-4 animate-pulse" />Listening… speak now
+          </div>
+        )}
+        {imageSearching && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+            <p className="text-sm">Matching your image against listings…</p>
+          </div>
+        )}
+        {imageResults !== null && !imageSearching && (
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[11px] text-muted-foreground">{imageResults.length} visually similar result{imageResults.length === 1 ? "" : "s"}</p>
+              <button onClick={() => setImageResults(null)} className="text-[11px] font-semibold text-amber-400">Clear image search</button>
+            </div>
+            {imageResults.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+                <ImageIcon className="h-10 w-10 opacity-30" />
+                <p className="text-sm">No visually similar products found</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+                {imageResults.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={searchUser} />)}
+              </div>
+            )}
+          </div>
+        )}
+        {!query && imageResults === null && !imageSearching && (
           <div className="space-y-4">
-            <div>
-              <p className="mb-2 text-xs font-bold text-muted-foreground">Trending searches</p>
-              <div className="space-y-1.5">
-                {["Smart Watch", "Wireless Headphones", "Pi Artisan Leather", "Solar Bag"].map(term => (
-                  <button key={term} onClick={() => setQuery(term)} className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:bg-secondary/40 transition-colors">
-                    <TrendingUp className="h-4 w-4 shrink-0 text-amber-400" />
-                    <span className="flex-1 text-sm">{term}</span>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                ))}
+            {trendingTerms.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-bold text-muted-foreground">Trending now</p>
+                <div className="space-y-1.5">
+                  {trendingTerms.map(term => (
+                    <button key={term} onClick={() => setQuery(term)} className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:bg-secondary/40 transition-colors">
+                      <TrendingUp className="h-4 w-4 shrink-0 text-amber-400" />
+                      <span className="flex-1 text-sm truncate">{term}</span>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-bold text-muted-foreground">Categories</p>
-              <div className="flex flex-wrap gap-2">
-                {["Electronics", "Fashion", "Accessories", "Home", "Health"].map(cat => (
-                  <button key={cat} onClick={() => setQuery(cat)} className="rounded-xl border border-border bg-secondary/40 px-3 py-1.5 text-xs font-medium hover:border-amber-400/30 transition-colors">{cat}</button>
-                ))}
+            )}
+            {categories.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-bold text-muted-foreground">Categories</p>
+                <div className="flex flex-wrap gap-2">
+                  {categories.map(cat => (
+                    <button key={cat} onClick={() => setQuery(cat)} className="rounded-xl border border-border bg-secondary/40 px-3 py-1.5 text-xs font-medium hover:border-amber-400/30 transition-colors">{cat}</button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
         {query && results.length === 0 && (
@@ -1048,14 +1414,37 @@ const AIAssistant = memo(function AIAssistant() {
 // مستقل تماماً عن HomeTab/DiscoverTab — لا يغيّر تصميمهما إطلاقاً
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Share Modal — مشاركة حقيقية كاملة لكل وسائل التواصل + نسخ رابط دقيق للمنتج ──
+// رابط مشاركة المنتج: يستخدم معامل استعلام على الجذر (/?p=ID) بدل مسار ديناميكي
+// (/p/ID). السبب: استضافة التطبيق قد تُرجع الصفحة الرئيسية لأي مسار غير معروف،
+// فرابط المسار الديناميكي كان يفتح الرئيسية بدل المنتج. الجذر يُحمَّل دائماً
+// ويقرأ المعامل، فيفتح المنتج المطلوب بدقّة في كل الحالات. نستخدم origin الفعلي
+// حتى يعمل الرابط مهما كان النطاق (لا نطاق مكتوب بالكود).
 function buildProductShareUrl(productId: string): string {
-  return `https://dabiaacdfb2093.pinet.com/p/${productId}`
+  const origin = typeof window !== "undefined" && window.location?.origin
+    ? window.location.origin
+    : "https://dabiaacdfb2093.pinet.com"
+  return `${origin}/?p=${productId}`
 }
 
-function ShareModal({ url, title, onClose, onShared }: { url: string; title: string; onClose: () => void; onShared?: () => void }) {
+function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
+  url: string; title: string; onClose: () => void; onShared?: () => void
+  // إن مُرّرت بيانات منتج + مستخدم مسجّل، يظهر خيار "النشر في تبويب Dabia الاجتماعي"
+  shareToSocial?: { product: { id: string; name: string; price: number; image?: string }; user: DBUser }
+}) {
+  useCloseOnBack(onClose)
   const [copied, setCopied] = useState(false)
+  const [postedToSocial, setPostedToSocial] = useState(false)
+  const [postingSocial, setPostingSocial]   = useState(false)
   const encodedUrl = encodeURIComponent(url)
   const encodedText = encodeURIComponent(title)
+
+  const postToSocial = async () => {
+    if (!shareToSocial || postingSocial || postedToSocial) return
+    setPostingSocial(true)
+    const post = await sharePostFromProduct(shareToSocial.user.id!, shareToSocial.user.username, shareToSocial.product)
+    setPostingSocial(false)
+    if (post) { setPostedToSocial(true); onShared?.() }
+  }
 
   const channels = [
     { name: "WhatsApp", color: "bg-emerald-500", icon: "💬", href: `https://wa.me/?text=${encodedText}%20${encodedUrl}` },
@@ -1074,13 +1463,35 @@ function ShareModal({ url, title, onClose, onShared }: { url: string; title: str
     if (navigator.share) { try { await navigator.share({ title, url }); onShared?.() } catch {} }
   }
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+  // تُعرض عبر Portal في جسم الصفحة: عرضها داخل بطاقة عليها transform/overflow
+  // كان يجعل fixed يتموضع داخل البطاقة ويُقص، فتفشل المشاركة من خارج صفحة المنتج
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={e => { e.stopPropagation(); onClose() }}>
       <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8" onClick={e => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <p className="text-sm font-bold">Share</p>
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
+
+        {/* داخل Dabia — النشر في التبويب الاجتماعي */}
+        {shareToSocial && (
+          <div className="mb-4">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Inside Dabia</p>
+            <button onClick={postToSocial} disabled={postingSocial || postedToSocial}
+              className={`w-full flex items-center gap-3 rounded-2xl border p-3 transition-all active:scale-[0.99] ${postedToSocial ? "border-emerald-400/30 bg-emerald-400/10" : "border-amber-400/30 bg-amber-400/10"}`}>
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${postedToSocial ? "bg-emerald-400" : "bg-amber-400"}`}>
+                {postingSocial ? <Loader2 className="h-5 w-5 text-black animate-spin" /> : postedToSocial ? <CheckCheck className="h-5 w-5 text-black" /> : <Users2 className="h-5 w-5 text-black" />}
+              </div>
+              <div className="text-left flex-1">
+                <p className="text-[12px] font-bold">{postedToSocial ? "Posted to Dabia Social ✓" : "Post to Dabia Social"}</p>
+                <p className="text-[10px] text-muted-foreground">{postedToSocial ? "Your followers can now like, comment & order" : "Share this listing to the social feed"}</p>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* خارج Dabia — كل وسائل التواصل */}
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Share outside</p>
         <div className="grid grid-cols-4 gap-3 mb-4">
           {channels.map(ch => (
             <button key={ch.name} onClick={() => openChannel(ch.href)} className="flex flex-col items-center gap-1.5">
@@ -1102,7 +1513,8 @@ function ShareModal({ url, title, onClose, onShared }: { url: string; title: str
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -1185,14 +1597,11 @@ function SocialPostCard({ product, user }: { product: Product; user: DBUser | nu
           <Share2 className="h-5 w-5 text-muted-foreground" />
           <span className="text-[12px] font-semibold">{shareCount}</span>
         </button>
-        <button onClick={() => setShowShare(true)} className="ml-auto flex items-center gap-1.5 rounded-xl border border-border px-2.5 py-1.5 transition-colors hover:bg-secondary">
-          <LinkIcon className="h-4 w-4 text-muted-foreground" />
-          <span className="text-[11px] font-semibold">Share / Copy Link</span>
-        </button>
       </div>
 
       {showShare && (
-        <ShareModal url={shareUrl} title={`Check out "${product.name}" on Dabia — ${product.price}π`} onClose={() => setShowShare(false)} onShared={onSharedTracked} />
+        <ShareModal url={shareUrl} title={`Check out "${product.name}" on Dabia — ${product.price}π`} onClose={() => setShowShare(false)} onShared={onSharedTracked}
+          shareToSocial={user ? { product: { id: String(product.id), name: product.name, price: product.price, image: product.image }, user } : undefined} />
       )}
       {/* Caption */}
       <div className="px-3 pb-3 space-y-0.5">
@@ -1396,6 +1805,7 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
 }
 
 function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; onCreated: () => void; user: DBUser }) {
+  useCloseOnBack(onClose)
   const [mode, setMode] = useState<"text" | "poll">("text")
   const [text, setText] = useState("")
   const [question, setQuestion] = useState("")
@@ -1455,6 +1865,24 @@ function SocialTab() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
 
+  // المنتجات الرائجة الآن تظهر تلقائياً أعلى الفيد للتفاعل (إعجاب/تعليق/طلب) —
+  // محسوبة لحظياً من إشارات حقيقية (إعجابات/تعليقات/مشاركات/طلبات) عبر محرّك
+  // التراند في القاعدة، وتتحدّث تلقائياً كل ٣٠ ثانية. لا تدخّل يدوي.
+  const { data: trendingData } = useSWR(
+    "dabia-social-trending",
+    async () => (await getTrendingProducts(4)).filter(t => t.trend_score > 0).map(dbProductToProduct),
+    { refreshInterval: 30000 }
+  )
+  const trending = trendingData ?? []
+
+  // بثوث حية الآن — تظهر كبانر أعلى الاجتماعي وتفتح غرفة البث
+  const { data: liveData } = useSWR("dabia-social-live", () => getLiveStreams(), { refreshInterval: 20000 })
+  const liveStreams = liveData ?? []
+  const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
+
+  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
+
+
   const load = useCallback(() => {
     setLoading(true)
     getFeedPosts().then(setPosts).finally(() => setLoading(false))
@@ -1478,9 +1906,39 @@ function SocialTab() {
         )}
       </div>
 
+      {/* بث مباشر الآن — بانر أعلى الفيد */}
+      {liveStreams.length > 0 && (
+        <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4">
+          {liveStreams.map(ls => (
+            <button key={ls.id} onClick={() => setActiveStream(ls)}
+              className="shrink-0 flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/5 px-3 py-2 active:scale-95 transition-transform">
+              <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-red-600">
+                <Radio className="h-4 w-4 text-white" />
+                <span className="absolute -inset-0.5 rounded-full border-2 border-red-500 animate-ping opacity-60" />
+              </span>
+              <div className="text-left">
+                <p className="text-[11px] font-black text-red-500 leading-none">LIVE</p>
+                <p className="text-[11px] font-bold truncate max-w-[120px]">{ls.host_username}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* رائج الآن — يظهر تلقائياً من محرّك التراند الحقيقي */}
+      {trending.length > 0 && (
+        <section className="space-y-3">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <TrendingUp className="h-3.5 w-3.5 text-amber-400" />Trending now
+            <span className="text-[9px] font-normal text-muted-foreground">auto-ranked from real activity</span>
+          </p>
+          {trending.map(tp => <SocialPostCard key={`trend-${tp.id}`} product={tp} user={user} />)}
+        </section>
+      )}
+
       {loading ? (
         <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-40 rounded-2xl bg-secondary/40 animate-pulse" />)}</div>
-      ) : posts.length === 0 ? (
+      ) : posts.length === 0 && trending.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
           <Users2 className="h-10 w-10 text-muted-foreground/30" />
           <p className="text-[12px] text-muted-foreground">No posts yet — be the first to share something</p>
@@ -1496,6 +1954,20 @@ function SocialTab() {
   )
 }
 
+// عدّاد تنازلي حيّ لعرض محدود — يتحدّث كل ثانية
+function DealCountdown({ endsAt }: { endsAt: string }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => tick(x => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const ms = new Date(endsAt).getTime() - Date.now()
+  if (ms <= 0) return null
+  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000), sec = Math.floor((ms % 60000) / 1000)
+  const label = h >= 48 ? `${Math.floor(h / 24)}d ${h % 24}h` : h > 0 ? `${h}h ${m}m` : `${m}m ${sec}s`
+  return <span className="tabular-nums">{label}</span>
+}
+
 function HomeTab() {
   const [category, setCategory] = useState("All")
   const [sort, setSort]         = useState<SortKey>("smart")
@@ -1503,6 +1975,12 @@ function HomeTab() {
   const [selected, setSelected] = useState<Product | null>(null)
   const { data, isLoading }     = useTrends(category, sort)
   const { user: homeUser }      = useUserAuth()
+
+  // العروض النشطة (تخفيض أو عرض محدود بوقت) — يضبطها التجار من إدارة متاجرهم
+  const { data: dealsData } = useSWR<Product[]>("dabia-active-deals",
+    async () => (await getActiveDeals(12)).map(dbProductToProduct),
+    { refreshInterval: 60000 })
+  const deals = dealsData ?? []
 
   const categories  = ["All", "Electronics", "Fashion", "Accessories", "Home", "Health", "Art"]
   const sortOptions: { key: SortKey; label: string }[] = [
@@ -1535,6 +2013,41 @@ function HomeTab() {
           </button>
         ))}
       </div>
+
+      {/* Deals & Offers — تخفيضات وعروض محدودة يضبطها التجار، تظهر تلقائياً */}
+      {deals.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <Tag className="h-3.5 w-3.5 text-emerald-400" />Deals &amp; Offers
+            <span className="text-[9px] font-normal text-muted-foreground">live from sellers</span>
+          </p>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+            {deals.map(d => (
+              <button key={`deal-${d.id}`} onClick={() => setSelected(d)}
+                className="shrink-0 w-32 rounded-2xl border border-emerald-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                  {d.image.startsWith("http") ? <img src={d.image} alt="" className="h-full w-full object-cover" /> : d.image}
+                  {d.originalPrice && (
+                    <span className="absolute top-1 left-1 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-black text-white">
+                      -{Math.round((1 - d.price / d.originalPrice) * 100)}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] font-bold leading-tight line-clamp-2">{d.name}</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-[12px] font-black text-amber-400">{fmtPi(d.price)}</span>
+                  {d.originalPrice && <span className="text-[9px] text-muted-foreground line-through">{fmtPi(d.originalPrice)}</span>}
+                </div>
+                {d.dealEndsAt && (
+                  <p className="flex items-center gap-1 text-[9px] font-bold text-red-400">
+                    <Clock className="h-2.5 w-2.5" />{d.dealLabel || "Limited"} · <DealCountdown endsAt={d.dealEndsAt} />
+                  </p>
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Controls row */}
       <div className="flex items-center gap-2">
@@ -1581,13 +2094,6 @@ function DiscoverTab() {
   const [selected, setSelected] = useState<Product | null>(null)
   const { user } = useUserAuth()
   const { data: trendsData, isLoading } = useTrends("All", "smart")
-  const { data: insightsData } = useInsights()
-  const insights = insightsData?.insights ?? []
-
-  const iconMap: Record<string, React.ReactNode> = {
-    demand_spike: <TrendingUp className="h-4 w-4 text-red-400" />, price_alert: <Tag className="h-4 w-4 text-emerald-400" />,
-    market_trend: <Activity className="h-4 w-4 text-blue-400" />, recommendation: <Lightbulb className="h-4 w-4 text-amber-400" />,
-  }
 
   if (selected) return <ProductDetail product={selected} onClose={() => setSelected(null)} />
 
@@ -1597,45 +2103,6 @@ function DiscoverTab() {
         <h1 className="text-lg font-black">Discover</h1>
         <p className="text-[12px] text-muted-foreground mt-0.5">Browse listings across Dabia</p>
       </div>
-
-      {/* Market insights */}
-      {insights.length > 0 && (
-        <section className="space-y-2">
-          <p className="text-xs font-bold flex items-center gap-2"><Lightbulb className="h-3.5 w-3.5 text-amber-400" />Sample Tips <span className="text-[9px] font-normal text-muted-foreground">(demo content)</span></p>
-          {insights.map((ins, i) => (
-            <div key={i} className="rounded-2xl border border-border bg-card p-3 flex items-start gap-3">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary">
-                {iconMap[ins.type] ?? <Sparkles className="h-4 w-4 text-amber-400" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-[12px] font-bold leading-tight">{ins.title}</p>
-                  <span className={`shrink-0 text-[10px] font-bold ${ins.confidence >= 0.9 ? "text-emerald-400" : "text-amber-400"}`}>{fmtPct(ins.confidence)}</span>
-                </div>
-                <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{ins.body}</p>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {/* Official brands */}
-      <section className="space-y-2">
-        <p className="text-xs font-bold flex items-center gap-2"><Building className="h-3.5 w-3.5 text-blue-400" />Official Brands <span className="ml-auto text-[10px] font-normal text-muted-foreground">Manufacturer-verified</span></p>
-        <div className="rounded-2xl border border-blue-400/20 bg-blue-400/5 p-4 space-y-3">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">Official Brand accounts are dedicated storefronts for verified manufacturers, reviewed manually by the Dabia team.</p>
-          <div className="grid grid-cols-3 gap-2">
-            {[{ name: "PiTech Corp", category: "Electronics" }, { name: "ArtisanPi", category: "Fashion" }, { name: "Pi Solar", category: "Home" }].map(b => (
-              <div key={b.name} className="flex flex-col items-center gap-1.5 rounded-xl border border-blue-400/20 bg-background/60 p-2.5 text-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/15"><Building className="h-4 w-4 text-blue-400" /></div>
-                <p className="text-[10px] font-bold leading-tight">{b.name}</p>
-                <p className="text-[9px] text-muted-foreground">{b.category}</p>
-                <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[8px] font-bold text-blue-400">Official</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* Top trending products */}
       <section className="space-y-2">
@@ -1831,24 +2298,84 @@ function SpaceTab() {
   const [auctions, setAuctions] = useState<DBAuction[]>([])
   const [deals, setDeals] = useState<DBGroupDeal[]>([])
   const [announcements, setAnnouncements] = useState<DBPost[]>([])
+  const [liveStreams, setLiveStreams] = useState<DBLiveStream[]>([])
+  const [upcoming, setUpcoming] = useState<DBLiveStream[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateAuction, setShowCreateAuction] = useState(false)
+  const [showCreateStream, setShowCreateStream] = useState(false)
+  const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
   const isMerchant = user && ["merchant", "company", "factory", "agent", "service_provider", "partner"].includes(user.role || "")
 
   const load = useCallback(() => {
     setLoading(true)
-    Promise.all([getLiveAuctions(), getOpenGroupDeals(), getFeedPosts(100)])
-      .then(([a, d, posts]) => { setAuctions(a); setDeals(d); setAnnouncements(posts.filter(p => p.type === "announcement")) })
+    Promise.all([getLiveAuctions(), getOpenGroupDeals(), getFeedPosts(100), getLiveStreams(), getUpcomingStreams()])
+      .then(([a, d, posts, live, up]) => { setAuctions(a); setDeals(d); setAnnouncements(posts.filter(p => p.type === "announcement")); setLiveStreams(live); setUpcoming(up) })
       .finally(() => setLoading(false))
   }, [])
   useEffect(() => { load() }, [load])
+  // تحديث دوري للبثوث الحية (تظهر فور بدء تاجر بثاً)
+  useEffect(() => { const t = setInterval(() => { getLiveStreams().then(setLiveStreams); getUpcomingStreams().then(setUpcoming) }, 20000); return () => clearInterval(t) }, [])
+
+  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => { setActiveStream(null); load() }} />
 
   return (
     <div className="space-y-6 pb-6">
       <div>
         <h1 className="text-lg font-black">Space</h1>
-        <p className="text-[12px] text-muted-foreground mt-0.5">Real auctions, group deals & announcements</p>
+        <p className="text-[12px] text-muted-foreground mt-0.5">Live streams, auctions, group deals & announcements</p>
       </div>
+
+      {/* Live streaming — بث مباشر للتجار */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-bold flex items-center gap-2 flex-1">
+            <Radio className="h-3.5 w-3.5 text-red-500 animate-pulse" />Live Now
+          </p>
+          {isMerchant && (
+            <button onClick={() => setShowCreateStream(true)} className="flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white">
+              <Video className="h-3 w-3" />Go Live
+            </button>
+          )}
+        </div>
+        {loading ? <SkeletonCard /> : liveStreams.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground text-center py-4">No live streams right now</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {liveStreams.map(ls => (
+              <button key={ls.id} onClick={() => setActiveStream(ls)} className="rounded-2xl border border-red-500/30 bg-card overflow-hidden text-left active:scale-95 transition-transform">
+                <div className="relative h-24 bg-gradient-to-br from-red-500/20 to-amber-500/10 flex items-center justify-center">
+                  {ls.cover_image?.startsWith("http") ? <img src={ls.cover_image} alt="" className="h-full w-full object-cover" /> : <Radio className="h-8 w-8 text-red-500/50" />}
+                  <span className="absolute top-1.5 left-1.5 flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-black text-white"><Radio className="h-2.5 w-2.5" />LIVE</span>
+                  <span className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-bold text-white"><Users className="h-2.5 w-2.5" />{ls.viewer_count ?? 0}</span>
+                </div>
+                <div className="p-2">
+                  <p className="truncate text-[12px] font-bold">{ls.title}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">{ls.host_username}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* بثوث مجدولة قادمة — إعلان مسبق */}
+        {upcoming.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5"><CalendarClock className="h-3 w-3" />Upcoming</p>
+            {upcoming.map(u => (
+              <div key={u.id} className="flex items-center gap-2 rounded-xl border border-border bg-card p-2.5">
+                <CalendarClock className="h-4 w-4 text-amber-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12px] font-bold">{u.title}</p>
+                  <p className="text-[10px] text-muted-foreground">{u.host_username} · {u.scheduled_at ? new Date(u.scheduled_at).toLocaleString() : ""}</p>
+                </div>
+                {user && String(user.id) === String(u.host_user_id) && (
+                  <button onClick={() => startStream(String(u.id)).then(r => r && setActiveStream(r))} className="rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-bold text-white shrink-0">Start now</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Announcements — إعلانات رسمية حقيقية من المتاجر/الشركات */}
       {announcements.length > 0 && (
@@ -1896,6 +2423,69 @@ function SpaceTab() {
       {showCreateAuction && user && (
         <CreateAuctionModal onClose={() => setShowCreateAuction(false)} onCreated={load} user={user} />
       )}
+      {showCreateStream && user && (
+        <CreateStreamModal onClose={() => setShowCreateStream(false)} user={user}
+          onGoLive={(s) => { setShowCreateStream(false); setActiveStream(s) }}
+          onScheduled={() => { setShowCreateStream(false); load() }} />
+      )}
+    </div>
+  )
+}
+
+// ── إنشاء بث: بدء فوري أو جدولة مع إعلان مسبق ──────────────────────────────
+function CreateStreamModal({ onClose, user, onGoLive, onScheduled }:
+  { onClose: () => void; user: DBUser; onGoLive: (s: DBLiveStream) => void; onScheduled: () => void }) {
+  useCloseOnBack(onClose)
+  const [title, setTitle] = useState("")
+  const [desc, setDesc] = useState("")
+  const [mode, setMode] = useState<"now" | "schedule">("now")
+  const [scheduledAt, setScheduledAt] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+
+  const submit = async () => {
+    if (!title.trim()) { setError("Add a title for your stream"); return }
+    if (mode === "schedule" && !scheduledAt) { setError("Pick a date & time"); return }
+    setBusy(true); setError("")
+    const s = await createStream({
+      host_user_id: user.id!, host_username: user.username, title: title.trim(),
+      description: desc.trim() || null,
+      status: mode === "now" ? "live" : "scheduled",
+      scheduled_at: mode === "schedule" ? new Date(scheduledAt).toISOString() : null,
+      started_at: mode === "now" ? new Date().toISOString() : null,
+    })
+    setBusy(false)
+    if (!s) { setError("Could not create the stream"); return }
+    // إعلان مسبق تلقائي في الفيد الاجتماعي عند الجدولة
+    if (mode === "schedule") { try { await createAnnouncement(user.id!, user.username, `🔴 Going live soon: "${title.trim()}" — ${new Date(scheduledAt).toLocaleString()}`) } catch {} ; onScheduled() }
+    else onGoLive(s)
+  }
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold flex items-center gap-2"><Video className="h-4 w-4 text-red-500" />Start a Live Stream</p>
+          <button onClick={onClose}><X className="h-4 w-4" /></button>
+        </div>
+        {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{error}</p>}
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Stream title (e.g. New arrivals 🔥)" maxLength={80}
+          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Description (optional)" rows={2} maxLength={200}
+          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50 resize-none" />
+        <div className="flex gap-2">
+          <button onClick={() => setMode("now")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "now" ? "bg-red-600 text-white" : "border border-border text-muted-foreground"}`}>Go live now</button>
+          <button onClick={() => setMode("schedule")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "schedule" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Schedule</button>
+        </div>
+        {mode === "schedule" && (
+          <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+        )}
+        <button onClick={submit} disabled={busy}
+          className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black active:scale-[0.99] disabled:opacity-50">
+          {busy ? "Please wait…" : mode === "now" ? "Go Live Now" : "Schedule & Announce"}
+        </button>
+      </div>
     </div>
   )
 }
@@ -2505,13 +3095,21 @@ export default function DabiaApp() {
   const notifs   = alertsData?.notifications ?? []
   const unread   = notifs.filter(n => !n.read).length
 
-  // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر (/p/[id])
+  // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
+  // مصدران: (1) معامل الاستعلام على الجذر /?p=ID (الرابط الجديد الأكثر متانة)،
+  // (2) sessionStorage الذي يضعه مسار /p/[id] القديم (توافق خلفي للروابط القديمة).
   const [deepLinkProduct, setDeepLinkProduct] = useState<Product | null>(null)
   useEffect(() => {
     try {
-      const pendingId = sessionStorage.getItem("dabia_open_product_id")
+      const queryId = new URLSearchParams(window.location.search).get("p")
+      const pendingId = queryId || sessionStorage.getItem("dabia_open_product_id")
       if (!pendingId) return
       sessionStorage.removeItem("dabia_open_product_id")
+      // إزالة المعامل من الرابط بعد قراءته حتى لا يُعاد فتح المنتج عند التنقّل
+      if (queryId) {
+        const clean = window.location.pathname + window.location.hash
+        window.history.replaceState(null, "", clean || "/")
+      }
       getProductById(pendingId).then(p => { if (p) setDeepLinkProduct(dbProductToProduct(p)) })
     } catch {}
   }, [])

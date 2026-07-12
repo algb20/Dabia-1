@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getAdminClient } from "@/lib/dabia/db/admin"
 
 // تحقق تلقائي حقيقي من وجود الشركة/المتجر على الإنترنت — يبحث فعلياً عبر
 // Serper.dev (واجهة بحث Google) بدل أي محاكاة. يحتاج متغيّر بيئة SERPER_API_KEY
@@ -15,7 +16,7 @@ interface SerperResult {
 
 export async function POST(req: NextRequest) {
   try {
-    const { storeName, websiteUrl } = await req.json()
+    const { storeName, websiteUrl, userId } = await req.json()
     if (!storeName || typeof storeName !== "string") {
       return NextResponse.json({ verified: false, confidence: "unavailable", detail: "Missing store name" }, { status: 400 })
     }
@@ -59,7 +60,17 @@ export async function POST(req: NextRequest) {
     )
 
     if (domainMatch) {
-      return NextResponse.json({ verified: true, confidence: "high", detail: "Website found in search results for this business name" })
+      // القرار والتفعيل يتمّان على الخادم فقط (service_role) — لا يثق التطبيق
+      // بادعاء العميل. عند ثقة عالية نفعّل الحساب مباشرة في القاعدة.
+      let activated = false
+      if (userId) {
+        const admin = getAdminClient()
+        if (admin) {
+          const { error } = await admin.rpc("activate_verified_business", { p_user_id: Number(userId) })
+          activated = !error
+        }
+      }
+      return NextResponse.json({ verified: true, confidence: "high", activated, detail: "Website found in search results for this business name" })
     }
     if (nameAppearsOnline) {
       return NextResponse.json({ verified: true, confidence: "medium", detail: "Business name found in public search results" })
