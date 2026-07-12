@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, updatePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -17,7 +17,7 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -1626,12 +1626,7 @@ function SocialPostCard({ product, user }: { product: Product; user: DBUser | nu
             {comments.length === 0 ? (
               <p className="text-[11px] text-muted-foreground text-center py-2">No comments yet — be the first!</p>
             ) : comments.map((c, i) => (
-              <div key={c.id ?? i} className="flex items-start gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-bold">{c.username[0]?.toUpperCase()}</div>
-                <div className="min-w-0">
-                  <p className="text-[12px]"><span className="font-bold">{c.username}</span> <span className="text-muted-foreground">{c.text}</span></p>
-                </div>
-              </div>
+              <CommentRow key={c.id ?? i} comment={c} currentUserId={user?.id} onChanged={() => getComments(productId).then(setComments)} />
             ))}
           </div>
         </div>
@@ -1689,6 +1684,29 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
   const [commentError, setCommentError] = useState("")
   const postId = String(post.id)
 
+  // تحكّم المالك: تعديل نص المنشور/الإعلان + حذفه + تثبيته
+  const isOwner = !!currentUser?.id && String(post.user_id) === String(currentUser.id)
+  const [showMenu, setShowMenu] = useState(false)
+  const [editingPost, setEditingPost] = useState(false)
+  const [editText, setEditText] = useState(post.text || "")
+  const [savingEdit, setSavingEdit] = useState(false)
+  const canEditText = post.type === "text" || post.type === "announcement"
+
+  const savePostEdit = async () => {
+    const t = editText.trim()
+    if (!t) return
+    setSavingEdit(true); await updatePost(postId, t); setSavingEdit(false); setEditingPost(false); onRefresh()
+  }
+  const handleDeletePost = async () => {
+    setShowMenu(false)
+    if (!confirm("Delete this post permanently?")) return
+    if (await deletePost(postId)) onRefresh()
+  }
+  const handlePin = async () => {
+    setShowMenu(false)
+    if (await togglePinPost(postId, !post.pinned)) onRefresh()
+  }
+
   useEffect(() => {
     if (currentUser?.id) isPostSaved(currentUser.id, postId).then(setSaved)
   }, [currentUser?.id, postId])
@@ -1742,9 +1760,38 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
           {post.reposted_from_username && <p className="text-[10px] text-muted-foreground">Reposted from {post.reposted_from_username}</p>}
         </div>
         {post.pinned && <Pin className="h-3.5 w-3.5 text-amber-400" />}
+        {isOwner && (
+          <div className="relative shrink-0">
+            <button onClick={() => setShowMenu(v => !v)} aria-label="Post options" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary">
+              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {showMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+                <div className="absolute right-0 top-9 z-20 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+                  {canEditText && (
+                    <button onClick={() => { setShowMenu(false); setEditingPost(true) }} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] hover:bg-secondary"><Edit3 className="h-3.5 w-3.5" />Edit</button>
+                  )}
+                  <button onClick={handlePin} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] hover:bg-secondary"><Pin className="h-3.5 w-3.5" />{post.pinned ? "Unpin" : "Pin"}</button>
+                  <button onClick={handleDeletePost} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] text-red-400 hover:bg-secondary"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="px-3 pb-2">
+        {editingPost && canEditText ? (
+          <div className="space-y-2">
+            <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-amber-400/50 resize-none" />
+            <div className="flex gap-2">
+              <button onClick={savePostEdit} disabled={savingEdit || !editText.trim()} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black disabled:opacity-40">{savingEdit ? "Saving…" : "Save"}</button>
+              <button onClick={() => { setEditingPost(false); setEditText(post.text || "") }} className="rounded-lg border border-border px-3 py-1.5 text-[12px] font-semibold">Cancel</button>
+            </div>
+          </div>
+        ) : <>
         {post.type === "text" && <p className="text-[13px] whitespace-pre-wrap">{post.text}</p>}
         {post.type === "announcement" && <p className="text-[13px] whitespace-pre-wrap font-medium text-blue-300">{post.text}</p>}
         {post.type === "poll" && post.poll && <PollCard post={post} currentUserId={currentUser?.id} />}
@@ -1758,6 +1805,7 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
             </div>
           </div>
         )}
+        </>}
       </div>
 
       <div className="flex items-center gap-1 px-2 py-2 border-t border-border">
@@ -1790,16 +1838,55 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {comments.length === 0 ? <p className="text-[11px] text-muted-foreground text-center py-2">No comments yet</p> :
               comments.map((c, i) => (
-                <div key={c.id ?? i} className="flex items-start gap-2">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-bold">{c.username[0]?.toUpperCase()}</div>
-                  <p className="text-[12px]"><span className="font-bold">{c.username}</span> <span className="text-muted-foreground">{c.text}</span></p>
-                </div>
+                <CommentRow key={c.id ?? i} comment={c} currentUserId={currentUser?.id} onChanged={() => getComments(postId).then(setComments)} />
               ))}
           </div>
         </div>
       )}
 
       {showShare && <ShareModal url={shareUrl} title={post.text || `Check out this post from ${post.username} on Dabia`} onClose={() => setShowShare(false)} />}
+    </div>
+  )
+}
+
+// صف تعليق موحّد — يظهر زرّا التعديل والحذف لصاحب التعليق فقط
+function CommentRow({ comment, currentUserId, onChanged }: { comment: DBComment; currentUserId?: string; onChanged: () => void }) {
+  const isOwner = !!currentUserId && String(comment.user_id) === String(currentUserId)
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(comment.text)
+  const [busy, setBusy] = useState(false)
+
+  const saveEdit = async () => {
+    const t = text.trim()
+    if (!t || t === comment.text) { setEditing(false); return }
+    setBusy(true); await updateComment(comment.id!, t); setBusy(false); setEditing(false); onChanged()
+  }
+  const remove = async () => {
+    if (!confirm("Delete this comment?")) return
+    setBusy(true); await deleteComment(comment.id!); setBusy(false); onChanged()
+  }
+
+  return (
+    <div className="flex items-start gap-2 group">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-bold">{comment.username[0]?.toUpperCase()}</div>
+      <div className="min-w-0 flex-1">
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEdit()} autoFocus
+              className="flex-1 rounded-lg border border-border bg-background px-2 py-1 text-[12px] outline-none focus:border-amber-400/50" />
+            <button onClick={saveEdit} disabled={busy} className="text-[11px] font-bold text-amber-400">Save</button>
+            <button onClick={() => { setEditing(false); setText(comment.text) }} className="text-[11px] text-muted-foreground">Cancel</button>
+          </div>
+        ) : (
+          <p className="text-[12px]"><span className="font-bold">{comment.username}</span> <span className="text-muted-foreground">{comment.text}</span></p>
+        )}
+      </div>
+      {isOwner && !editing && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button onClick={() => setEditing(true)} aria-label="Edit comment"><Edit3 className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" /></button>
+          <button onClick={remove} disabled={busy} aria-label="Delete comment"><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-400" /></button>
+        </div>
+      )}
     </div>
   )
 }

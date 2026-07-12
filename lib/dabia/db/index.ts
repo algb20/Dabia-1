@@ -470,6 +470,15 @@ export async function getComments(productId: string): Promise<DBComment[]> {
   } catch { return [] }
 }
 
+// تعديل تعليق (لصاحبه فقط — يُتحقق في الواجهة بإظهار الزر لصاحب التعليق)
+export async function updateComment(commentId: string, text: string): Promise<boolean> {
+  try { const { error } = await supabase.from('product_comments').update({ text }).eq('id', commentId); return !error } catch { return false }
+}
+// حذف تعليق
+export async function deleteComment(commentId: string): Promise<boolean> {
+  try { const { error } = await supabase.from('product_comments').delete().eq('id', commentId); return !error } catch { return false }
+}
+
 // ─── نظام التحقق حسب نوع الحساب ──────────────────────────────────────────────
 export const VERIFICATION_REQUIREMENTS: Record<string, {
   autoApprove: boolean; requiredFields: string[]; reviewWindowHours: number
@@ -1177,6 +1186,10 @@ export async function togglePinPost(postId: string, pinned: boolean): Promise<bo
 
 export async function deletePost(postId: string): Promise<boolean> {
   try { const { error } = await supabase.from('posts').delete().eq('id', postId); return !error } catch { return false }
+}
+// تعديل نص منشور/إعلان (لصاحبه — يُتحقق في الواجهة)
+export async function updatePost(postId: string, text: string): Promise<boolean> {
+  try { const { error } = await supabase.from('posts').update({ text }).eq('id', postId); return !error } catch { return false }
 }
 
 // حفظ منشور/إعلان — نفس منطق حفظ المنتجات لكن للمنشورات
