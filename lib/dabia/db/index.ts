@@ -464,31 +464,33 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
   if (user.status === 'active' || user.status === 'verified') return user
   if (!user.id) return user
 
-  if (meetsVerificationRequirements(user)) {
-    const updated = await updateUser(user.id, { status: 'active' })
-    if (updated) return updated
-    return user
-  }
+  // التفعيل التلقائي يتمّ الآن عبر دالة موثوقة في القاعدة تفرض القواعد على
+  // الخادم (لا يستطيع العميل تفعيل نفسه بتجاوز الشروط، وحارس status يمنع ذلك).
+  try {
+    const { data, error } = await supabase.rpc('auto_verify_self', { p_user_id: Number(user.id) })
+    if (!error && data) {
+      const updated = data as DBUser
+      if (updated.status === 'active') return updated
+      user = updated
+    }
+  } catch { /* نتراجع بأمان */ }
 
-  // تحقق تلقائي إضافي حقيقي للحسابات التجارية التي لم تكتمل بعد: إن طابق نطاق
-  // البريد نطاق الموقع المُدخل (إشارة 1) وأكّد بحث حقيقي على الإنترنت وجود هذا
-  // المتجر/الشركة فعلياً (إشارة 2)، نقبل الحساب تلقائياً دون انتظار 24-48 ساعة
-  // مراجعة يدوية. إن تعذّر أي من الإشارتين (مثلاً SERPER_API_KEY غير مضبوط)،
-  // يبقى الحساب معلَّقاً للمراجعة اليدوية كالمعتاد — لا قبول وهمي أبداً.
-  if (user.store_name) {
+  // تحقّق تجاري بالنطاق: القرار والتفعيل يتمّان بالكامل على الخادم في مسار
+  // verify-business (service_role) — لا قبول وهمي، ولا يثق التطبيق بادعاء العميل.
+  if (user.store_name && user.status !== 'active') {
     const emailSignal = getBusinessEmailSignal(user)
     if (emailSignal.domainVerified) {
       try {
         const res = await fetch('/api/dabia/verify-business', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url }),
+          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url, userId: user.id }),
         })
         const verify = await res.json()
-        if (verify.verified && verify.confidence === 'high') {
-          const updated = await updateUser(user.id, { status: 'active' })
-          if (updated) return updated
+        if (verify.activated) {
+          const fresh = await getUserById(user.id!)
+          if (fresh) return fresh
         }
-      } catch { /* لا اتصال أو خطأ شبكة — نتراجع بأمان للمراجعة اليدوية */ }
+      } catch { /* لا اتصال — نتراجع بأمان للمراجعة اليدوية */ }
     }
   }
 
@@ -498,8 +500,13 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
 export async function getPendingUsers(): Promise<DBUser[]> {
   try { const { data } = await supabase.from('users').select('*').eq('status','pending').order('created_at',{ascending:false}); return (data??[]) as DBUser[] } catch { return [] }
 }
-export async function approveUser(id: string): Promise<DBUser | null> { return updateUser(id, { status: 'active' }) }
-export async function rejectUser(id: string):  Promise<DBUser | null> { return updateUser(id, { status: 'suspended' }) }
+// موافقة/رفض الأدمن — عبر دالة موثوقة تتحقق أن المُنفِّذ حسابه admin فعلاً
+export async function approveUser(id: string): Promise<DBUser | null> {
+  try { const { data, error } = await supabase.rpc('admin_set_user_status', { p_user_id: Number(id), p_status: 'active' }); return error ? null : (data as DBUser) } catch { return null }
+}
+export async function rejectUser(id: string): Promise<DBUser | null> {
+  try { const { data, error } = await supabase.rpc('admin_set_user_status', { p_user_id: Number(id), p_status: 'suspended' }); return error ? null : (data as DBUser) } catch { return null }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRODUCTS
