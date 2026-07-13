@@ -453,14 +453,39 @@ export async function getShareCount(productId: string): Promise<number> {
 }
 
 // التعليقات الحقيقية على المنتجات
-export interface DBComment { id?: string; product_id: string; user_id: string; username: string; avatar_url?: string; text: string; created_at?: string }
+export interface DBComment {
+  id?: string; product_id: string; user_id: string; username: string
+  avatar_url?: string; text: string; parent_id?: string | null
+  like_count?: number; created_at?: string
+  liked?: boolean       // محسوب للمستخدم الحالي (واجهة)
+  replies?: DBComment[] // مبنية شجرياً في الواجهة
+}
 
 export async function addComment(c: DBComment): Promise<{ comment: DBComment | null; error?: string }> {
   try {
-    const { data, error } = await supabase.from('product_comments').insert(c).select().single()
+    const row: any = { product_id: c.product_id, user_id: c.user_id, username: c.username, avatar_url: c.avatar_url, text: c.text }
+    if (c.parent_id) row.parent_id = Number(c.parent_id)
+    const { data, error } = await supabase.from('product_comments').insert(row).select().single()
     if (error) { console.error('[addComment]', error.message); return { comment: null, error: error.message } }
     return { comment: data as DBComment }
   } catch (e) { return { comment: null, error: e instanceof Error ? e.message : 'Failed to comment' } }
+}
+
+// إعجاب/إلغاء إعجاب على تعليق (العدّاد يُحدَّث بـ trigger في القاعدة)
+export async function toggleCommentLike(commentId: string, userId: string): Promise<{ liked: boolean }> {
+  try {
+    const { data: existing } = await supabase.from('comment_likes').select('id').eq('comment_id', commentId).eq('user_id', userId).maybeSingle()
+    if (existing) { await supabase.from('comment_likes').delete().eq('id', existing.id); return { liked: false } }
+    await supabase.from('comment_likes').insert({ comment_id: Number(commentId), user_id: Number(userId) })
+    return { liked: true }
+  } catch { return { liked: false } }
+}
+export async function getCommentLikes(userId: string, commentIds: string[]): Promise<Set<string>> {
+  try {
+    if (commentIds.length === 0) return new Set()
+    const { data } = await supabase.from('comment_likes').select('comment_id').eq('user_id', userId).in('comment_id', commentIds)
+    return new Set((data ?? []).map((r: any) => String(r.comment_id)))
+  } catch { return new Set() }
 }
 
 export async function getComments(productId: string): Promise<DBComment[]> {

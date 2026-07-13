@@ -10,6 +10,7 @@ import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRe
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
+import { CommentsThread } from "@/components/comments-thread"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -1608,27 +1609,10 @@ function SocialPostCard({ product, user }: { product: Product; user: DBUser | nu
         <p className="text-[13px]"><span className="font-bold">{product.seller}</span> <span className="text-muted-foreground">{product.name} — </span><span className="font-bold text-amber-400">{product.price}π</span></p>
       </div>
 
-      {/* Comments drawer */}
+      {/* Comments drawer — نظام تعليقات كامل (ردود/تفاعل/ذكر/إشراف) */}
       {showComments && (
-        <div className="border-t border-border p-3 space-y-3">
-          {commentError && <p className="text-[11px] text-red-400">{commentError}</p>}
-          {user && (
-            <div className="flex items-center gap-2">
-              <input value={commentText} onChange={e => setCommentText(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && submitComment()}
-                placeholder="Add a comment…"
-                className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
-              <button onClick={submitComment} disabled={!commentText.trim()}
-                className="rounded-xl bg-amber-400 px-3 py-2 text-[12px] font-bold text-black disabled:opacity-40">Post</button>
-            </div>
-          )}
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {comments.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground text-center py-2">No comments yet — be the first!</p>
-            ) : comments.map((c, i) => (
-              <CommentRow key={c.id ?? i} comment={c} currentUserId={user?.id} onChanged={() => getComments(productId).then(setComments)} />
-            ))}
-          </div>
+        <div className="border-t border-border p-3">
+          <CommentsThread threadId={productId} currentUser={user} ownerId={(product as any).sellerUserId} />
         </div>
       )}
     </div>
@@ -1826,67 +1810,12 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
       {repostMsg && <p className="px-3 pb-2 text-[11px] text-emerald-400">{repostMsg}</p>}
 
       {showComments && (
-        <div className="border-t border-border p-3 space-y-3">
-          {commentError && <p className="text-[11px] text-red-400">{commentError}</p>}
-          {currentUser && (
-            <div className="flex items-center gap-2">
-              <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === "Enter" && submitComment()}
-                placeholder="Add a comment… use @username to mention" className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
-              <button onClick={submitComment} disabled={!commentText.trim()} className="rounded-xl bg-amber-400 px-3 py-2 text-[12px] font-bold text-black disabled:opacity-40">Post</button>
-            </div>
-          )}
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {comments.length === 0 ? <p className="text-[11px] text-muted-foreground text-center py-2">No comments yet</p> :
-              comments.map((c, i) => (
-                <CommentRow key={c.id ?? i} comment={c} currentUserId={currentUser?.id} onChanged={() => getComments(postId).then(setComments)} />
-              ))}
-          </div>
+        <div className="border-t border-border p-3">
+          <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
         </div>
       )}
 
       {showShare && <ShareModal url={shareUrl} title={post.text || `Check out this post from ${post.username} on Dabia`} onClose={() => setShowShare(false)} />}
-    </div>
-  )
-}
-
-// صف تعليق موحّد — يظهر زرّا التعديل والحذف لصاحب التعليق فقط
-function CommentRow({ comment, currentUserId, onChanged }: { comment: DBComment; currentUserId?: string; onChanged: () => void }) {
-  const isOwner = !!currentUserId && String(comment.user_id) === String(currentUserId)
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState(comment.text)
-  const [busy, setBusy] = useState(false)
-
-  const saveEdit = async () => {
-    const t = text.trim()
-    if (!t || t === comment.text) { setEditing(false); return }
-    setBusy(true); await updateComment(comment.id!, t); setBusy(false); setEditing(false); onChanged()
-  }
-  const remove = async () => {
-    if (!confirm("Delete this comment?")) return
-    setBusy(true); await deleteComment(comment.id!); setBusy(false); onChanged()
-  }
-
-  return (
-    <div className="flex items-start gap-2 group">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-bold">{comment.username[0]?.toUpperCase()}</div>
-      <div className="min-w-0 flex-1">
-        {editing ? (
-          <div className="flex items-center gap-1.5">
-            <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEdit()} autoFocus
-              className="flex-1 rounded-lg border border-border bg-background px-2 py-1 text-[12px] outline-none focus:border-amber-400/50" />
-            <button onClick={saveEdit} disabled={busy} className="text-[11px] font-bold text-amber-400">Save</button>
-            <button onClick={() => { setEditing(false); setText(comment.text) }} className="text-[11px] text-muted-foreground">Cancel</button>
-          </div>
-        ) : (
-          <p className="text-[12px]"><span className="font-bold">{comment.username}</span> <span className="text-muted-foreground">{comment.text}</span></p>
-        )}
-      </div>
-      {isOwner && !editing && (
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button onClick={() => setEditing(true)} aria-label="Edit comment"><Edit3 className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" /></button>
-          <button onClick={remove} disabled={busy} aria-label="Delete comment"><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-400" /></button>
-        </div>
-      )}
     </div>
   )
 }
