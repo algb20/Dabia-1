@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, isFollowing, getFollowCounts, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -1656,7 +1656,10 @@ function PollCard({ post, currentUserId }: { post: DBPost; currentUserId?: strin
   )
 }
 
-function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser: DBUser | null; onRefresh: () => void }) {
+function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow }: {
+  post: DBPost; currentUser: DBUser | null; onRefresh: () => void
+  isFollowed?: boolean; onToggleFollow?: (authorId: string) => void
+}) {
   const [saved, setSaved] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [reposting, setReposting] = useState(false)
@@ -1758,6 +1761,13 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
           </p>
           {post.reposted_from_username && <p className="text-[10px] text-muted-foreground">Reposted from {post.reposted_from_username}</p>}
         </div>
+        {/* زر المتابعة — يظهر لغير المالك عند توفّر معالج المتابعة */}
+        {!isOwner && onToggleFollow && currentUser && (
+          <button onClick={() => onToggleFollow(String(post.user_id))}
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${isFollowed ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
+            {isFollowed ? "Following" : "Follow"}
+          </button>
+        )}
         {post.pinned && <Pin className="h-3.5 w-3.5 text-amber-400" />}
         {isOwner && (
           <div className="relative shrink-0">
@@ -1893,13 +1903,13 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
 
 function SocialTab() {
   const { user } = useUserAuth()
+  const [scope, setScope] = useState<"foryou" | "following">("foryou")
   const [posts, setPosts] = useState<DBPost[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [followingSet, setFollowingSet] = useState<Set<string>>(new Set())
 
-  // المنتجات الرائجة الآن تظهر تلقائياً أعلى الفيد للتفاعل (إعجاب/تعليق/طلب) —
-  // محسوبة لحظياً من إشارات حقيقية (إعجابات/تعليقات/مشاركات/طلبات) عبر محرّك
-  // التراند في القاعدة، وتتحدّث تلقائياً كل ٣٠ ثانية. لا تدخّل يدوي.
+  // المنتجات الرائجة الآن تظهر تلقائياً أعلى تبويب For You (تفاعل حقيقي)
   const { data: trendingData } = useSWR(
     "dabia-social-trending",
     async () => (await getTrendingProducts(4)).filter(t => t.trend_score > 0).map(dbProductToProduct),
@@ -1912,14 +1922,24 @@ function SocialTab() {
   const liveStreams = liveData ?? []
   const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
 
-  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
-
-
   const load = useCallback(() => {
     setLoading(true)
-    getFeedPosts().then(setPosts).finally(() => setLoading(false))
-  }, [])
+    getSocialFeed(scope, user?.id).then(setPosts).finally(() => setLoading(false))
+    if (user?.id) getFollowingSet(user.id).then(setFollowingSet)
+  }, [scope, user?.id])
   useEffect(() => { load() }, [load])
+
+  // متابعة/إلغاء متابعة كاتب منشور — تحديث تفاؤلي فوري
+  const toggleFollow = useCallback(async (authorId: string) => {
+    if (!user?.id) return
+    const following = followingSet.has(authorId)
+    setFollowingSet(prev => { const n = new Set(prev); following ? n.delete(authorId) : n.add(authorId); return n })
+    if (following) await unfollowUser(user.id, authorId)
+    else await followUser(user.id, authorId)
+    if (scope === "following") load()
+  }, [user?.id, followingSet, scope, load])
+
+  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
 
   return (
     <div className="space-y-4 pb-6">
@@ -1928,7 +1948,7 @@ function SocialTab() {
           <Users2 className="h-5 w-5 text-amber-400" />
           <div>
             <h1 className="text-base font-black leading-none">Social</h1>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Posts, polls & shared listings</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">For You & the people you follow</p>
           </div>
         </div>
         {user && (
@@ -1936,6 +1956,17 @@ function SocialTab() {
             <Plus className="h-3.5 w-3.5" />Post
           </button>
         )}
+      </div>
+
+      {/* تبويبان بأسلوب TikTok: For You (خوارزمية) و Following (من تتابعهم) */}
+      <div className="flex items-center justify-center gap-6 border-b border-border">
+        {(["foryou", "following"] as const).map(s => (
+          <button key={s} onClick={() => setScope(s)}
+            className={`relative pb-2.5 text-[13px] font-bold transition-colors ${scope === s ? "text-foreground" : "text-muted-foreground"}`}>
+            {s === "foryou" ? "For You" : "Following"}
+            {scope === s && <span className="absolute -bottom-px left-1/2 -translate-x-1/2 h-0.5 w-7 rounded-full bg-amber-400" />}
+          </button>
+        ))}
       </div>
 
       {/* بث مباشر الآن — بانر أعلى الفيد */}
@@ -1957,8 +1988,8 @@ function SocialTab() {
         </div>
       )}
 
-      {/* رائج الآن — يظهر تلقائياً من محرّك التراند الحقيقي */}
-      {trending.length > 0 && (
+      {/* رائج الآن — فقط في For You */}
+      {scope === "foryou" && trending.length > 0 && (
         <section className="space-y-3">
           <p className="text-xs font-bold flex items-center gap-2">
             <TrendingUp className="h-3.5 w-3.5 text-amber-400" />Trending now
@@ -1970,14 +2001,21 @@ function SocialTab() {
 
       {loading ? (
         <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-40 rounded-2xl bg-secondary/40 animate-pulse" />)}</div>
-      ) : posts.length === 0 && trending.length === 0 ? (
+      ) : posts.length === 0 && (scope === "following" || trending.length === 0) ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
           <Users2 className="h-10 w-10 text-muted-foreground/30" />
-          <p className="text-[12px] text-muted-foreground">No posts yet — be the first to share something</p>
+          <p className="text-[12px] text-muted-foreground">
+            {scope === "following"
+              ? (user ? "Follow people to see their posts here" : "Sign in and follow people to build your feed")
+              : "No posts yet — be the first to share something"}
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {posts.map(post => <PostCard key={post.id} post={post} currentUser={user} onRefresh={load} />)}
+          {posts.map(post => (
+            <PostCard key={post.id} post={post} currentUser={user} onRefresh={load}
+              isFollowed={followingSet.has(String(post.user_id))} onToggleFollow={toggleFollow} />
+          ))}
         </div>
       )}
 
@@ -2581,13 +2619,33 @@ function BusinessTab() {
   const [announcing, setAnnouncing]     = useState(false)
   const [announceMsg, setAnnounceMsg]   = useState("")
 
+  const [myAnnouncements, setMyAnnouncements] = useState<DBPost[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editVal, setEditVal] = useState("")
+
+  const loadAnnouncements = useCallback(() => {
+    if (!bizUser?.id) return
+    getPostsByUser(bizUser.id).then(ps => setMyAnnouncements(ps.filter(p => p.type === "announcement")))
+  }, [bizUser?.id])
+  useEffect(() => { loadAnnouncements() }, [loadAnnouncements])
+
   const sendAnnouncement = async () => {
     if (!bizUser?.id || !announceText.trim()) return
     setAnnouncing(true)
     const post = await createAnnouncement(bizUser.id, bizUser.store_name || bizUser.username, announceText.trim(), true)
     setAnnouncing(false)
-    if (post) { setAnnounceMsg("✓ Sent to Space feed"); setAnnounceText(""); setTimeout(() => { setAnnounceMsg(""); setShowAnnounce(false) }, 1500) }
+    if (post) { setAnnounceMsg("✓ Sent to Space feed"); setAnnounceText(""); loadAnnouncements(); setTimeout(() => { setAnnounceMsg(""); setShowAnnounce(false) }, 1500) }
     else setAnnounceMsg("Failed to send")
+  }
+
+  const saveAnnouncementEdit = async (id: string) => {
+    if (!editVal.trim()) return
+    await updatePost(id, editVal.trim())
+    setEditingId(null); loadAnnouncements()
+  }
+  const removeAnnouncement = async (id: string) => {
+    if (!confirm("Delete this announcement?")) return
+    await deletePost(id); loadAnnouncements()
   }
 
   const sub = subData?.subscription
@@ -2684,6 +2742,36 @@ function BusinessTab() {
         <button onClick={() => setShowAnnounce(true)} className="w-full flex items-center justify-center gap-2 rounded-2xl border border-blue-400/30 bg-blue-400/10 py-3 text-[13px] font-bold text-blue-400">
           <Megaphone className="h-4 w-4" />Send Announcement to Space
         </button>
+      )}
+
+      {/* إدارة إعلاناتك — تعديل/حذف فعلي (كان ناقصاً في صفحة برو) */}
+      {bizUser && bizUser.role !== "buyer" && myAnnouncements.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5"><Megaphone className="h-3 w-3" />Your Announcements</p>
+          {myAnnouncements.map(a => (
+            <div key={a.id} className="rounded-xl border border-border bg-card p-3 space-y-2">
+              {editingId === String(a.id) ? (
+                <>
+                  <textarea value={editVal} onChange={e => setEditVal(e.target.value)} rows={3}
+                    className="w-full rounded-lg border border-border bg-background p-2 text-[12px] outline-none focus:border-amber-400/50 resize-none" />
+                  <div className="flex gap-2">
+                    <button onClick={() => saveAnnouncementEdit(String(a.id))} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-black">Save</button>
+                    <button onClick={() => setEditingId(null)} className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-muted-foreground">Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-[12px] text-foreground/90 whitespace-pre-wrap">{a.text}</p>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => { setEditingId(String(a.id)); setEditVal(a.text || "") }} className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground"><Edit3 className="h-3 w-3" />Edit</button>
+                    <button onClick={() => removeAnnouncement(String(a.id))} className="flex items-center gap-1 text-[11px] font-semibold text-red-400"><Trash2 className="h-3 w-3" />Delete</button>
+                    {a.created_at && <span className="ml-auto text-[10px] text-muted-foreground">{new Date(a.created_at).toLocaleDateString()}</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
       )}
 
       {showAnnounce && (

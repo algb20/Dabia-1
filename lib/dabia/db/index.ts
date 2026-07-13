@@ -916,8 +916,16 @@ export async function createStream(s: Omit<DBLiveStream, 'id' | 'created_at' | '
   try {
     const { data, error } = await supabase.from('live_streams').insert(s).select().single()
     if (error) return null
-    return data as DBLiveStream
+    const stream = data as DBLiveStream
+    // نشر تلقائي على صفحة الاجتماعي عند بدء بث مباشر فوراً (كل ما في الفضاء يظهر بالاجتماعي)
+    if (stream.status === 'live') { crossPostToSocial(stream.host_user_id, stream.host_username, `🔴 Live now: "${stream.title}" — join on Space`) }
+    return stream
   } catch { return null }
+}
+
+// نشر تلقائي موحّد من الفضاء إلى الاجتماعي (بث/مزاد/إعلان…) — منشور رسمي في الفيد
+async function crossPostToSocial(userId: string, username: string, text: string): Promise<void> {
+  try { await supabase.from('posts').insert({ user_id: userId, username, type: 'announcement', text, is_official: true }) } catch {}
 }
 export async function updateStream(id: string, updates: Partial<DBLiveStream>): Promise<DBLiveStream | null> {
   try {
@@ -927,7 +935,10 @@ export async function updateStream(id: string, updates: Partial<DBLiveStream>): 
   } catch { return null }
 }
 export async function startStream(id: string): Promise<DBLiveStream | null> {
-  return updateStream(id, { status: 'live', started_at: new Date().toISOString() })
+  const s = await updateStream(id, { status: 'live', started_at: new Date().toISOString() })
+  // بثّ مجدول انطلق الآن → نشر تلقائي على الاجتماعي
+  if (s) crossPostToSocial(s.host_user_id, s.host_username, `🔴 Live now: "${s.title}" — join on Space`)
+  return s
 }
 export async function endStream(id: string): Promise<DBLiveStream | null> {
   return updateStream(id, { status: 'ended', ended_at: new Date().toISOString() })
@@ -1419,6 +1430,44 @@ export async function togglePinPost(postId: string, pinned: boolean): Promise<bo
   try { const { error } = await supabase.from('posts').update({ pinned }).eq('id', postId); return !error } catch { return false }
 }
 
+// ── نظام المتابعة (Follow) ────────────────────────────────────────────────
+export async function followUser(followerId: string, followingId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('follow_user', { p_follower: Number(followerId), p_following: Number(followingId) }); return !error } catch { return false }
+}
+export async function unfollowUser(followerId: string, followingId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('unfollow_user', { p_follower: Number(followerId), p_following: Number(followingId) }); return !error } catch { return false }
+}
+export async function isFollowing(followerId: string, followingId: string): Promise<boolean> {
+  try { const { data } = await supabase.from('follows').select('id').eq('follower_id', followerId).eq('following_id', followingId).maybeSingle(); return !!data } catch { return false }
+}
+export async function getFollowCounts(userId: string): Promise<{ followers: number; following: number }> {
+  try {
+    const [{ count: followers }, { count: following }] = await Promise.all([
+      supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', userId),
+      supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', userId),
+    ])
+    return { followers: followers ?? 0, following: following ?? 0 }
+  } catch { return { followers: 0, following: 0 } }
+}
+// مجموعة معرّفات مَن يتابعهم المستخدم — لعرض حالة "متابَع" على البطاقات دفعة واحدة
+export async function getFollowingSet(followerId: string): Promise<Set<string>> {
+  try {
+    const { data } = await supabase.from('follows').select('following_id').eq('follower_id', followerId)
+    return new Set((data ?? []).map((r: any) => String(r.following_id)))
+  } catch { return new Set() }
+}
+
+// خلاصة اجتماعية بأسلوب TikTok: 'foryou' (خوارزمية) أو 'following' (من تتابعهم)
+export async function getSocialFeed(scope: 'foryou' | 'following', userId?: string, limit = 60): Promise<DBPost[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_social_feed', {
+      p_user: userId ? Number(userId) : null, p_scope: scope, p_limit: limit,
+    })
+    if (error || !data) return []
+    return await attachAuthorAccountTypes(data as DBPost[])
+  } catch { return [] }
+}
+
 export async function deletePost(postId: string): Promise<boolean> {
   try { const { error } = await supabase.from('posts').delete().eq('id', postId); return !error } catch { return false }
 }
@@ -1586,7 +1635,10 @@ export async function createAuction(a: Omit<DBAuction, 'id' | 'current_bid' | 's
     const row = { ...a, current_bid: a.starting_price, status: 'live' as const }
     const { data, error } = await supabase.from('auctions').insert(row).select().single()
     if (error) return null
-    return data as DBAuction
+    const auction = data as DBAuction
+    // نشر تلقائي على الاجتماعي: مزاد جديد بدأ
+    crossPostToSocial(auction.seller_user_id, auction.seller_name, `🔨 New auction: "${auction.product_name}" starting at ${auction.starting_price}π — bid on Space`)
+    return auction
   } catch { return null }
 }
 
@@ -1671,7 +1723,12 @@ export async function createGroupDeal(g: Omit<DBGroupDeal, 'id' | 'members_joine
     const row = { ...g, members_joined: 1, status: 'open' as const }
     const { data, error } = await supabase.from('group_deals').insert(row).select().single()
     if (error) return null
-    return data as DBGroupDeal
+    const deal = data as DBGroupDeal
+    // نشر تلقائي على الاجتماعي: صفقة جماعية جديدة
+    const seller = await getUserById(deal.seller_user_id)
+    crossPostToSocial(deal.seller_user_id, seller?.store_name || seller?.username || 'Store',
+      `👥 Group deal: "${deal.product_name}" at ${deal.group_price}π when ${deal.members_needed} join — join on Space`)
+    return deal
   } catch { return null }
 }
 

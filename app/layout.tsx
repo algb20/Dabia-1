@@ -44,6 +44,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             `,
           }}
         />
+        {/* Pi Network SDK — ضروري ليتوفّر window.Pi داخل Pi Browser. بدونه لا يعمل
+            تسجيل الدخول بمعرّف Pi ولا مدفوعات Pi إطلاقاً. يُحمَّل مبكراً ثم يُهيّأ. */}
+        <script src="https://sdk.minepi.com/pi-sdk.js" async />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                function initPi(){ try { if (window.Pi) { window.Pi.init({ version: "2.0", sandbox: false }); } } catch (e) {} }
+                if (window.Pi) { initPi(); }
+                else { window.addEventListener("load", function(){ setTimeout(initPi, 300); }); }
+              })();
+            `,
+          }}
+        />
       </head>
       <body className="font-sans">
         <TranslationProvider>{children}</TranslationProvider>

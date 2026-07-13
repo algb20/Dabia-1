@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { getUserById, getProductsBySeller, getPostsByUser, togglePinPost, type DBUser, type DBProduct, type DBPost } from "@/lib/dabia/db"
+import { getUserById, getProductsBySeller, getPostsByUser, togglePinPost, followUser, unfollowUser, isFollowing, getFollowCounts, type DBUser, type DBProduct, type DBPost } from "@/lib/dabia/db"
 import { getIdentityFields } from "@/lib/dabia/identity-fields"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { PiBrowserGate } from "@/components/pi-browser-gate"
@@ -34,15 +34,32 @@ export default function PublicProfilePage() {
   const [posts, setPosts] = useState<DBPost[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<"products" | "about" | "posts">("products")
+  const [followed, setFollowed] = useState(false)
+  const [counts, setCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
+  const [followBusy, setFollowBusy] = useState(false)
 
   useEffect(() => {
     if (!id) return
-    Promise.all([getUserById(id), getProductsBySeller(id), getPostsByUser(id)])
-      .then(([u, p, ps]) => { setProfile(u); setProducts(p); setPosts(ps) })
+    Promise.all([getUserById(id), getProductsBySeller(id), getPostsByUser(id), getFollowCounts(id)])
+      .then(([u, p, ps, c]) => { setProfile(u); setProducts(p); setPosts(ps); setCounts(c) })
       .finally(() => setLoading(false))
   }, [id])
 
+  useEffect(() => {
+    if (viewer?.id && id && viewer.id !== id) isFollowing(viewer.id, id).then(setFollowed)
+  }, [viewer?.id, id])
+
   const isOwner = viewer?.id === id
+
+  const toggleFollow = async () => {
+    if (!viewer?.id || followBusy) return
+    setFollowBusy(true)
+    const next = !followed
+    setFollowed(next)
+    setCounts(c => ({ ...c, followers: c.followers + (next ? 1 : -1) }))
+    if (next) await followUser(viewer.id, id); else await unfollowUser(viewer.id, id)
+    setFollowBusy(false)
+  }
   const handlePin = async (postId: string, current: boolean) => {
     const ok = await togglePinPost(postId, !current)
     if (ok) setPosts(prev => prev.map(p => p.id === postId ? { ...p, pinned: !current } : p))
@@ -117,6 +134,18 @@ export default function PublicProfilePage() {
             )}
             {joinedDate && (
               <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />Joined {joinedDate}</span>
+            )}
+          </div>
+
+          {/* المتابعون / يتابع + زر المتابعة */}
+          <div className="flex items-center gap-4">
+            <p className="text-[12px]"><span className="font-black">{counts.followers}</span> <span className="text-muted-foreground">Followers</span></p>
+            <p className="text-[12px]"><span className="font-black">{counts.following}</span> <span className="text-muted-foreground">Following</span></p>
+            {!isOwner && viewer && (
+              <button onClick={toggleFollow} disabled={followBusy}
+                className={`ml-auto rounded-xl px-4 py-1.5 text-[12px] font-bold transition-colors disabled:opacity-50 ${followed ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
+                {followed ? "Following" : "Follow"}
+              </button>
             )}
           </div>
 
