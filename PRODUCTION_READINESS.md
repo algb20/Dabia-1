@@ -104,6 +104,30 @@ items, so future sessions have full context.
   be granted by the system"); only the server route grants it after a verified
   Pi payment.
 
+## ✅ Batch 14 — Pi SDK fix, follow graph, TikTok-style feed, cross-posting
+- **Pi login/pay now actually work:** the Pi SDK (`sdk.minepi.com/pi-sdk.js`)
+  was never loaded, so `window.Pi` was always undefined. Added it to the layout
+  `<head>` + init — the one-tap Pi sign-in and Pi payments now function inside
+  Pi Browser.
+- **Follow system:** `follows` table + `follow_user`/`unfollow_user` RPCs +
+  `isFollowing`/`getFollowCounts`/`getFollowingSet`. Follow buttons on feed post
+  cards and follower/following counts + Follow button on public profiles.
+- **TikTok-style Social:** two tabs — **For You** (algorithmic feed via
+  `get_social_feed`: recency + comment engagement + pin + author badge + a boost
+  for people you follow) and **Following** (posts from accounts you follow).
+  Save (bookmark) and comments already present.
+- **Everything in Space auto-posts to Social:** going live, new auctions, and
+  new group deals now auto-create an official post in the Social feed
+  (announcements already were posts) via `crossPostToSocial`.
+- **Announcement management in Pro:** the Pro tab now lists your announcements
+  with working **edit** and **delete** (previously you could only send them).
+
+## 🔜 Next batch (planned)
+- Buyer–seller direct chat (Supabase Realtime; `messages`/`threads` tables
+  already exist as the foundation).
+- Reels — vertical short-video product discovery.
+- Dispute/refund center + real seller trust score.
+
 ## ⚠️ Remaining — do WITH live Pi Browser testing (not blind)
 1. Low-risk permissive tables still open (per-user toggles / ephemeral):
    product_likes, product_shares, saved_products, saved_posts, mentions,
