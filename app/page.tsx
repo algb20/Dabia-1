@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
 import { CommentsThread } from "@/components/comments-thread"
+import { PiBrowserGate } from "@/components/pi-browser-gate"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -3241,6 +3242,7 @@ export default function DabiaApp() {
       {showSearch  && <SearchOverlay onClose={() => setShowSearch(false)} />}
       {showLang    && <LanguageModal onClose={() => setShowLang(false)} lang={lang} setLang={setLang} translating={translating} />}
       {deepLinkProduct && <ProductDetail product={deepLinkProduct} onClose={() => setDeepLinkProduct(null)} />}
+      <PiBrowserGate />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import { getUserById, getProductsBySeller, getPostsByUser, togglePinPost, type DBUser, type DBProduct, type DBPost } from "@/lib/dabia/db"
 import { getIdentityFields } from "@/lib/dabia/identity-fields"
 import { useUserAuth } from "@/hooks/use-user-auth"
+import { PiBrowserGate } from "@/components/pi-browser-gate"
 import {
   X, Globe2, Send, Instagram, Twitter, Loader2, Store, ShieldCheck, CheckCircle2, Calendar, Info,
   Factory, Building2, Briefcase, Handshake, UserCircle2, ShoppingBag, MessageSquare, Pin, BadgeCheck,
@@ -76,6 +77,7 @@ export default function PublicProfilePage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
+      <PiBrowserGate always />
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 pt-safe backdrop-blur">
         <button onClick={() => router.push("/")} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border active:scale-95"><X className="h-4 w-4" /></button>
         <p className="text-sm font-black">{isBusiness ? theme.label + " Space" : "Public Profile"}</p>
