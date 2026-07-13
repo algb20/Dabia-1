@@ -81,6 +81,7 @@ function dbProductToProduct(p: DBProduct): Product {
     category: p.category || "Other",
     seller: p.seller_name || "Dabia Seller",
     sellerUserId: p.seller_user_id ? String(p.seller_user_id) : undefined,
+    sellerAccountType: (p.seller_account_type as AccountType) || "standard",
     sellerTrust: 80,
     sold: p.review_count ?? 0,
     liked: false,
@@ -153,10 +154,12 @@ function useTrends(category: string, sort: SortKey) {
       if (sort === "rating") ranked = [...ranked].sort((a, b) => b.rating - a.rating)
       if (sort === "smart") {
         // ترتيب حيّ بمحرّك التراند الحقيقي (إعجابات/تعليقات/مشاركات/طلبات/تقييمات)
+        // + أولوية ظهور فعلية لأصحاب الخطط المدفوعة (ميزة "Priority listing"):
+        // official (Official Brand) ثم premium (Pro) يحصلون على دفعة في الترتيب.
         const scores = await getTrendScores()
-        ranked = [...ranked].sort((a, b) =>
-          (scores.get(String(b.id))?.trend_score ?? 0) - (scores.get(String(a.id))?.trend_score ?? 0)
-        )
+        const tierBoost = (t?: AccountType) => t === "official" ? 6 : t === "premium" ? 3 : 0
+        const scoreOf = (p: Product) => (scores.get(String(p.id))?.trend_score ?? 0) + tierBoost(p.sellerAccountType)
+        ranked = [...ranked].sort((a, b) => scoreOf(b) - scoreOf(a))
       }
       return { ranked, totalEvaluated: ranked.length }
     },
@@ -2539,16 +2542,27 @@ function BusinessTab() {
 
   const plans = [
     {
-      tier: "pro" as const, label: "Pro", price: 49,
+      tier: "pro" as const, label: "Premium Seller", price: 49,
       color: "border-amber-400/30 bg-amber-400/5",
       icon: <Crown className="h-5 w-5 text-amber-400" />,
-      features: ["AI personal assistant", "Advanced analytics", "Priority product listing", "Early demand alerts", "Dedicated support"],
+      // مزايا فعلية تعمل تقنياً بعد التفعيل (لا واجهة فقط):
+      features: [
+        "Verified Premium badge on every product & post",
+        "Priority placement in the smart feed & search",
+        "Premium storefront styling (gold highlight)",
+        "Business analytics dashboard",
+      ],
     },
     {
       tier: "enterprise" as const, label: "Official Brand", price: 199,
       color: "border-blue-400/30 bg-blue-400/5",
       icon: <Building className="h-5 w-5 text-blue-400" />,
-      features: ["Official Brand badge (manually verified)", "Dedicated verified storefront", "Full API access", "99.9% uptime SLA", "Competitor price monitoring"],
+      features: [
+        "Official Brand badge (blue, verified) on all listings",
+        "Top priority placement across discovery & search",
+        "Distinct official storefront styling",
+        "Includes every Premium perk",
+      ],
     },
   ]
 

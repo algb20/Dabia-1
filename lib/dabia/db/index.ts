@@ -75,6 +75,7 @@ export interface DBUser {
   country?:        string
   role?:           string
   status?:         string
+  account_type?:   'standard' | 'premium' | 'official'  // الشارة — يُمنح من الخادم بعد اشتراك مدفوع
   pi_uid?:         string
   store_name?:     string
   wallet_balance?: number
@@ -104,6 +105,7 @@ export interface DBProduct {
   images?:         string[] // صور متعددة للمنتج
   seller_user_id?: string
   seller_name?:    string
+  seller_account_type?: 'standard' | 'premium' | 'official' // شارة البائع — تُرفق عند الجلب لعرض العلامة الرسمية/المميّزة
   stock?:          number
   rating?:         number
   review_count?:   number
@@ -575,12 +577,25 @@ export async function rejectUser(id: string): Promise<DBUser | null> {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRODUCTS
 // ═══════════════════════════════════════════════════════════════════════════════
+// يرفق شارة البائع (نوع الحساب) بكل منتج بجلب دفعة واحدة لأنواع حسابات البائعين
+// المميّزين. المصدر الوحيد للحقيقة هو عمود users.account_type الذي يضبطه الخادم بعد
+// الاشتراك المدفوع — فتظهر العلامة الرسمية/المميّزة على البطاقات فعلياً لا كواجهة.
+export async function attachSellerAccountTypes(list: DBProduct[]): Promise<DBProduct[]> {
+  const ids = Array.from(new Set(list.map(p => p.seller_user_id).filter(Boolean))) as string[]
+  if (ids.length === 0) return list
+  try {
+    const { data } = await supabase.from('users').select('id, account_type').in('id', ids)
+    const byId = new Map((data ?? []).map((u: any) => [String(u.id), u.account_type as DBProduct['seller_account_type']]))
+    return list.map(p => ({ ...p, seller_account_type: byId.get(String(p.seller_user_id)) || 'standard' }))
+  } catch { return list }
+}
+
 export async function getProducts(o: { category?: string; limit?: number; search?: string } = {}): Promise<DBProduct[]> {
   try {
     let q = supabase.from('products').select('*').eq('active', true).order('created_at', { ascending: false }).limit(o.limit ?? 50)
     if (o.category) q = q.eq('category', o.category)
     if (o.search)   q = q.ilike('name', `%${o.search}%`)
-    const { data } = await q; return (data ?? []) as DBProduct[]
+    const { data } = await q; return await attachSellerAccountTypes((data ?? []) as DBProduct[])
   } catch { return [] }
 }
 export async function addProduct(d: DBProduct): Promise<DBProduct> {
@@ -600,7 +615,11 @@ export async function toggleProductActive(id: string, active: boolean): Promise<
   try { const { error } = await supabase.from('products').update({ active }).eq('id', id); return !error } catch { return false }
 }
 export async function getProductById(id: string): Promise<DBProduct | null> {
-  try { const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle(); return data as DBProduct | null } catch { return null }
+  try {
+    const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle()
+    if (!data) return null
+    return (await attachSellerAccountTypes([data as DBProduct]))[0]
+  } catch { return null }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -667,12 +686,13 @@ export async function getActiveDeals(limit = 12): Promise<DBProduct[]> {
       .or(`deal_ends_at.gt.${nowIso},and(original_price.not.is.null,original_price.gt.0)`)
       .order('created_at', { ascending: false })
       .limit(limit * 2) // نجلب أكثر ثم نصفّي بدقة (شرط الخصم الحقيقي يحتاج مقارنة عمودين)
-    return ((data ?? []) as DBProduct[])
+    const deals = ((data ?? []) as DBProduct[])
       .filter(p =>
         (p.deal_ends_at && new Date(p.deal_ends_at).getTime() > Date.now()) ||
         (p.original_price != null && p.original_price > p.price)
       )
       .slice(0, limit)
+    return await attachSellerAccountTypes(deals)
   } catch { return [] }
 }
 
@@ -685,13 +705,14 @@ export async function getTrendingProducts(limit = 5): Promise<Array<DBProduct & 
     if (ids.length === 0) return []
     const { data: products } = await supabase.from('products').select('*').in('id', ids)
     const byId = new Map((products ?? []).map((p: any) => [String(p.id), p]))
-    return (scores ?? [])
+    const ranked = (scores ?? [])
       .map((s: any) => { const p = byId.get(String(s.product_id)); return p ? { ...p, trend_score: Number(s.trend_score) } : null })
       .filter(Boolean) as Array<DBProduct & { trend_score: number }>
+    return await attachSellerAccountTypes(ranked) as Array<DBProduct & { trend_score: number }>
   } catch { return [] }
 }
 export async function getProductsBySeller(sid: string): Promise<DBProduct[]> {
-  try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return (data??[]) as DBProduct[] } catch { return [] }
+  try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return await attachSellerAccountTypes((data??[]) as DBProduct[]) } catch { return [] }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
