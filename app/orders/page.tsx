@@ -3,8 +3,14 @@ import { useTranslation as useDabiaTranslation } from "@/hooks/use-translation"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
-import { getOrdersByBuyer, confirmOrderReceived, type DBOrder } from "@/lib/dabia/db"
-import { X, Loader2, Package, CheckCircle2, Truck, Clock, MapPin, Copy, ChevronDown, ShieldCheck } from "lucide-react"
+import { getOrdersByBuyer, confirmOrderReceived, openDispute, getDisputeForOrder, type DBOrder, type DBDispute } from "@/lib/dabia/db"
+import { X, Loader2, Package, CheckCircle2, Truck, Clock, MapPin, Copy, ChevronDown, ShieldCheck, AlertTriangle } from "lucide-react"
+
+const DISPUTE_REASONS = ["Item not received", "Item not as described", "Damaged / defective", "Wrong item sent", "Other"]
+const DISPUTE_STYLE: Record<string, string> = {
+  open: "bg-amber-400/10 text-amber-400", resolved: "bg-emerald-400/10 text-emerald-400",
+  rejected: "bg-red-400/10 text-red-400", refunded: "bg-blue-400/10 text-blue-400",
+}
 
 const STEPS = ["pending", "confirmed", "preparing", "shipped", "delivered"] as const
 const STEP_LABEL: Record<string, string> = {
@@ -16,12 +22,30 @@ const STATUS_STYLE: Record<string, string> = {
   delivered: "bg-emerald-500/10 text-emerald-500", cancelled: "bg-red-400/10 text-red-400", refunded: "bg-red-400/10 text-red-400",
 }
 
-function OrderCard({ order, onConfirm }: { order: DBOrder; onConfirm: (id: string) => void }) {
+function OrderCard({ order, buyerId, onConfirm }: { order: DBOrder; buyerId: string; onConfirm: (id: string) => void }) {
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const status = order.status || "pending"
   const currentIdx = STEPS.indexOf(status as any)
   const isCancelled = status === "cancelled" || status === "refunded"
+
+  const [dispute, setDispute] = useState<DBDispute | null>(null)
+  const [showDispute, setShowDispute] = useState(false)
+  const [dReason, setDReason] = useState(DISPUTE_REASONS[0])
+  const [dDesc, setDDesc] = useState("")
+  const [dBusy, setDBusy] = useState(false)
+  useEffect(() => { if (open && order.id) getDisputeForOrder(order.id).then(setDispute) }, [open, order.id])
+
+  // يمكن فتح نزاع طالما لم يُسترد المبلغ ولم يُلغَ الطلب، وبعد بدء التنفيذ فعلاً
+  const canDispute = !dispute && !["pending", "cancelled", "refunded"].includes(status)
+
+  const submitDispute = async () => {
+    if (!order.id) return
+    setDBusy(true)
+    const d = await openDispute(order.id, buyerId, dReason, dDesc.trim() || undefined)
+    setDBusy(false)
+    if (d) { setDispute(d); setShowDispute(false); setDDesc("") }
+  }
 
   const doConfirm = async () => {
     setConfirming(true)
@@ -131,6 +155,39 @@ function OrderCard({ order, onConfirm }: { order: DBOrder; onConfirm: (id: strin
 
           {order.pi_tx_id && <p className="text-[10px] text-muted-foreground font-mono truncate">Pi Tx: {order.pi_tx_id}</p>}
 
+          {/* مركز النزاعات — حماية المشتري */}
+          {dispute ? (
+            <div className="rounded-xl border border-border bg-secondary/20 p-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 text-amber-400" />Dispute</p>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${DISPUTE_STYLE[dispute.status]}`}>{dispute.status}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">{dispute.reason}{dispute.description ? ` — ${dispute.description}` : ""}</p>
+              {dispute.resolution_note && <p className="text-[11px] text-emerald-400">Seller: {dispute.resolution_note}</p>}
+              {dispute.status === "refunded" && <p className="text-[11px] font-bold text-blue-400">✓ You were refunded.</p>}
+            </div>
+          ) : canDispute && (
+            showDispute ? (
+              <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 space-y-2">
+                <p className="text-[11px] font-bold">Report a problem</p>
+                <select value={dReason} onChange={e => setDReason(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-[12px] outline-none focus:border-amber-400/50">
+                  {DISPUTE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <textarea value={dDesc} onChange={e => setDDesc(e.target.value)} rows={2} placeholder="Add details (optional)"
+                  className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-[12px] outline-none focus:border-amber-400/50 resize-none" />
+                <div className="flex gap-2">
+                  <button onClick={submitDispute} disabled={dBusy} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black disabled:opacity-50">{dBusy ? "Submitting…" : "Submit dispute"}</button>
+                  <button onClick={() => setShowDispute(false)} className="rounded-lg border border-border px-3 py-1.5 text-[12px] font-semibold text-muted-foreground">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setShowDispute(true)} className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-border py-2 text-[12px] font-bold text-muted-foreground">
+                <AlertTriangle className="h-3.5 w-3.5" />Report a problem
+              </button>
+            )
+          )}
+
           {/* تأكيد الاستلام — يُحرِّر مبلغ الضمان للبائع */}
           {status === "shipped" && (
             <button onClick={doConfirm} disabled={confirming}
@@ -182,7 +239,7 @@ export default function OrdersPage() {
             <p className="text-[12px] text-muted-foreground">Your purchases will appear here with live tracking</p>
           </div>
         ) : (
-          orders.map(o => <OrderCard key={o.id} order={o} onConfirm={onConfirm} />)
+          orders.map(o => <OrderCard key={o.id} order={o} buyerId={user.id!} onConfirm={onConfirm} />)
         )}
       </div>
     </div>

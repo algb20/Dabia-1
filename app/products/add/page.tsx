@@ -75,6 +75,7 @@ function AddProductInner() {
         })
         if (p.images?.length) setUploadedImages(p.images)
         else if (p.image && p.image.startsWith("http")) setUploadedImages([p.image])
+        if (p.video_url) setUploadedVideo(p.video_url)
       }
       setLoadingEdit(false)
     })
@@ -162,7 +163,6 @@ function AddProductInner() {
         form.cert     ? `Cert: ${form.cert}` : "",
         form.moq      ? `MOQ: ${form.moq}` : "",
         form.duration ? `Duration: ${form.duration}` : "",
-        uploadedVideo ? `Video: ${uploadedVideo}` : "",
         form.model3dUrl ? `3D: ${form.model3dUrl}` : "",
       ].filter(Boolean)
 
@@ -176,6 +176,8 @@ function AddProductInner() {
         category:        form.category,
         image:           uploadedImages[0] || form.emoji,
         images:          uploadedImages.length ? uploadedImages : undefined,
+        // الفيديو يُحفَظ الآن في حقله الحقيقي ليظهر المنتج في Reels (لا داخل الوصف)
+        video_url:       uploadedVideo || null,
         stock:           parseInt(form.stock) || 1,
       }
 

@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, getSellerTrust, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -574,6 +574,9 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const [paymentError, setPaymentError] = useState("")
   const { user: buyerUser } = useUserAuth()
   const [showShareModal, setShowShareModal] = useState(false)
+  // درجة ثقة البائع الحقيقية (من تقييمات/طلبات/نزاعات فعلية)
+  const [sellerTrust, setSellerTrust] = useState<Awaited<ReturnType<typeof getSellerTrust>>>(null)
+  useEffect(() => { if (p.sellerUserId) getSellerTrust(p.sellerUserId).then(setSellerTrust) }, [p.sellerUserId])
 
   // إعجاب/حفظ حقيقيان — انتقلا إلى صفحة المنتج (لا يظهران على البطاقة لتفادي التشويش)
   const [dSaved, setDSaved] = useState(false)
@@ -616,7 +619,9 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const activeOffer = selectedOffer ?? offers[0]
   const isHighValue = activeOffer.price >= HIGH_VALUE
   const isOfficial  = p.sellerAccountType === "official"
-  const trustTotal  = Math.round(p.trustIndex?.total ?? p.trustScore)
+  // نستخدم الدرجة الحقيقية إن توفّرت (وللبائع سجلّ فعلي)، وإلا التقديري
+  const trustTotal  = sellerTrust && (sellerTrust.reviews_count > 0 || sellerTrust.completed_orders > 0)
+    ? sellerTrust.score : Math.round(p.trustIndex?.total ?? p.trustScore)
 
   // ── نافذة إتمام الطلب (Checkout) — تُجمع فيها الكمية وبيانات الشحن قبل الدفع ──
   const [showCheckout, setShowCheckout] = useState(false)
@@ -830,7 +835,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                     <AccountBadge type={p.sellerAccountType} size="sm" />
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-black text-amber-400">{p.sellerTrust}%</p>
+                    <p className="text-sm font-black text-amber-400">{trustTotal}%</p>
                     <p className="text-[9px] text-muted-foreground">Trust</p>
                   </div>
                 </div>
@@ -848,7 +853,13 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                   </span>
                 </div>
                 <Progress value={trustTotal} className="h-2" />
-                <p className="text-[10px] text-muted-foreground">Based on verified sales, confirmed reviews, and service reliability.</p>
+                {sellerTrust && (sellerTrust.reviews_count > 0 || sellerTrust.completed_orders > 0) ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    Real score · {sellerTrust.avg_rating}★ from {sellerTrust.reviews_count} review{sellerTrust.reviews_count === 1 ? "" : "s"} · {sellerTrust.completed_orders} completed order{sellerTrust.completed_orders === 1 ? "" : "s"}{sellerTrust.disputes > 0 ? ` · ${sellerTrust.disputes} dispute${sellerTrust.disputes === 1 ? "" : "s"}` : ""}.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">New seller — score builds from confirmed reviews and completed orders.</p>
+                )}
               </div>
 
               {/* Authentication */}
@@ -3417,6 +3428,9 @@ export default function DabiaApp() {
               </button>
             </Link>
           )}
+          <Link href="/reels" className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label="Reels">
+            <Video className="h-4 w-4" />
+          </Link>
           <button onClick={() => setShowSearch(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label="Search">
             <Search className="h-4 w-4" />
           </button>

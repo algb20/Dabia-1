@@ -103,6 +103,7 @@ export interface DBProduct {
   category?:       string
   image?:          string
   images?:         string[] // صور متعددة للمنتج
+  video_url?:      string | null // فيديو قصير للمنتج (Reels)
   seller_user_id?: string
   seller_name?:    string
   seller_account_type?: 'standard' | 'premium' | 'official' // شارة البائع — تُرفق عند الجلب لعرض العلامة الرسمية/المميّزة
@@ -746,6 +747,55 @@ export async function getRecommendations(userId?: string, limit = 20): Promise<D
     if (error || !data) return []
     return await attachSellerAccountTypes(data as DBProduct[])
   } catch { return [] }
+}
+
+// ── Reels: فيديوهات منتجات قصيرة عمودية (اكتشاف بأسلوب TikTok) ─────────────
+export async function getReels(limit = 30): Promise<DBProduct[]> {
+  try {
+    const { data } = await supabase.from('products').select('*')
+      .eq('active', true).not('video_url', 'is', null)
+      .order('created_at', { ascending: false }).limit(limit)
+    return await attachSellerAccountTypes((data ?? []) as DBProduct[])
+  } catch { return [] }
+}
+
+// ── مركز النزاعات/الاسترداد ────────────────────────────────────────────────
+export interface DBDispute {
+  id?: string; order_id: string; buyer_id: string; seller_id?: string
+  reason: string; description?: string | null
+  status: 'open' | 'resolved' | 'rejected' | 'refunded'
+  resolution_note?: string | null; created_at?: string; resolved_at?: string | null
+}
+export async function openDispute(orderId: string, buyerId: string, reason: string, description?: string): Promise<DBDispute | null> {
+  try {
+    const { data, error } = await supabase.rpc('open_dispute', { p_order: Number(orderId), p_buyer: Number(buyerId), p_reason: reason, p_desc: description ?? null })
+    if (error || !data) return null
+    return data as DBDispute
+  } catch { return null }
+}
+export async function resolveDispute(disputeId: string, actorId: string, resolution: 'resolved' | 'rejected' | 'refunded', note?: string): Promise<DBDispute | null> {
+  try {
+    const { data, error } = await supabase.rpc('resolve_dispute', { p_dispute: Number(disputeId), p_actor: Number(actorId), p_resolution: resolution, p_note: note ?? null })
+    if (error || !data) return null
+    return data as DBDispute
+  } catch { return null }
+}
+export async function getDisputeForOrder(orderId: string): Promise<DBDispute | null> {
+  try { const { data } = await supabase.from('order_disputes').select('*').eq('order_id', orderId).maybeSingle(); return (data as DBDispute) ?? null } catch { return null }
+}
+export async function getDisputesForSeller(sellerId: string): Promise<DBDispute[]> {
+  try { const { data } = await supabase.from('order_disputes').select('*').eq('seller_id', sellerId).order('created_at', { ascending: false }); return (data ?? []) as DBDispute[] } catch { return [] }
+}
+
+// ── درجة الثقة الحقيقية للبائع (محسوبة من تقييمات/طلبات/نزاعات فعلية) ────────
+export interface SellerTrust { score: number; avg_rating: number; reviews_count: number; completed_orders: number; disputes: number }
+export async function getSellerTrust(sellerId: string): Promise<SellerTrust | null> {
+  try {
+    const { data, error } = await supabase.rpc('seller_trust_score', { p_seller: Number(sellerId) })
+    if (error || !data || !data[0]) return null
+    const r = data[0]
+    return { score: Number(r.score), avg_rating: Number(r.avg_rating), reviews_count: Number(r.reviews_count), completed_orders: Number(r.completed_orders), disputes: Number(r.disputes) }
+  } catch { return null }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -3,8 +3,8 @@ import { useTranslation as useDabiaTranslation } from "@/hooks/use-translation"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
-import { getOrdersBySeller, updateOrderStatus, ORDER_STATUS_FLOW, type DBOrder } from "@/lib/dabia/db"
-import { X, Loader2, Package, Truck, CheckCircle2, Clock, XCircle, ChevronRight, MapPin } from "lucide-react"
+import { getOrdersBySeller, updateOrderStatus, getDisputesForSeller, resolveDispute, ORDER_STATUS_FLOW, type DBOrder, type DBDispute } from "@/lib/dabia/db"
+import { X, Loader2, Package, Truck, CheckCircle2, Clock, XCircle, ChevronRight, MapPin, AlertTriangle } from "lucide-react"
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending", confirmed: "Confirmed", preparing: "Preparing",
@@ -29,12 +29,26 @@ export default function SellerOrdersPage() {
   const [carrier, setCarrier] = useState("")
   const [trackingNo, setTrackingNo] = useState("")
 
+  const [disputes, setDisputes] = useState<DBDispute[]>([])
+  const [resolvingId, setResolvingId] = useState<string | null>(null)
+
   const load = () => {
     if (!user?.id) return
     setLoading(true)
     getOrdersBySeller(user.id).then(setOrders).finally(() => setLoading(false))
+    getDisputesForSeller(user.id).then(setDisputes)
   }
   useEffect(() => { load() }, [user?.id])
+
+  const handleResolve = async (d: DBDispute, resolution: "resolved" | "rejected" | "refunded") => {
+    if (!user?.id || !d.id) return
+    const note = resolution === "refunded" ? "Refund issued" : resolution === "rejected" ? undefined : window.prompt("Message to the buyer (optional)") || undefined
+    setResolvingId(d.id)
+    const updated = await resolveDispute(d.id, user.id, resolution, note)
+    setResolvingId(null)
+    if (updated) { setDisputes(prev => prev.map(x => x.id === d.id ? updated : x)); load() }
+  }
+  const openDisputes = disputes.filter(d => d.status === "open")
 
   if (!user) return (
     <div className="flex min-h-dvh items-center justify-center bg-background">
@@ -84,6 +98,28 @@ export default function SellerOrdersPage() {
           </button>
         ))}
       </div>
+
+      {/* مركز النزاعات — يحسمها البائع (بما فيها الاسترداد الفعلي) */}
+      {openDisputes.length > 0 && (
+        <div className="border-b border-border bg-amber-400/5 p-4 space-y-2.5">
+          <p className="text-[12px] font-black flex items-center gap-1.5 text-amber-400"><AlertTriangle className="h-4 w-4" />Open disputes ({openDisputes.length})</p>
+          {openDisputes.map(d => (
+            <div key={d.id} className="rounded-xl border border-amber-400/20 bg-card p-3 space-y-2">
+              <p className="text-[11px] text-muted-foreground font-mono">Order #{String(d.order_id).slice(0, 8)}</p>
+              <p className="text-[12px] font-bold">{d.reason}</p>
+              {d.description && <p className="text-[11px] text-muted-foreground">{d.description}</p>}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button onClick={() => handleResolve(d, "refunded")} disabled={resolvingId === d.id}
+                  className="rounded-lg bg-blue-500 px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Refund buyer</button>
+                <button onClick={() => handleResolve(d, "resolved")} disabled={resolvingId === d.id}
+                  className="rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Mark resolved</button>
+                <button onClick={() => handleResolve(d, "rejected")} disabled={resolvingId === d.id}
+                  className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-bold text-muted-foreground disabled:opacity-50">Reject</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-20">
         {loading ? (

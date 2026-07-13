@@ -143,9 +143,22 @@ items, so future sessions have full context.
   instant delivery; a 6-second poll via the participant-checked RPC remains as a
   fallback for anyone without an active session. Instant + private, no tradeoff.
 
-## 🔜 Next batch (planned)
-- Reels — vertical short-video product discovery.
-- Dispute/refund center + real seller trust score.
+## ✅ Batch 16 — Reels, dispute center, real seller trust score
+- **Reels (vertical short-video discovery):** new `products.video_url` column;
+  the product form now saves the short video to its real field (it was being
+  buried in the description before, so it never surfaced). New `/reels` route —
+  full-screen vertical snap feed, autoplay of only the visible clip
+  (IntersectionObserver), mute toggle, like / save / share / View & Buy overlay.
+  Reels icon in the app header.
+- **Dispute / refund center:** `order_disputes` table + `open_dispute` (buyer,
+  order-owner-checked) and `resolve_dispute` (seller/admin; **refund actually
+  flips the order to refunded + escrow refunded**). Buyers open a dispute from
+  My Orders ("Report a problem" — reason + details, status shown); sellers see an
+  "Open disputes" panel in Store Orders and resolve/refund/reject.
+- **Real seller trust score:** `seller_trust_score` RPC computes a 0–100 score
+  from actual data — average review rating, completed orders, review density,
+  minus a refunded-dispute penalty. Product detail now shows the real score and
+  a breakdown (rating, reviews, completed orders, disputes) instead of a formula.
 
 ## ⚠️ Remaining — do WITH live Pi Browser testing (not blind)
 1. Low-risk permissive tables still open (per-user toggles / ephemeral):
