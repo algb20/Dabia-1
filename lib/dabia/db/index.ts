@@ -715,6 +715,19 @@ export async function getProductsBySeller(sid: string): Promise<DBProduct[]> {
   try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return await attachSellerAccountTypes((data??[]) as DBProduct[]) } catch { return [] }
 }
 
+// توصيات شخصية حقيقية عبر محرّك الخادم get_recommendations (هجين محتوى + تراند).
+// userId فارغ/غير مسجّل → توصيات عامة رائجة (cold start) بنفس الدالة.
+export async function getRecommendations(userId?: string, limit = 20): Promise<DBProduct[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_recommendations', {
+      p_user_id: userId ? Number(userId) : null,
+      p_limit: limit,
+    })
+    if (error || !data) return []
+    return await attachSellerAccountTypes(data as DBProduct[])
+  } catch { return [] }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // LIVE STREAMING COMMERCE — بث مباشر حقيقي للتجار (Supabase Realtime)
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -2007,6 +2007,13 @@ function HomeTab() {
     { refreshInterval: 60000 })
   const deals = dealsData ?? []
 
+  // توصيات شخصية حقيقية من محرّك الخادم (تتعلّم من إعجابات/حفظ/طلبات المستخدم)
+  const { data: recData } = useSWR<Product[]>(
+    homeUser?.id ? `dabia-recs-${homeUser.id}` : "dabia-recs-anon",
+    async () => (await getRecommendations(homeUser?.id, 12)).map(dbProductToProduct),
+    { refreshInterval: 120000 })
+  const recs = recData ?? []
+
   const categories  = ["All", "Electronics", "Fashion", "Accessories", "Home", "Health", "Art"]
   const sortOptions: { key: SortKey; label: string }[] = [
     { key: "smart", label: "Smart" }, { key: "price", label: "Price" },
@@ -2068,6 +2075,29 @@ function HomeTab() {
                     <Clock className="h-2.5 w-2.5" />{d.dealLabel || "Limited"} · <DealCountdown endsAt={d.dealEndsAt} />
                   </p>
                 )}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* For You — توصيات شخصية بمحرّك خوارزمي حقيقي (محتوى + تراند) */}
+      {category === "All" && recs.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-amber-400" />For You
+            <span className="text-[9px] font-normal text-muted-foreground">{homeUser ? "picked from your activity" : "trending picks"}</span>
+          </p>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+            {recs.map(r => (
+              <button key={`rec-${r.id}`} onClick={() => setSelected(r)}
+                className="shrink-0 w-32 rounded-2xl border border-amber-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                  {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
+                  {r.sellerAccountType === "official" && <span className="absolute top-1 left-1 rounded-full bg-blue-500 px-1.5 py-0.5 text-[8px] font-black text-white">Official</span>}
+                </div>
+                <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
+                <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
               </button>
             ))}
           </div>
