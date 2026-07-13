@@ -83,6 +83,27 @@ items, so future sessions have full context.
   copies the link with instructions. Added to the root (share entry) and the
   public profile route; `/p/[id]` now redirects to `/?p=` so the gate fires.
 
+## ✅ Batch 13 — Pi one-tap signup, Pro gating, badge consistency, price alerts
+- **Pi one-tap signup/login:** `loginOrRegisterWithPi` + `useUserAuth.loginWithPi`
+  — inside Pi Browser, one tap authenticates via `Pi.authenticate` and
+  creates/fetches an active **buyer** account (full privileges: buy, save,
+  comment) with no email or password. A synthetic Pi-linked email keeps the
+  Supabase session/RLS linkage intact; the local cache now accepts Pi identity.
+  Prominent "Continue with Pi" button on the login and register screens.
+- **Pro tab is business-only:** the "Pro" bottom-nav tab now shows only for
+  business accounts (role ≠ buyer) — buyers/guests get a cleaner 5-tab bar, and
+  a saved "business" tab falls back to Home for non-business users.
+- **Badge consistency:** the real `account_type` badge now also renders on
+  social posts (feed) and on the public profile header/space — official (blue)
+  / premium (gold), consistent with product cards.
+- **Price-drop alerts (innovation):** the notifications feed now surfaces a
+  real unread alert when a product you **saved** goes on a deal / discount —
+  built purely on real data (saved_products × active deals), no new table.
+- Verified: the account_type badge is tamper-proof — an authenticated client
+  editing its own row is rejected by the guard trigger ("account_type can only
+  be granted by the system"); only the server route grants it after a verified
+  Pi payment.
+
 ## ⚠️ Remaining — do WITH live Pi Browser testing (not blind)
 1. Low-risk permissive tables still open (per-user toggles / ephemeral):
    product_likes, product_shares, saved_products, saved_posts, mentions,
