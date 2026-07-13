@@ -122,9 +122,23 @@ items, so future sessions have full context.
 - **Announcement management in Pro:** the Pro tab now lists your announcements
   with working **edit** and **delete** (previously you could only send them).
 
+## ✅ Batch 15 — Social discovery + private direct chat
+- **Social discovery (the reported gap):** people/account search in the Social
+  tab (find accounts → Follow + open their profile), post authors (avatar+name)
+  are now tappable to open their profile, and Follow buttons appear on cards and
+  in search — like Facebook/TikTok.
+- **Buyer–seller direct chat (private):** new bigint-keyed DM system
+  (`dm_threads`/`dm_messages`) with all access through participant-checked
+  SECURITY DEFINER RPCs (`dm_open_thread`, `dm_send`, `dm_get_messages`,
+  `dm_list_threads`, `dm_mark_read`, `dm_unread_count`) — no direct table reads,
+  so conversations stay private. Inbox at `/messages`, conversation at
+  `/messages/[id]` with 2-second incremental polling (near-instant, private),
+  read receipts, unread badges. "Message" buttons on public profiles and product
+  detail; a Messages icon with unread count in the app header.
+  (Note: true Supabase-Realtime push for DMs needs the deferred Supabase-Auth
+  migration to keep RLS private; polling is the private, working choice today.)
+
 ## 🔜 Next batch (planned)
-- Buyer–seller direct chat (Supabase Realtime; `messages`/`threads` tables
-  already exist as the foundation).
 - Reels — vertical short-video product discovery.
 - Dispute/refund center + real seller trust score.
 

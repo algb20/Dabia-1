@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, isFollowing, getFollowCounts, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -987,6 +987,15 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
               className="btn-primary w-full rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
               <ShoppingCart className="h-4 w-4" />Buy Now
             </button>
+            {/* مراسلة البائع مباشرةً حول هذا المنتج */}
+            {buyerUser && p.sellerUserId && String(p.sellerUserId) !== String(buyerUser.id) && (
+              <button onClick={async () => {
+                const tid = await openDMThread(buyerUser.id!, p.sellerUserId!)
+                if (tid) window.location.href = `/messages/${tid}`
+              }} className="w-full rounded-2xl border border-border py-2.5 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.99]">
+                <MessageCircle className="h-4 w-4" />Message seller
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1746,6 +1755,7 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow }: 
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <Link href={`/u/${post.user_id}`} className="flex items-center gap-2.5 min-w-0 flex-1">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-sm font-black text-black overflow-hidden">
           {post.avatar_url ? <img src={post.avatar_url} alt="" className="h-full w-full object-cover" /> : post.username[0]?.toUpperCase()}
         </div>
@@ -1761,6 +1771,7 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow }: 
           </p>
           {post.reposted_from_username && <p className="text-[10px] text-muted-foreground">Reposted from {post.reposted_from_username}</p>}
         </div>
+        </Link>
         {/* زر المتابعة — يظهر لغير المالك عند توفّر معالج المتابعة */}
         {!isOwner && onToggleFollow && currentUser && (
           <button onClick={() => onToggleFollow(String(post.user_id))}
@@ -1908,6 +1919,10 @@ function SocialTab() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [followingSet, setFollowingSet] = useState<Set<string>>(new Set())
+  // بحث الأشخاص/الحسابات للمتابعة والدخول لملفاتهم (مثل فيسبوك/تيك توك)
+  const [peopleQuery, setPeopleQuery] = useState("")
+  const [peopleResults, setPeopleResults] = useState<Awaited<ReturnType<typeof searchAccounts>>>([])
+  const [searchingPeople, setSearchingPeople] = useState(false)
 
   // المنتجات الرائجة الآن تظهر تلقائياً أعلى تبويب For You (تفاعل حقيقي)
   const { data: trendingData } = useSWR(
@@ -1939,6 +1954,18 @@ function SocialTab() {
     if (scope === "following") load()
   }, [user?.id, followingSet, scope, load])
 
+  // بحث حيّ عن الحسابات
+  useEffect(() => {
+    const q = peopleQuery.trim()
+    if (q.length < 1) { setPeopleResults([]); return }
+    let active = true
+    setSearchingPeople(true)
+    const t = setTimeout(() => {
+      searchAccounts(q).then(r => { if (active) { setPeopleResults(r); setSearchingPeople(false) } })
+    }, 250)
+    return () => { active = false; clearTimeout(t) }
+  }, [peopleQuery])
+
   if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
 
   return (
@@ -1955,6 +1982,47 @@ function SocialTab() {
           <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black active:scale-95">
             <Plus className="h-3.5 w-3.5" />Post
           </button>
+        )}
+      </div>
+
+      {/* بحث الأشخاص — متابعة والدخول إلى حساباتهم مثل فيسبوك/تيك توك */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/30 px-3 py-2">
+          <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+          <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Find people & accounts to follow"
+            className="flex-1 bg-transparent text-[13px] outline-none" />
+          {peopleQuery && <button onClick={() => setPeopleQuery("")}><X className="h-4 w-4 text-muted-foreground" /></button>}
+        </div>
+        {peopleQuery.trim() && (
+          <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
+            {searchingPeople ? (
+              <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-amber-400" /></div>
+            ) : peopleResults.length === 0 ? (
+              <p className="text-center text-[12px] text-muted-foreground py-4">No accounts found</p>
+            ) : peopleResults.map(acc => {
+              const isMe = String(acc.id) === String(user?.id)
+              const isFol = followingSet.has(String(acc.id))
+              return (
+                <div key={acc.id} className="flex items-center gap-2.5 px-3 py-2.5">
+                  <Link href={`/u/${acc.id}`} className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-[12px] font-bold overflow-hidden">
+                      {acc.avatar_url ? <img src={acc.avatar_url} alt="" className="h-full w-full object-cover" /> : (acc.username || "U")[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-bold truncate">{acc.store_name || acc.username}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">@{acc.username}{acc.role && acc.role !== "buyer" ? ` · ${acc.role}` : ""}</p>
+                    </div>
+                  </Link>
+                  {!isMe && user && (
+                    <button onClick={() => toggleFollow(String(acc.id))}
+                      className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold ${isFol ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
+                      {isFol ? "Following" : "Follow"}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
 
@@ -3270,6 +3338,14 @@ export default function DabiaApp() {
   const notifs   = alertsData?.notifications ?? []
   const unread   = notifs.filter(n => !n.read).length
 
+  // شارة رسائل غير مقروءة — تحديث كل ١٠ ثوانٍ
+  const [dmUnread, setDmUnread] = useState(0)
+  useEffect(() => {
+    if (!dbUser?.id) { setDmUnread(0); return }
+    const load = () => getDMUnreadCount(dbUser.id!).then(setDmUnread)
+    load(); const t = setInterval(load, 10000); return () => clearInterval(t)
+  }, [dbUser?.id])
+
   // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
   // مصدران: (1) معامل الاستعلام على الجذر /?p=ID (الرابط الجديد الأكثر متانة)،
   // (2) sessionStorage الذي يضعه مسار /p/[id] القديم (توافق خلفي للروابط القديمة).
@@ -3344,6 +3420,14 @@ export default function DabiaApp() {
           <button onClick={() => setShowSearch(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label="Search">
             <Search className="h-4 w-4" />
           </button>
+          {dbUser && (
+            <Link href="/messages" className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Messages${dmUnread ? `, ${dmUnread} unread` : ""}`}>
+              <MessageCircle className="h-4 w-4" />
+              {dmUnread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-black">{dmUnread}</span>
+              )}
+            </Link>
+          )}
           <button onClick={() => setShowNotifs(true)} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
             <Bell className="h-4 w-4" />
             {unread > 0 && (

@@ -1457,6 +1457,53 @@ export async function getFollowingSet(followerId: string): Promise<Set<string>> 
   } catch { return new Set() }
 }
 
+// ── محادثة مباشرة (DM) — خاصّة عبر دوال تتحقّق من طرفَي المحادثة ────────────
+export interface DBDMMessage { id?: string; thread_id: string; sender_id: string; text: string; created_at?: string }
+export interface DBDMThread {
+  thread_id: string; other_id: string; other_username: string; other_avatar?: string | null
+  other_account_type?: string | null; last_text?: string | null; last_at?: string | null
+  last_sender?: string | null; unread?: boolean
+}
+
+export async function openDMThread(meId: string, otherId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc('dm_open_thread', { p_me: Number(meId), p_other: Number(otherId) })
+    if (error || data == null) return null
+    return String(data)
+  } catch { return null }
+}
+export async function sendDM(threadId: string, senderId: string, text: string): Promise<DBDMMessage | null> {
+  try {
+    const { data, error } = await supabase.rpc('dm_send', { p_thread: Number(threadId), p_sender: Number(senderId), p_text: text })
+    if (error || !data) return null
+    return data as DBDMMessage
+  } catch { return null }
+}
+export async function getDMMessages(threadId: string, meId: string, after?: string): Promise<DBDMMessage[]> {
+  try {
+    const { data, error } = await supabase.rpc('dm_get_messages', { p_thread: Number(threadId), p_me: Number(meId), p_after: after ?? null })
+    if (error || !data) return []
+    return data as DBDMMessage[]
+  } catch { return [] }
+}
+export async function listDMThreads(meId: string): Promise<DBDMThread[]> {
+  try {
+    const { data, error } = await supabase.rpc('dm_list_threads', { p_me: Number(meId) })
+    if (error || !data) return []
+    return (data as any[]).map(r => ({
+      thread_id: String(r.thread_id), other_id: String(r.other_id), other_username: r.other_username,
+      other_avatar: r.other_avatar, other_account_type: r.other_account_type, last_text: r.last_text,
+      last_at: r.last_at, last_sender: r.last_sender != null ? String(r.last_sender) : null, unread: r.unread,
+    }))
+  } catch { return [] }
+}
+export async function markDMRead(threadId: string, meId: string): Promise<void> {
+  try { await supabase.rpc('dm_mark_read', { p_thread: Number(threadId), p_me: Number(meId) }) } catch {}
+}
+export async function getDMUnreadCount(meId: string): Promise<number> {
+  try { const { data } = await supabase.rpc('dm_unread_count', { p_me: Number(meId) }); return Number(data) || 0 } catch { return 0 }
+}
+
 // خلاصة اجتماعية بأسلوب TikTok: 'foryou' (خوارزمية) أو 'following' (من تتابعهم)
 export async function getSocialFeed(scope: 'foryou' | 'following', userId?: string, limit = 60): Promise<DBPost[]> {
   try {
