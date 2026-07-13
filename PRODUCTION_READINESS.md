@@ -55,6 +55,34 @@ items, so future sessions have full context.
   `product_reviews` (author-only edit/delete). Poll voting moved to an
   atomic `vote_poll` RPC.
 
+## ✅ Batch 12 — Pro/badges, recommendations, communities, Pi-Browser share
+- **Real account badges (not UI-only):** new server-authoritative
+  `users.account_type` (standard/premium/official), locked from client edits by
+  the guard trigger. Subscribing to **Pro** grants `premium`, **Official Brand**
+  grants `official` — set by the server subscriptions route only after a verified
+  Pi payment, and auto-reverted to `standard` when the subscription expires.
+  Products now carry the seller's badge (`attachSellerAccountTypes`) so the
+  Official/Premium badge actually shows on cards & detail. Plan feature lists
+  rewritten to only real, working perks (fabricated AI/API/SLA claims removed).
+- **Priority listing perk is real:** premium/official sellers get a ranking
+  boost in the smart-sort trend engine.
+- **Recommendation engine:** `get_recommendations` SECURITY DEFINER RPC — a
+  content + trend hybrid that learns from each user's likes/saves/reviews/orders
+  (category & seller affinity), excludes already-seen items, and cold-starts to
+  trending. Surfaced as a "For You" rail on Home.
+- **Communities/Groups system:** `groups`, `group_members`, `group_posts` with
+  public/private groups, owner/admin/member roles, join requests + approval,
+  in-group feed, and moderation — all writes via SECURITY DEFINER RPCs
+  (`create_group`, `join_group`, `leave_group`, `group_moderate`,
+  `post_to_group`, `delete_group_post`); member_count kept in sync by trigger.
+  Official accounts' groups carry the verified badge. New routes `/groups` and
+  `/groups/[id]`; entry point on the Space tab.
+- **Share links open in Pi Browser:** new `PiBrowserGate` interstitial for
+  recipients who open a share link outside Pi Browser — on Android it forces the
+  link into Pi Browser via an `intent://…package=pi.browser` URL; on iOS it
+  copies the link with instructions. Added to the root (share entry) and the
+  public profile route; `/p/[id]` now redirects to `/?p=` so the gate fires.
+
 ## ⚠️ Remaining — do WITH live Pi Browser testing (not blind)
 1. Low-risk permissive tables still open (per-user toggles / ephemeral):
    product_likes, product_shares, saved_products, saved_posts, mentions,
