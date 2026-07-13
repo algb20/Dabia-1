@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useUserAuth } from "@/hooks/use-user-auth"
-import { getDMMessages, sendDM, markDMRead, listDMThreads, type DBDMMessage, type DBDMThread } from "@/lib/dabia/db"
+import { getDMMessages, sendDM, markDMRead, listDMThreads, supabase, type DBDMMessage, type DBDMThread } from "@/lib/dabia/db"
 import { X, Loader2, Send, BadgeCheck, Crown } from "lucide-react"
 
 export default function ConversationPage() {
@@ -40,24 +40,54 @@ export default function ConversationPage() {
     return () => { active = false }
   }, [user?.id, threadId])
 
-  // استطلاع شبه لحظي كل ثانيتين للرسائل الجديدة فقط
+  // دمج رسالة جديدة بلا تكرار + تعليم كمقروءة + تمرير لأسفل
+  const ingest = useCallback((incoming: DBDMMessage[]) => {
+    if (!incoming.length || !user?.id) return
+    setMessages(prev => {
+      const seen = new Set(prev.map(m => String(m.id)))
+      const add = incoming.filter(m => !seen.has(String(m.id)))
+      if (!add.length) return prev
+      const merged = [...prev, ...add].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+      lastAtRef.current = merged[merged.length - 1].created_at
+      return merged
+    })
+    markDMRead(threadId, user.id!)
+    scrollToBottom()
+  }, [user?.id, threadId])
+
+  // الحل الدائم: بثّ لحظي خاص عبر Supabase Realtime — يصل الحدث للطرفين فقط
+  // (سياسات RLS تمنع أي طرف ثالث). يعمل فوراً لمن لديه جلسة.
+  useEffect(() => {
+    if (!user?.id || !threadId) return
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
+    ;(async () => {
+      // إرفاق رمز جلسة المستخدم بقناة Realtime حتى تسري سياسات RLS الخاصة
+      try {
+        const { data } = await supabase.auth.getSession()
+        const token = data?.session?.access_token
+        if (token) supabase.realtime.setAuth(token)
+      } catch {}
+      if (cancelled) return
+      channel = supabase
+        .channel(`dm-${threadId}`)
+        .on("postgres_changes",
+          { event: "INSERT", schema: "public", table: "dm_messages", filter: `thread_id=eq.${threadId}` },
+          (payload: any) => { if (payload?.new) ingest([payload.new as DBDMMessage]) })
+        .subscribe()
+    })()
+    return () => { cancelled = true; if (channel) supabase.removeChannel(channel) }
+  }, [user?.id, threadId, ingest])
+
+  // استطلاع احتياطي كل ٦ ثوانٍ (يغطّي من لا جلسة له أو أي حدث فائت)
   useEffect(() => {
     if (!user?.id || !threadId) return
     const poll = setInterval(async () => {
       const fresh = await getDMMessages(threadId, user.id!, lastAtRef.current)
-      if (fresh.length) {
-        setMessages(prev => {
-          const seen = new Set(prev.map(m => String(m.id)))
-          const add = fresh.filter(m => !seen.has(String(m.id)))
-          return add.length ? [...prev, ...add] : prev
-        })
-        lastAtRef.current = fresh[fresh.length - 1].created_at
-        markDMRead(threadId, user.id!)
-        scrollToBottom()
-      }
-    }, 2000)
+      ingest(fresh)
+    }, 6000)
     return () => clearInterval(poll)
-  }, [user?.id, threadId])
+  }, [user?.id, threadId, ingest])
 
   const submit = useCallback(async () => {
     const t = text.trim()

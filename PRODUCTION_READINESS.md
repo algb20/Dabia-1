@@ -135,8 +135,13 @@ items, so future sessions have full context.
   `/messages/[id]` with 2-second incremental polling (near-instant, private),
   read receipts, unread badges. "Message" buttons on public profiles and product
   detail; a Messages icon with unread count in the app header.
-  (Note: true Supabase-Realtime push for DMs needs the deferred Supabase-Auth
-  migration to keep RLS private; polling is the private, working choice today.)
+- **Private realtime DMs (permanent solution):** `dm_messages` is published to
+  Supabase Realtime and guarded by `auth.uid()`-scoped SELECT policies so a live
+  INSERT event reaches **only the two participants** — verified that an anon
+  direct read returns 0 rows (no leak). The conversation view attaches the
+  session token (`realtime.setAuth`) and subscribes to `postgres_changes` for
+  instant delivery; a 6-second poll via the participant-checked RPC remains as a
+  fallback for anyone without an active session. Instant + private, no tradeoff.
 
 ## 🔜 Next batch (planned)
 - Reels — vertical short-video product discovery.
