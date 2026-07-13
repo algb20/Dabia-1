@@ -1247,6 +1247,23 @@ export async function repostPost(originalPost: DBPost, repostUserId: string, rep
   } catch { return null }
 }
 
+// هل أعاد هذا المستخدم نشر هذا المنشور؟ (لعرض حالة الزر: نشر/تراجع)
+export async function hasReposted(originalPostId: string, userId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase.from('posts').select('id')
+      .eq('user_id', userId).eq('reposted_from', Number(originalPostId)).limit(1).maybeSingle()
+    return !!data
+  } catch { return false }
+}
+// التراجع عن إعادة النشر — يحذف منشور إعادة النشر الخاص بالمستخدم
+export async function undoRepost(originalPostId: string, userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('posts').delete()
+      .eq('user_id', userId).eq('reposted_from', Number(originalPostId))
+    return !error
+  } catch { return false }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SAVED PRODUCTS — منتجات محفوظة حقيقية بـ Supabase (تحل محل النسخة الوهمية
 // السابقة التي كانت تحفظ فقط في localStorage بدون أي اتصال بقاعدة البيانات)

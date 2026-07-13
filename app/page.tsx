@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, updatePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -572,15 +572,12 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const [showShareModal, setShowShareModal] = useState(false)
 
   // إعجاب/حفظ حقيقيان — انتقلا إلى صفحة المنتج (لا يظهران على البطاقة لتفادي التشويش)
-  const [dLiked, setDLiked] = useState(false)
   const [dSaved, setDSaved] = useState(false)
   useEffect(() => {
     if (buyerUser?.id) {
-      isLikedByUser(buyerUser.id, String(p.id)).then(setDLiked)
       isProductSaved(buyerUser.id, String(p.id)).then(setDSaved)
     }
   }, [buyerUser?.id, p.id])
-  const toggleDLike = async () => { if (!buyerUser?.id) return; setDLiked(v => !v); const { liked } = await toggleLike(buyerUser.id, String(p.id)); setDLiked(liked) }
   const toggleDSave = async () => { if (!buyerUser?.id) return; setDSaved(v => !v); const { saved } = await toggleSaveProduct(buyerUser.id, String(p.id)); setDSaved(saved) }
 
   // ── تقييمات حقيقية من القاعدة (تُحمَّل عند فتح تبويب Reviews) ──────────────
@@ -747,9 +744,6 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </span>
           )}
           {p.verified && <BadgeCheck className="h-5 w-5 text-emerald-400" />}
-          <button onClick={toggleDLike} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dLiked ? "bg-red-500/10 border-red-500/30" : "hover:bg-secondary"}`} title="Like" aria-label="Like">
-            <Heart className={`h-3.5 w-3.5 ${dLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
-          </button>
           <button onClick={toggleDSave} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dSaved ? "bg-amber-400/10 border-amber-400/30" : "hover:bg-secondary"}`} title="Save" aria-label="Save">
             <Bookmark className={`h-3.5 w-3.5 ${dSaved ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
           </button>
@@ -1701,12 +1695,22 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
     setSaved(now)
   }
 
+  const [reposted, setReposted] = useState(false)
+  useEffect(() => { if (currentUser?.id) hasReposted(postId, currentUser.id).then(setReposted) }, [currentUser?.id, postId])
+
   const handleRepost = async () => {
-    if (!currentUser?.id) return
+    if (!currentUser?.id || reposting) return
     setReposting(true)
-    const r = await repostPost(post, currentUser.id, currentUser.username)
-    setReposting(false)
-    if (r) { setRepostMsg("✓ Reposted to your profile"); onRefresh() } else setRepostMsg("Failed to repost")
+    if (reposted) {
+      // تراجع عن إعادة النشر
+      const ok = await undoRepost(postId, currentUser.id)
+      setReposting(false)
+      if (ok) { setReposted(false); setRepostMsg("↩ Repost removed"); onRefresh() }
+    } else {
+      const r = await repostPost(post, currentUser.id, currentUser.username)
+      setReposting(false)
+      if (r) { setReposted(true); setRepostMsg("✓ Reposted to your profile"); onRefresh() } else setRepostMsg("Failed to repost")
+    }
     setTimeout(() => setRepostMsg(""), 2000)
   }
 
@@ -1797,8 +1801,9 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
           <MessageCircle className="h-4 w-4 text-muted-foreground" />
           <span className="text-[11px] font-semibold">{comments.length || ""}</span>
         </button>
-        <button onClick={handleRepost} disabled={reposting} className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 hover:bg-secondary disabled:opacity-40">
-          <Repeat2 className="h-4 w-4 text-muted-foreground" />
+        <button onClick={handleRepost} disabled={reposting} title={reposted ? "Undo repost" : "Repost"}
+          className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 hover:bg-secondary disabled:opacity-40 ${reposted ? "text-emerald-400" : ""}`}>
+          <Repeat2 className={`h-4 w-4 ${reposted ? "text-emerald-400" : "text-muted-foreground"}`} />
         </button>
         <button onClick={() => setShowShare(true)} className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 hover:bg-secondary">
           <Share2 className="h-4 w-4 text-muted-foreground" />
