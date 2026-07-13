@@ -2377,8 +2377,22 @@ function SpaceTab() {
     <div className="space-y-6 pb-6">
       <div>
         <h1 className="text-lg font-black">Space</h1>
-        <p className="text-[12px] text-muted-foreground mt-0.5">Live streams, auctions, group deals & announcements</p>
+        <p className="text-[12px] text-muted-foreground mt-0.5">Communities, live streams, auctions & group deals</p>
       </div>
+
+      {/* Communities — نظام مجموعات منظّم للشركات والحسابات المهمة */}
+      <Link href="/groups">
+        <div className="flex items-center gap-3 rounded-2xl border border-blue-400/20 bg-gradient-to-br from-blue-400/10 to-transparent p-3.5 active:scale-[0.99] transition-transform">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
+            <Users2 className="h-5 w-5 text-blue-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-bold">Communities</p>
+            <p className="text-[11px] text-muted-foreground">Join brands & companies, or start your own community</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
+      </Link>
 
       {/* Live streaming — بث مباشر للتجار */}
       <section className="space-y-3">

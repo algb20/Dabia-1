@@ -729,6 +729,140 @@ export async function getRecommendations(userId?: string, limit = 20): Promise<D
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GROUPS / COMMUNITIES — نظام مجموعات منظّم (خاصة للشركات والحسابات المهمة)
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBGroup {
+  id?:            string
+  name:           string
+  description?:   string | null
+  category?:      string | null
+  avatar_url?:    string | null
+  cover_url?:     string | null
+  owner_user_id:  string
+  privacy:        'public' | 'private'
+  is_official?:   boolean
+  member_count?:  number
+  created_at?:    string
+}
+export interface DBGroupMember {
+  id?: string; group_id: string; user_id: string
+  role: 'owner' | 'admin' | 'member'; status: 'active' | 'pending'
+  joined_at?: string
+  username?: string; avatar_url?: string // مُدمج عند الجلب
+}
+export interface DBGroupPost {
+  id?: string; group_id: string; user_id: string; username: string
+  avatar_url?: string | null; text?: string | null
+  product_snapshot?: { id: string; name: string; price: number; image?: string } | null
+  created_at?: string
+}
+
+export async function getGroups(opts: { search?: string; category?: string; limit?: number } = {}): Promise<DBGroup[]> {
+  try {
+    let q = supabase.from('groups').select('*').order('member_count', { ascending: false }).limit(opts.limit ?? 50)
+    if (opts.category && opts.category !== 'All') q = q.eq('category', opts.category)
+    if (opts.search) q = q.ilike('name', `%${opts.search}%`)
+    const { data } = await q
+    return (data ?? []) as DBGroup[]
+  } catch { return [] }
+}
+
+export async function getGroupById(id: string): Promise<DBGroup | null> {
+  try { const { data } = await supabase.from('groups').select('*').eq('id', id).maybeSingle(); return (data as DBGroup) ?? null } catch { return null }
+}
+
+// المجموعات التي ينتمي إليها المستخدم (نشط أو طلب معلّق)
+export async function getMyGroups(userId: string): Promise<Array<DBGroup & { my_status: string; my_role: string }>> {
+  try {
+    const { data: mem } = await supabase.from('group_members').select('group_id, role, status').eq('user_id', userId)
+    const rows = (mem ?? []) as { group_id: string; role: string; status: string }[]
+    if (rows.length === 0) return []
+    const ids = rows.map(r => r.group_id)
+    const { data: gs } = await supabase.from('groups').select('*').in('id', ids)
+    const byId = new Map(rows.map(r => [String(r.group_id), r]))
+    return ((gs ?? []) as DBGroup[]).map(g => {
+      const m = byId.get(String(g.id))
+      return { ...g, my_status: m?.status ?? 'active', my_role: m?.role ?? 'member' }
+    })
+  } catch { return [] }
+}
+
+export async function createGroup(input: {
+  owner_user_id: string; name: string; description?: string; category?: string
+  privacy: 'public' | 'private'; avatar_url?: string; cover_url?: string
+}): Promise<DBGroup | null> {
+  try {
+    const { data, error } = await supabase.rpc('create_group', {
+      p_owner: Number(input.owner_user_id), p_name: input.name,
+      p_description: input.description ?? null, p_category: input.category ?? null,
+      p_privacy: input.privacy, p_avatar: input.avatar_url ?? null, p_cover: input.cover_url ?? null,
+    })
+    if (error || !data) return null
+    return data as DBGroup
+  } catch { return null }
+}
+
+// يعيد حالة العضوية: 'active' | 'pending' | null
+export async function getMembership(groupId: string, userId: string): Promise<{ status: string; role: string } | null> {
+  try {
+    const { data } = await supabase.from('group_members').select('status, role').eq('group_id', groupId).eq('user_id', userId).maybeSingle()
+    return data ? { status: (data as any).status, role: (data as any).role } : null
+  } catch { return null }
+}
+
+export async function joinGroup(groupId: string, userId: string): Promise<'active' | 'pending' | null> {
+  try {
+    const { data, error } = await supabase.rpc('join_group', { p_group: Number(groupId), p_user: Number(userId) })
+    if (error) return null
+    return data as 'active' | 'pending'
+  } catch { return null }
+}
+
+export async function leaveGroup(groupId: string, userId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('leave_group', { p_group: Number(groupId), p_user: Number(userId) }); return !error } catch { return false }
+}
+
+export async function getGroupMembers(groupId: string): Promise<DBGroupMember[]> {
+  try {
+    const { data } = await supabase.from('group_members').select('*').eq('group_id', groupId).order('joined_at', { ascending: true })
+    const rows = (data ?? []) as DBGroupMember[]
+    const ids = Array.from(new Set(rows.map(r => r.user_id)))
+    if (ids.length) {
+      const { data: users } = await supabase.from('users').select('id, username, avatar_url').in('id', ids)
+      const byId = new Map((users ?? []).map((u: any) => [String(u.id), u]))
+      return rows.map(r => ({ ...r, username: byId.get(String(r.user_id))?.username, avatar_url: byId.get(String(r.user_id))?.avatar_url }))
+    }
+    return rows
+  } catch { return [] }
+}
+
+export async function moderateGroupMember(groupId: string, actorId: string, targetId: string, action: 'approve' | 'remove' | 'promote' | 'demote'): Promise<boolean> {
+  try { const { error } = await supabase.rpc('group_moderate', { p_group: Number(groupId), p_actor: Number(actorId), p_target: Number(targetId), p_action: action }); return !error } catch { return false }
+}
+
+export async function getGroupPosts(groupId: string, limit = 50): Promise<DBGroupPost[]> {
+  try { const { data } = await supabase.from('group_posts').select('*').eq('group_id', groupId).order('created_at', { ascending: false }).limit(limit); return (data ?? []) as DBGroupPost[] } catch { return [] }
+}
+
+export async function postToGroup(input: {
+  group_id: string; user_id: string; username: string; avatar_url?: string
+  text?: string; product_snapshot?: DBGroupPost['product_snapshot']
+}): Promise<DBGroupPost | null> {
+  try {
+    const { data, error } = await supabase.rpc('post_to_group', {
+      p_group: Number(input.group_id), p_user: Number(input.user_id), p_username: input.username,
+      p_avatar: input.avatar_url ?? null, p_text: input.text ?? null, p_snapshot: input.product_snapshot ?? null,
+    })
+    if (error || !data) return null
+    return data as DBGroupPost
+  } catch { return null }
+}
+
+export async function deleteGroupPost(postId: string, actorId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('delete_group_post', { p_post: Number(postId), p_actor: Number(actorId) }); return !error } catch { return false }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // LIVE STREAMING COMMERCE — بث مباشر حقيقي للتجار (Supabase Realtime)
 // ═══════════════════════════════════════════════════════════════════════════════
 export interface DBLiveStream {
