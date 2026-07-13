@@ -258,6 +258,26 @@ export async function loginWithEmailPassword(email: string, password: string): P
 export async function getUserById(id: string): Promise<DBUser | null> {
   try { const { data } = await supabase.from('users').select('*').eq('id', id).maybeSingle(); return data as DBUser | null } catch { return null }
 }
+
+// تسجيل/دخول بمعرّف Pi فقط — أبسط طريقة: نقرة واحدة داخل Pi Browser بلا بريد/كلمة سر.
+// إن كان معرّف Pi مسجّلاً سابقاً نُرجع حسابه، وإلا نُنشئ حساب مشترٍ فعّالاً فوراً
+// (كامل الصلاحيات: شراء، حفظ، تعليق…). نُولّد بريداً اصطناعياً ثابتاً مرتبطاً
+// بمعرّف Pi لإبقاء ربط جلسة Supabase/RLS سليماً دون أن يُدخل المستخدم أي بريد.
+export async function loginOrRegisterWithPi(piUid: string, piUsername: string): Promise<{ ok: boolean; user?: DBUser; error?: string }> {
+  try {
+    if (!piUid) return { ok: false, error: "Pi identity is required" }
+    const existing = await getUserByPiUid(piUid)
+    if (existing) return { ok: true, user: existing }
+
+    const uname = (piUsername || `pi_${piUid.slice(0, 8)}`).trim()
+    const synthEmail = `pi.${piUid.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}@pi.dabia.app`
+    let u = await registerUser({ username: uname, emall: synthEmail, role: "buyer", pi_uid: piUid })
+    u = await tryAutoVerify(u)
+    return { ok: true, user: u }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Pi sign-in failed" }
+  }
+}
 export async function getUserByAuthId(auth_id: string): Promise<DBUser | null> {
   try { const { data } = await supabase.from('users').select('*').eq('auth_id', auth_id).maybeSingle(); return data as DBUser | null } catch { return null }
 }
@@ -1180,6 +1200,23 @@ export async function getRealNotifications(userId: string): Promise<RealNotif[]>
       })
     })
 
+    // 3) تنبيهات انخفاض السعر — منتج حفظته أصبح الآن ضمن تخفيض/عرض محدود.
+    // ميزة حقيقية مبنية على بيانات فعلية (المحفوظات × العروض النشطة) بلا بيانات وهمية.
+    const now = Date.now()
+    const saved = await getSavedProducts(userId)
+    saved.forEach(p => {
+      const dealActive = !!p.deal_ends_at && new Date(p.deal_ends_at).getTime() > now
+      const discounted = p.original_price != null && p.original_price > p.price
+      if (!dealActive && !discounted) return
+      const pct = discounted ? Math.round((1 - p.price / (p.original_price as number)) * 100) : null
+      notifs.push({
+        id: `deal-${p.id}`, type: "deal",
+        title: pct ? `Price drop · ${pct}% off` : "Limited-time offer",
+        body: `"${p.name}" you saved is now ${p.price}π${discounted ? ` (was ${p.original_price}π)` : ""}.`,
+        time: p.updated_at || p.deal_ends_at || new Date().toISOString(), read: false,
+      })
+    })
+
     // ترتيب الأحدث أولاً
     notifs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
     return notifs
@@ -1292,9 +1329,21 @@ export interface DBPost {
   poll?:         DBPoll
   pinned?:       boolean
   is_official?:  boolean
+  account_type?: 'standard' | 'premium' | 'official' // شارة الكاتب — تُرفق عند الجلب
   reposted_from?: string
   reposted_from_username?: string
   created_at?:   string
+}
+
+// يرفق شارة الكاتب (نوع الحساب) بكل منشور — نفس منطق المنتجات، مصدر واحد للحقيقة
+async function attachAuthorAccountTypes(posts: DBPost[]): Promise<DBPost[]> {
+  const ids = Array.from(new Set(posts.map(p => p.user_id).filter(Boolean)))
+  if (ids.length === 0) return posts
+  try {
+    const { data } = await supabase.from('users').select('id, account_type').in('id', ids)
+    const byId = new Map((data ?? []).map((u: any) => [String(u.id), u.account_type as DBPost['account_type']]))
+    return posts.map(p => ({ ...p, account_type: byId.get(String(p.user_id)) || 'standard' }))
+  } catch { return posts }
 }
 
 // إعلان رسمي من متجر/شركة — يصل كإشعار حقيقي لكل متابعي هذا الحساب
@@ -1355,14 +1404,14 @@ export async function votePoll(postId: string, optionIndex: number): Promise<boo
 export async function getFeedPosts(limit = 50): Promise<DBPost[]> {
   try {
     const { data } = await supabase.from('posts').select('*').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(limit)
-    return (data ?? []) as DBPost[]
+    return await attachAuthorAccountTypes((data ?? []) as DBPost[])
   } catch { return [] }
 }
 
 export async function getPostsByUser(userId: string): Promise<DBPost[]> {
   try {
     const { data } = await supabase.from('posts').select('*').eq('user_id', userId).order('created_at', { ascending: false })
-    return (data ?? []) as DBPost[]
+    return await attachAuthorAccountTypes((data ?? []) as DBPost[])
   } catch { return [] }
 }
 

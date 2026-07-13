@@ -7,7 +7,7 @@ import { useUserAuth } from "@/hooks/use-user-auth"
 import { PiBrowserGate } from "@/components/pi-browser-gate"
 import {
   X, Globe2, Send, Instagram, Twitter, Loader2, Store, ShieldCheck, CheckCircle2, Calendar, Info,
-  Factory, Building2, Briefcase, Handshake, UserCircle2, ShoppingBag, MessageSquare, Pin, BadgeCheck,
+  Factory, Building2, Briefcase, Handshake, UserCircle2, ShoppingBag, MessageSquare, Pin, BadgeCheck, Crown,
 } from "lucide-react"
 
 // لمسة تصميم مميزة لكل نوع حساب — أيقونة ولون تمييز فقط (لا يغيّر هوية
@@ -94,7 +94,12 @@ export default function PublicProfilePage() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <p className="font-black text-base truncate">{profile.store_name || profile.username}</p>
-                {profile.status === "active" && <ShieldCheck className="h-4 w-4 text-amber-400 shrink-0" />}
+                {/* الشارة حسب نوع الحساب الحقيقي */}
+                {profile.account_type === "official"
+                  ? <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0" />
+                  : profile.account_type === "premium"
+                  ? <Crown className="h-4 w-4 text-amber-400 shrink-0" />
+                  : profile.status === "active" && <ShieldCheck className="h-4 w-4 text-amber-400 shrink-0" />}
               </div>
               <p className="flex items-center gap-1 text-[11px] text-muted-foreground capitalize">
                 <RoleIcon className="h-3 w-3" />@{profile.username} · {theme.label}

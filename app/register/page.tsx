@@ -28,8 +28,21 @@ const TYPES = [
 export default function RegisterPage() {
   useDabiaTranslation() // يُفعِّل ترجمة هذه الصفحة الفرعية عند فتحها بأي لغة مختارة
   const router = useRouter()
-  const { register } = useUserAuth()
+  const { register, loginWithPi } = useUserAuth()
   const { piUser }   = usePiNetworkAuthentication()
+
+  const [piLoading, setPiLoading] = useState(false)
+  const handlePiQuickJoin = async () => {
+    setPiLoading(true); setError("")
+    try {
+      await loginWithPi()
+      router.replace("/")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Pi sign-in failed")
+    } finally {
+      setPiLoading(false)
+    }
+  }
 
   const [step,         setStep]         = useState<"type"|"details"|"verify"|"terms"|"done">("type")
   const [selected,     setSelected]     = useState<AT | null>(null)
@@ -154,6 +167,22 @@ export default function RegisterPage() {
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-4 space-y-2.5 pb-20">
+        {error && (
+          <div className="flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-[12px] text-red-400">
+            <AlertCircle className="h-4 w-4 shrink-0" /><span>{error}</span>
+          </div>
+        )}
+        {/* أسرع طريق للتسوّق: انضمام بنقرة واحدة عبر Pi (حساب مشترٍ فوري بلا نموذج) */}
+        <button onClick={handlePiQuickJoin} disabled={piLoading}
+          className="w-full rounded-2xl bg-[#7d3cff] py-3.5 text-sm font-bold text-white disabled:opacity-40 flex items-center justify-center gap-2 active:scale-95 shadow-[0_4px_14px_rgba(125,60,255,0.35)]">
+          {piLoading ? <><Loader2 className="h-4 w-4 animate-spin" />Connecting to Pi…</> : <>Continue with Pi — start shopping<ChevronRight className="h-4 w-4" /></>}
+        </button>
+        <p className="text-center text-[10px] text-muted-foreground">One tap inside Pi Browser · buy, save & comment right away · become a seller anytime</p>
+        <div className="flex items-center gap-2 py-1">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-[11px] text-muted-foreground">or pick an account type</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
         <p className="text-[12px] text-muted-foreground text-center pb-1">Choose your account type — upgrade anytime</p>
         <div className="flex items-center justify-center gap-1.5 pb-2 text-[12px]">
           <span className="text-muted-foreground">Already have an account?</span>

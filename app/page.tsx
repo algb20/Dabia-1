@@ -1139,6 +1139,7 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
   const iconMap: Record<string, React.ReactNode> = {
     account: <ShieldCheck className="h-4 w-4 text-amber-400" />,
     order:   <Truck className="h-4 w-4 text-emerald-400" />,
+    deal: <Tag className="h-4 w-4 text-emerald-400" />,
     price_drop: <Tag className="h-4 w-4 text-emerald-400" />, new_arrival: <Sparkles className="h-4 w-4 text-blue-400" />,
     trending: <TrendingUp className="h-4 w-4 text-amber-400" />,
     group_invite: <Users className="h-4 w-4 text-purple-400" />, auction: <Radio className="h-4 w-4 text-amber-400" />,
@@ -1747,7 +1748,13 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-bold truncate flex items-center gap-1">
-            {post.username}{post.is_official && <BadgeCheck className="h-3.5 w-3.5 text-amber-400" />}
+            {post.username}
+            {/* الشارة حسب نوع الحساب الحقيقي: رسمي (أزرق) / مميّز (ذهبي) */}
+            {post.account_type === "official"
+              ? <BadgeCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+              : post.account_type === "premium"
+              ? <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              : post.is_official && <BadgeCheck className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
           </p>
           {post.reposted_from_username && <p className="text-[10px] text-muted-foreground">Reposted from {post.reposted_from_username}</p>}
         </div>
@@ -3194,14 +3201,20 @@ export default function DabiaApp() {
     } catch {}
   }, [])
 
+  // تبويب "Pro" (لوحة الأعمال) مخصّص للحسابات التجارية فقط — كما في التطبيقات
+  // العالمية التي تُظهر "لوحة احترافية" للحسابات التجارية/الشركات دون المشترين.
+  // المشتري/الزائر يحصل على شريط تنقّل أنظف من 5 تبويبات.
+  const isBusinessAccount = !!dbUser && dbUser.role !== "buyer"
   const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "home",     label: "Home",     icon: <Home      className="h-5 w-5" /> },
     { key: "discover", label: "Discover", icon: <Compass   className="h-5 w-5" /> },
     { key: "social",   label: "Social",   icon: <Users2    className="h-5 w-5" /> },
     { key: "space",    label: "Space",    icon: <Layers    className="h-5 w-5" /> },
-    { key: "business", label: "Pro",      icon: <BarChart3 className="h-5 w-5" /> },
+    ...(isBusinessAccount ? [{ key: "business" as Tab, label: "Pro", icon: <BarChart3 className="h-5 w-5" /> }] : []),
     { key: "profile",  label: "Profile",  icon: <User      className="h-5 w-5" /> },
   ]
+  // لو كان التبويب المحفوظ "business" لحساب غير تجاري، نعيده للرئيسية
+  const effectiveTab: Tab = tab === "business" && !isBusinessAccount ? "home" : tab
 
   return (
     <div id="dabia-app-root" className="flex min-h-dvh flex-col bg-background text-foreground font-sans sm:max-w-xl sm:mx-auto sm:border-x sm:border-border">
@@ -3254,12 +3267,12 @@ export default function DabiaApp() {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto px-4 pt-4">
-        {tab === "home"     && <HomeTab />}
-        {tab === "discover" && <DiscoverTab />}
-        {tab === "social"   && <SocialTab />}
-        {tab === "space"    && <SpaceTab />}
-        {tab === "business" && <BusinessTab />}
-        {tab === "profile"  && <ProfileTab />}
+        {effectiveTab === "home"     && <HomeTab />}
+        {effectiveTab === "discover" && <DiscoverTab />}
+        {effectiveTab === "social"   && <SocialTab />}
+        {effectiveTab === "space"    && <SpaceTab />}
+        {effectiveTab === "business" && <BusinessTab />}
+        {effectiveTab === "profile"  && <ProfileTab />}
       </main>
 
       {/* Bottom nav */}
@@ -3267,12 +3280,12 @@ export default function DabiaApp() {
         <div className="flex items-stretch">
           {navItems.map(item => (
             <button key={item.key} onClick={() => setTab(item.key)}
-              aria-current={tab === item.key ? "page" : undefined}
+              aria-current={effectiveTab === item.key ? "page" : undefined}
               aria-label={item.label}
-              className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${tab === item.key ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
+              className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${effectiveTab === item.key ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
               {item.icon}
               <span className="text-[10px] font-medium">{item.label}</span>
-              {tab === item.key && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
+              {effectiveTab === item.key && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
             </button>
           ))}
         </div>

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   registerUser, getUserById, getUserByPiUid, getUserByAuthId, loginWithEmailPassword,
-  updateUser, tryAutoVerify, meetsVerificationRequirements, supabase,
+  loginOrRegisterWithPi, updateUser, tryAutoVerify, meetsVerificationRequirements, supabase,
   VERIFICATION_REQUIREMENTS, type DBUser
 } from '@/lib/dabia/db'
 
@@ -20,8 +20,9 @@ function loadCache(): DBUser | null {
     const r = localStorage.getItem(K_CACHE)
     if (!r) return null
     const p = JSON.parse(r)
-    // تحقق من صحة البيانات — منع الشاشة السوداء
-    if (!p?.id || !p?.emall) { localStorage.removeItem(K_CACHE); return null }
+    // تحقق من صحة البيانات — منع الشاشة السوداء. الهوية إمّا بريد أو معرّف Pi
+    // (مستخدمو Pi أحادي النقرة قد لا يملكون بريداً حقيقياً).
+    if (!p?.id || (!p?.emall && !p?.pi_uid)) { localStorage.removeItem(K_CACHE); return null }
     return p as DBUser
   } catch {
     try { localStorage.removeItem(K_CACHE) } catch {}
@@ -110,6 +111,36 @@ export function useUserAuth() {
       return res.user
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Login failed'
+      setError(msg)
+      throw e
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // ── دخول/تسجيل بنقرة واحدة عبر Pi Network (اسم/معرّف Pi فقط) ────────────
+  // يستدعي Pi.authenticate داخل Pi Browser، ثم يُنشئ/يجلب حساب المشتري تلقائياً
+  // بكامل الصلاحيات (شراء، حفظ، تعليق…) بلا بريد أو كلمة سر.
+  const loginWithPi = useCallback(async (): Promise<DBUser> => {
+    setLoading(true); setError(null)
+    try {
+      const Pi = typeof window !== 'undefined' ? (window as any).Pi : undefined
+      if (!Pi) throw new Error('Open Dabia inside Pi Browser to continue with Pi')
+      try { Pi.init?.({ version: '2.0', sandbox: false }) } catch {}
+      const auth = await Pi.authenticate(['username', 'payments'], () => {})
+      const uid      = auth?.user?.uid || ''
+      const username = auth?.user?.username || ''
+      if (!uid) throw new Error('Could not read your Pi identity — try again')
+
+      const res = await loginOrRegisterWithPi(uid, username)
+      if (!res.ok || !res.user) throw new Error(res.error || 'Pi sign-in failed')
+      saveCache(res.user)
+      if (res.user.id) localStorage.setItem(K_UID, res.user.id)
+      setUser(res.user)
+      detectAndSaveCountry(res.user, updated => { setUser(updated); saveCache(updated) })
+      return res.user
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Pi sign-in failed'
       setError(msg)
       throw e
     } finally {
@@ -218,7 +249,7 @@ export function useUserAuth() {
 
   return {
     user, loading, error,
-    register, login, logout, updateProfile, saveProduct,
+    register, login, loginWithPi, logout, updateProfile, saveProduct,
     isLoggedIn:          !!user,
     isBuyer:             user?.role === 'buyer',
     isMerchant:          ['merchant','company','factory','agent','service_provider','partner'].includes(user?.role ?? ''),
