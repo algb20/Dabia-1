@@ -109,6 +109,8 @@ export default function MyProductsPage() {
                     </>
                   )}
                   <span className="text-[10px] text-muted-foreground">Stock: {p.stock}</span>
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Eye className="h-3 w-3" />{p.view_count ?? 0} views</span>
+                  {(p.review_count??0)>0 && <span className="text-[10px] text-muted-foreground">{p.review_count} sold</span>}
                   {(p.rating??0)>0 && <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Star className="h-3 w-3 fill-amber-400 text-amber-400" />{p.rating}</span>}
                   {p.active === false && <span className="text-[9px] font-bold text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">Hidden</span>}
                 </div>

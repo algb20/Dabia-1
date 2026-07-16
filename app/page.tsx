@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -90,7 +90,7 @@ function dbProductToProduct(p: DBProduct): Product {
     saved: false,
     isSponsored: false,
     location: { city: "Pi Network" },
-    viewCount: 0,
+    viewCount: p.view_count ?? 0,
   }
 }
 
@@ -578,6 +578,8 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   // درجة ثقة البائع الحقيقية (من تقييمات/طلبات/نزاعات فعلية)
   const [sellerTrust, setSellerTrust] = useState<Awaited<ReturnType<typeof getSellerTrust>>>(null)
   useEffect(() => { if (p.sellerUserId) getSellerTrust(p.sellerUserId).then(setSellerTrust) }, [p.sellerUserId])
+  // تسجيل مشاهدة المنتج مرة واحدة عند الفتح (تحليلات البائع)
+  useEffect(() => { recordProductView(String(p.id)) }, [p.id])
 
   // إعجاب/حفظ حقيقيان — انتقلا إلى صفحة المنتج (لا يظهران على البطاقة لتفادي التشويش)
   const [dSaved, setDSaved] = useState(false)
@@ -1255,6 +1257,20 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
     return data.ranked.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q))
   }, [query, data])
 
+  // بحث موحّد: أشخاص + مجتمعات (إلى جانب المنتجات) — مثل البحث الشامل عالمياً
+  const [people, setPeople] = useState<Awaited<ReturnType<typeof searchAccounts>>>([])
+  const [groups, setGroups] = useState<Awaited<ReturnType<typeof getGroups>>>([])
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 1) { setPeople([]); setGroups([]); return }
+    let active = true
+    const t = setTimeout(() => {
+      searchAccounts(q).then(r => { if (active) setPeople(r.slice(0, 6)) })
+      getGroups({ search: q, limit: 6 }).then(r => { if (active) setGroups(r) })
+    }, 250)
+    return () => { active = false; clearTimeout(t) }
+  }, [query])
+
   // أعلى المنتجات رواجاً فعلياً (المعروضة أصلاً بترتيب محرّك التراند الحقيقي)
   const trendingTerms = useMemo(() => (data?.ranked ?? []).slice(0, 4).map(p => p.name), [data])
   const categories = useMemo(() => Array.from(new Set((data?.ranked ?? []).map(p => p.category).filter(Boolean))).slice(0, 8), [data])
@@ -1266,7 +1282,7 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
       <div className="flex items-center gap-3 border-b border-border px-4 py-3 pt-safe">
         <div className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 focus-within:border-amber-400/50 transition-colors">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input autoFocus value={query} onChange={e => { setQuery(e.target.value); setImageResults(null) }} placeholder="Search products, brands, categories…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+          <input autoFocus value={query} onChange={e => { setQuery(e.target.value); setImageResults(null) }} placeholder="Search products, people & communities…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
           {query && <button onClick={() => setQuery("")} aria-label="Clear"><X className="h-4 w-4 text-muted-foreground" /></button>}
           {speechSupported && (
             <button onClick={listening ? stopVoiceSearch : startVoiceSearch} aria-label="Voice search"
@@ -1340,18 +1356,59 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
             )}
           </div>
         )}
-        {query && results.length === 0 && (
+        {query && results.length === 0 && people.length === 0 && groups.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
             <Search className="h-10 w-10 opacity-30" />
             <p className="text-sm">No results for "{query}"</p>
           </div>
         )}
-        {query && results.length > 0 && (
-          <div>
-            <p className="mb-3 text-[11px] text-muted-foreground">{results.length} results</p>
-            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
-              {results.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={searchUser} />)}
-            </div>
+        {query && imageResults === null && (people.length > 0 || groups.length > 0 || results.length > 0) && (
+          <div className="space-y-5">
+            {/* أشخاص */}
+            {people.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">People</p>
+                {people.map(acc => (
+                  <Link key={acc.id} href={`/u/${acc.id}`} onClick={onClose} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-[12px] font-bold overflow-hidden">
+                      {acc.avatar_url ? <img src={acc.avatar_url} alt="" className="h-full w-full object-cover" /> : (acc.username || "U")[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-bold truncate">{acc.store_name || acc.username}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">@{acc.username}{acc.role && acc.role !== "buyer" ? ` · ${acc.role}` : ""}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            )}
+            {/* مجتمعات */}
+            {groups.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Communities</p>
+                {groups.map(g => (
+                  <Link key={g.id} href={`/groups/${g.id}`} onClick={onClose} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${g.is_official ? "bg-blue-500/15" : "bg-secondary"}`}>
+                      {g.avatar_url ? <img src={g.avatar_url} alt="" className="h-full w-full object-cover rounded-xl" /> : <Users className="h-4 w-4 text-muted-foreground" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-bold truncate flex items-center gap-1">{g.name}{g.is_official && <BadgeCheck className="h-3.5 w-3.5 text-blue-400" />}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{g.member_count ?? 0} members{g.category ? ` · ${g.category}` : ""}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            )}
+            {/* منتجات */}
+            {results.length > 0 && (
+              <div>
+                <p className="mb-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Products ({results.length})</p>
+                <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+                  {results.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={searchUser} />)}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

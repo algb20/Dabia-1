@@ -111,6 +111,7 @@ export interface DBProduct {
   rating?:         number
   review_count?:   number
   active?:         boolean  // إيقاف/تفعيل المنتج دون حذفه
+  view_count?:     number   // عدّاد مشاهدات حقيقي (تحليلات البائع)
   deal_ends_at?:   string | null // عرض محدود بوقت — يضبطه التاجر من إدارة متجره
   deal_label?:     string | null
   created_at?:     string
@@ -641,6 +642,11 @@ export async function getProductById(id: string): Promise<DBProduct | null> {
     if (!data) return null
     return (await attachSellerAccountTypes([data as DBProduct]))[0]
   } catch { return null }
+}
+
+// تسجيل مشاهدة منتج (تحليلات) — يُستدعى عند فتح صفحة المنتج
+export async function recordProductView(id: string): Promise<void> {
+  try { await supabase.rpc('increment_product_view', { p_id: Number(id) }) } catch {}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
