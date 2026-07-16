@@ -160,6 +160,24 @@ items, so future sessions have full context.
   minus a refunded-dispute penalty. Product detail now shows the real score and
   a breakdown (rating, reviews, completed orders, disputes) instead of a formula.
 
+## ✅ Batch 17 — Complete follow system (followers/following, notifications)
+- **Followers/Following lists with management:** `ConnectionsModal` (two tabs)
+  opens from the tappable Followers/Following counts on your own profile and any
+  public profile. Each row links to the person's profile with a follow control.
+- **Follow back:** in the Followers tab, people you don't follow show "Follow
+  back".
+- **Unfollow:** the "Following" state button unfollows in one tap, everywhere
+  (feed cards, search results, profiles, lists).
+- **Per-account notification bell:** once you follow an account, a bell toggles
+  notifications for what it posts/shares/announces — shown on the profile, on
+  feed post cards, and in the Following list. Backed by `follows.notify` +
+  `set_follow_notify`.
+- **Follow notifications:** "X started following you" and new posts from accounts
+  whose bell you enabled now appear in the notifications panel
+  (`get_follow_notifications`).
+- New server functions: `list_followers`, `list_following`, `set_follow_notify`,
+  `get_follow_notifications` (all verified working). Build passes, 0 TS errors.
+
 ## ⚠️ Remaining — do WITH live Pi Browser testing (not blind)
 1. Low-risk permissive tables still open (per-user toggles / ephemeral):
    product_likes, product_shares, saved_products, saved_posts, mentions,

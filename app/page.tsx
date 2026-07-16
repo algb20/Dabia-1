@@ -6,12 +6,13 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, getSellerTrust, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, getSellerTrust, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
 import { CommentsThread } from "@/components/comments-thread"
 import { PiBrowserGate } from "@/components/pi-browser-gate"
+import { ConnectionsModal } from "@/components/connections-modal"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -19,7 +20,7 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -1159,7 +1160,7 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
   const iconMap: Record<string, React.ReactNode> = {
     account: <ShieldCheck className="h-4 w-4 text-amber-400" />,
     order:   <Truck className="h-4 w-4 text-emerald-400" />,
-    deal: <Tag className="h-4 w-4 text-emerald-400" />,
+    deal: <Tag className="h-4 w-4 text-emerald-400" />, follow: <UserPlus className="h-4 w-4 text-amber-400" />,
     price_drop: <Tag className="h-4 w-4 text-emerald-400" />, new_arrival: <Sparkles className="h-4 w-4 text-blue-400" />,
     trending: <TrendingUp className="h-4 w-4 text-amber-400" />,
     group_invite: <Users className="h-4 w-4 text-purple-400" />, auction: <Radio className="h-4 w-4 text-amber-400" />,
@@ -1676,9 +1677,10 @@ function PollCard({ post, currentUserId }: { post: DBPost; currentUserId?: strin
   )
 }
 
-function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow }: {
+function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, isNotified, onToggleNotify }: {
   post: DBPost; currentUser: DBUser | null; onRefresh: () => void
   isFollowed?: boolean; onToggleFollow?: (authorId: string) => void
+  isNotified?: boolean; onToggleNotify?: (authorId: string) => void
 }) {
   const [saved, setSaved] = useState(false)
   const [showShare, setShowShare] = useState(false)
@@ -1783,12 +1785,20 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow }: 
           {post.reposted_from_username && <p className="text-[10px] text-muted-foreground">Reposted from {post.reposted_from_username}</p>}
         </div>
         </Link>
-        {/* زر المتابعة — يظهر لغير المالك عند توفّر معالج المتابعة */}
+        {/* المتابعة + جرس إشعارات منشورات الحساب — لغير المالك */}
         {!isOwner && onToggleFollow && currentUser && (
-          <button onClick={() => onToggleFollow(String(post.user_id))}
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${isFollowed ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
-            {isFollowed ? "Following" : "Follow"}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isFollowed && onToggleNotify && (
+              <button onClick={() => onToggleNotify(String(post.user_id))} title="Post notifications"
+                className={`flex h-7 w-7 items-center justify-center rounded-full border ${isNotified ? "border-amber-400/40 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}>
+                {isNotified ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            <button onClick={() => onToggleFollow(String(post.user_id))}
+              className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${isFollowed ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
+              {isFollowed ? "Following" : "Follow"}
+            </button>
+          </div>
         )}
         {post.pinned && <Pin className="h-3.5 w-3.5 text-amber-400" />}
         {isOwner && (
@@ -1930,6 +1940,7 @@ function SocialTab() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [followingSet, setFollowingSet] = useState<Set<string>>(new Set())
+  const [notifySet, setNotifySet] = useState<Set<string>>(new Set())
   // بحث الأشخاص/الحسابات للمتابعة والدخول لملفاتهم (مثل فيسبوك/تيك توك)
   const [peopleQuery, setPeopleQuery] = useState("")
   const [peopleResults, setPeopleResults] = useState<Awaited<ReturnType<typeof searchAccounts>>>([])
@@ -1951,7 +1962,10 @@ function SocialTab() {
   const load = useCallback(() => {
     setLoading(true)
     getSocialFeed(scope, user?.id).then(setPosts).finally(() => setLoading(false))
-    if (user?.id) getFollowingSet(user.id).then(setFollowingSet)
+    if (user?.id) getFollowing(user.id, user.id).then(list => {
+      setFollowingSet(new Set(list.map(p => p.user_id)))
+      setNotifySet(new Set(list.filter(p => p.notify).map(p => p.user_id)))
+    })
   }, [scope, user?.id])
   useEffect(() => { load() }, [load])
 
@@ -1960,10 +1974,18 @@ function SocialTab() {
     if (!user?.id) return
     const following = followingSet.has(authorId)
     setFollowingSet(prev => { const n = new Set(prev); following ? n.delete(authorId) : n.add(authorId); return n })
-    if (following) await unfollowUser(user.id, authorId)
+    if (following) { await unfollowUser(user.id, authorId); setNotifySet(prev => { const n = new Set(prev); n.delete(authorId); return n }) }
     else await followUser(user.id, authorId)
     if (scope === "following") load()
   }, [user?.id, followingSet, scope, load])
+
+  // تفعيل/إلغاء إشعارات منشورات هذا الحساب
+  const toggleNotify = useCallback(async (authorId: string) => {
+    if (!user?.id) return
+    const on = notifySet.has(authorId)
+    setNotifySet(prev => { const n = new Set(prev); on ? n.delete(authorId) : n.add(authorId); return n })
+    await setFollowNotify(user.id, authorId, !on)
+  }, [user?.id, notifySet])
 
   // بحث حيّ عن الحسابات
   useEffect(() => {
@@ -2093,7 +2115,8 @@ function SocialTab() {
         <div className="space-y-4">
           {posts.map(post => (
             <PostCard key={post.id} post={post} currentUser={user} onRefresh={load}
-              isFollowed={followingSet.has(String(post.user_id))} onToggleFollow={toggleFollow} />
+              isFollowed={followingSet.has(String(post.user_id))} onToggleFollow={toggleFollow}
+              isNotified={notifySet.has(String(post.user_id))} onToggleNotify={toggleNotify} />
           ))}
         </div>
       )}
@@ -3022,6 +3045,8 @@ function ProfileTab() {
   const [savedCountReal, setSavedCountReal] = useState<number | null>(null)
   const [shareMsg, setShareMsg] = useState("")
   const [hideBalancePreview, setHideBalancePreview] = useState(false)
+  const [followCounts, setFollowCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
+  const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
   useEffect(() => {
     try { setHideBalancePreview(localStorage.getItem("dabia_hide_balance") === "true") } catch {}
   }, [])
@@ -3030,6 +3055,7 @@ function ProfileTab() {
     if (!profileUser?.id) return
     getOrdersByBuyer(profileUser.id).then(orders => setOrderCount(orders.length)).catch(() => setOrderCount(0))
     getSavedProducts(profileUser.id).then(list => setSavedCountReal(list.length)).catch(() => setSavedCountReal(0))
+    getFollowCounts(profileUser.id).then(setFollowCounts).catch(() => {})
   }, [profileUser?.id])
 
   const handleShareApp = useCallback(async () => {
@@ -3131,6 +3157,12 @@ function ProfileTab() {
                 <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
             </div>
+          </div>
+
+          {/* المتابعون / يتابع — قابلة للنقر لفتح القائمة والإدارة */}
+          <div className="mt-3 flex items-center gap-5">
+            <button onClick={() => setConnTab("followers")} className="text-[12px]"><span className="font-black">{followCounts.followers}</span> <span className="text-muted-foreground">Followers</span></button>
+            <button onClick={() => setConnTab("following")} className="text-[12px]"><span className="font-black">{followCounts.following}</span> <span className="text-muted-foreground">Following</span></button>
           </div>
 
           {profileUser.bio && (
@@ -3301,6 +3333,8 @@ function ProfileTab() {
           ))}
         </div>
       </div>
+
+      {profileUser && connTab && <ConnectionsModal userId={profileUser.id!} viewerId={profileUser.id} initialTab={connTab} onClose={() => setConnTab(null)} />}
     </div>
   )
 }

@@ -1278,6 +1278,28 @@ export async function getRealNotifications(userId: string): Promise<RealNotif[]>
       })
     })
 
+    // 4) إشعارات المتابعة: مَن تابعك + منشورات الحسابات التي فعّلت إشعارها
+    try {
+      const { data: fn } = await supabase.rpc('get_follow_notifications', { p_me: Number(userId) })
+      ;(fn as any[] ?? []).forEach((r, i) => {
+        if (r.kind === 'follow') {
+          notifs.push({
+            id: `follow-${r.actor_id}-${r.created_at}`, type: 'follow',
+            title: `${r.actor_name} started following you`,
+            body: 'Tap to view their profile — follow back if you like.',
+            time: r.created_at, read: false,
+          })
+        } else {
+          notifs.push({
+            id: `fpost-${r.actor_id}-${r.created_at}-${i}`, type: 'new_arrival',
+            title: `${r.actor_name} shared something`,
+            body: (r.ref || 'New post').slice(0, 120),
+            time: r.created_at, read: false,
+          })
+        }
+      })
+    } catch {}
+
     // ترتيب الأحدث أولاً
     notifs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
     return notifs
@@ -1505,6 +1527,31 @@ export async function getFollowingSet(followerId: string): Promise<Set<string>> 
     const { data } = await supabase.from('follows').select('following_id').eq('follower_id', followerId)
     return new Set((data ?? []).map((r: any) => String(r.following_id)))
   } catch { return new Set() }
+}
+
+export interface FollowPerson {
+  user_id: string; username: string; avatar_url?: string | null; account_type?: string | null
+  store_name?: string | null; viewer_follows: boolean; notify?: boolean; created_at?: string
+}
+export async function getFollowers(userId: string, viewerId?: string): Promise<FollowPerson[]> {
+  try {
+    const { data, error } = await supabase.rpc('list_followers', { p_user: Number(userId), p_viewer: viewerId ? Number(viewerId) : null })
+    if (error || !data) return []
+    return (data as any[]).map(r => ({ ...r, user_id: String(r.user_id) }))
+  } catch { return [] }
+}
+export async function getFollowing(userId: string, viewerId?: string): Promise<FollowPerson[]> {
+  try {
+    const { data, error } = await supabase.rpc('list_following', { p_user: Number(userId), p_viewer: viewerId ? Number(viewerId) : null })
+    if (error || !data) return []
+    return (data as any[]).map(r => ({ ...r, user_id: String(r.user_id) }))
+  } catch { return [] }
+}
+export async function setFollowNotify(followerId: string, followingId: string, notify: boolean): Promise<boolean> {
+  try { const { error } = await supabase.rpc('set_follow_notify', { p_follower: Number(followerId), p_following: Number(followingId), p_notify: notify }); return !error } catch { return false }
+}
+export async function getFollowNotify(followerId: string, followingId: string): Promise<boolean> {
+  try { const { data } = await supabase.from('follows').select('notify').eq('follower_id', followerId).eq('following_id', followingId).maybeSingle(); return !!(data as any)?.notify } catch { return false }
 }
 
 // ── محادثة مباشرة (DM) — خاصّة عبر دوال تتحقّق من طرفَي المحادثة ────────────

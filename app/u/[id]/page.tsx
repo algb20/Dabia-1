@@ -1,13 +1,14 @@
 "use client"
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { getUserById, getProductsBySeller, getPostsByUser, togglePinPost, followUser, unfollowUser, isFollowing, getFollowCounts, openDMThread, type DBUser, type DBProduct, type DBPost } from "@/lib/dabia/db"
+import { getUserById, getProductsBySeller, getPostsByUser, togglePinPost, followUser, unfollowUser, isFollowing, getFollowCounts, getFollowNotify, setFollowNotify, openDMThread, type DBUser, type DBProduct, type DBPost } from "@/lib/dabia/db"
+import { ConnectionsModal } from "@/components/connections-modal"
 import { getIdentityFields } from "@/lib/dabia/identity-fields"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { PiBrowserGate } from "@/components/pi-browser-gate"
 import {
   X, Globe2, Send, Instagram, Twitter, Loader2, Store, ShieldCheck, CheckCircle2, Calendar, Info,
-  Factory, Building2, Briefcase, Handshake, UserCircle2, ShoppingBag, MessageSquare, Pin, BadgeCheck, Crown,
+  Factory, Building2, Briefcase, Handshake, UserCircle2, ShoppingBag, MessageSquare, Pin, BadgeCheck, Crown, Bell, BellOff,
 } from "lucide-react"
 
 // لمسة تصميم مميزة لكل نوع حساب — أيقونة ولون تمييز فقط (لا يغيّر هوية
@@ -37,6 +38,8 @@ export default function PublicProfilePage() {
   const [followed, setFollowed] = useState(false)
   const [counts, setCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
   const [followBusy, setFollowBusy] = useState(false)
+  const [notify, setNotify] = useState(false)
+  const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -46,7 +49,10 @@ export default function PublicProfilePage() {
   }, [id])
 
   useEffect(() => {
-    if (viewer?.id && id && viewer.id !== id) isFollowing(viewer.id, id).then(setFollowed)
+    if (viewer?.id && id && viewer.id !== id) {
+      isFollowing(viewer.id, id).then(setFollowed)
+      getFollowNotify(viewer.id, id).then(setNotify)
+    }
   }, [viewer?.id, id])
 
   const isOwner = viewer?.id === id
@@ -57,8 +63,15 @@ export default function PublicProfilePage() {
     const next = !followed
     setFollowed(next)
     setCounts(c => ({ ...c, followers: c.followers + (next ? 1 : -1) }))
-    if (next) await followUser(viewer.id, id); else await unfollowUser(viewer.id, id)
+    if (next) await followUser(viewer.id, id); else { await unfollowUser(viewer.id, id); setNotify(false) }
     setFollowBusy(false)
+  }
+
+  const toggleNotify = async () => {
+    if (!viewer?.id || !followed) return
+    const next = !notify
+    setNotify(next)
+    await setFollowNotify(viewer.id, id, next)
   }
 
   const [msgBusy, setMsgBusy] = useState(false)
@@ -146,16 +159,22 @@ export default function PublicProfilePage() {
             )}
           </div>
 
-          {/* المتابعون / يتابع + زر المتابعة */}
+          {/* المتابعون / يتابع (قابلة للنقر) + متابعة + جرس إشعارات + رسالة */}
           <div className="flex items-center gap-4">
-            <p className="text-[12px]"><span className="font-black">{counts.followers}</span> <span className="text-muted-foreground">Followers</span></p>
-            <p className="text-[12px]"><span className="font-black">{counts.following}</span> <span className="text-muted-foreground">Following</span></p>
+            <button onClick={() => setConnTab("followers")} className="text-[12px]"><span className="font-black">{counts.followers}</span> <span className="text-muted-foreground">Followers</span></button>
+            <button onClick={() => setConnTab("following")} className="text-[12px]"><span className="font-black">{counts.following}</span> <span className="text-muted-foreground">Following</span></button>
             {!isOwner && viewer && (
               <div className="ml-auto flex items-center gap-2">
                 <button onClick={toggleFollow} disabled={followBusy}
                   className={`rounded-xl px-4 py-1.5 text-[12px] font-bold transition-colors disabled:opacity-50 ${followed ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
                   {followed ? "Following" : "Follow"}
                 </button>
+                {followed && (
+                  <button onClick={toggleNotify} title="Post notifications"
+                    className={`flex h-8 w-8 items-center justify-center rounded-xl border ${notify ? "border-amber-400/40 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}>
+                    {notify ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+                  </button>
+                )}
                 <button onClick={startMessage} disabled={msgBusy}
                   className="flex items-center gap-1 rounded-xl border border-border px-3 py-1.5 text-[12px] font-bold disabled:opacity-50">
                   <MessageSquare className="h-3.5 w-3.5" />Message
@@ -298,6 +317,8 @@ export default function PublicProfilePage() {
           )}
         </div>
       </div>
+
+      {connTab && <ConnectionsModal userId={id} viewerId={viewer?.id} initialTab={connTab} onClose={() => setConnTab(null)} />}
     </div>
   )
 }
