@@ -1335,6 +1335,28 @@ export async function getWalletTransactions(userId: string): Promise<DBWalletTra
   } catch { return [] }
 }
 
+// ── سحب الرصيد (طلب سحب فعلي يخصم الرصيد ويُنشئ طلباً للأدمن/A2U) ───────────
+export interface DBWithdrawal {
+  id?: string; user_id: string; amount: number; pi_uid?: string | null
+  status: 'pending' | 'paid' | 'rejected'; pi_tx_id?: string | null; created_at?: string; processed_at?: string | null
+}
+export async function requestWithdrawal(userId: string, amount: number): Promise<{ ok: boolean; error?: string; withdrawal?: DBWithdrawal }> {
+  try {
+    const { data, error } = await supabase.rpc('request_withdrawal', { p_user: Number(userId), p_amount: amount })
+    if (error) return { ok: false, error: error.message.includes('insufficient') ? 'Insufficient balance' : error.message }
+    return { ok: true, withdrawal: data as DBWithdrawal }
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'Failed' } }
+}
+export async function listWithdrawals(userId: string): Promise<DBWithdrawal[]> {
+  try { const { data } = await supabase.rpc('list_withdrawals', { p_user: Number(userId) }); return (data ?? []) as DBWithdrawal[] } catch { return [] }
+}
+export async function adminListWithdrawals(adminId: string): Promise<DBWithdrawal[]> {
+  try { const { data, error } = await supabase.rpc('admin_list_withdrawals', { p_admin: Number(adminId) }); if (error || !data) return []; return data as DBWithdrawal[] } catch { return [] }
+}
+export async function markWithdrawalPaid(adminId: string, reqId: string, txId: string, status: 'paid' | 'rejected' = 'paid'): Promise<boolean> {
+  try { const { error } = await supabase.rpc('mark_withdrawal_paid', { p_admin: Number(adminId), p_req: Number(reqId), p_txid: txId, p_status: status }); return !error } catch { return false }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STORAGE — رفع الملفات
 // ═══════════════════════════════════════════════════════════════════════════════

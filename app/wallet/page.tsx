@@ -3,8 +3,8 @@ import { useTranslation as useDabiaTranslation } from "@/hooks/use-translation"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
-import { getWalletBalance, getWalletTransactions, addWalletTransaction, type DBWalletTransaction } from "@/lib/dabia/db"
-import { X, ArrowUpRight, ArrowDownLeft, RefreshCw, Loader2, Wallet, Eye, EyeOff } from "lucide-react"
+import { getWalletBalance, getWalletTransactions, addWalletTransaction, requestWithdrawal, listWithdrawals, type DBWalletTransaction, type DBWithdrawal } from "@/lib/dabia/db"
+import { X, ArrowUpRight, ArrowDownLeft, RefreshCw, Loader2, Wallet, Eye, EyeOff, Banknote } from "lucide-react"
 
 export default function WalletPage() {
   useDabiaTranslation() // يُفعِّل ترجمة هذه الصفحة الفرعية عند فتحها بأي لغة مختارة
@@ -15,6 +15,22 @@ export default function WalletPage() {
   const [loading,  setLoading]  = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [hideBalance, setHideBalance] = useState(false)
+  const [withdrawals, setWithdrawals] = useState<DBWithdrawal[]>([])
+  const [showWithdraw, setShowWithdraw] = useState(false)
+  const [wAmount, setWAmount] = useState("")
+  const [wBusy, setWBusy] = useState(false)
+  const [wError, setWError] = useState("")
+
+  const submitWithdraw = async () => {
+    if (!user?.id) return
+    const amt = parseFloat(wAmount)
+    if (!amt || amt <= 0) { setWError("Enter a valid amount"); return }
+    setWBusy(true); setWError("")
+    const res = await requestWithdrawal(user.id, amt)
+    setWBusy(false)
+    if (res.ok) { setShowWithdraw(false); setWAmount(""); load() }
+    else setWError(res.error || "Failed")
+  }
 
   useEffect(() => {
     try { setHideBalance(localStorage.getItem("dabia_hide_balance") === "true") } catch {}
@@ -29,12 +45,14 @@ export default function WalletPage() {
 
   const load = async () => {
     if (!user?.id) return
-    const [bal, transactions] = await Promise.all([
+    const [bal, transactions, wd] = await Promise.all([
       getWalletBalance(user.id),
-      getWalletTransactions(user.id)
+      getWalletTransactions(user.id),
+      listWithdrawals(user.id),
     ])
     setBalance(bal)
     setTxs(transactions)
+    setWithdrawals(wd)
   }
 
   useEffect(() => {
@@ -88,7 +106,28 @@ export default function WalletPage() {
           <p className="text-[11px] text-muted-foreground">
             Connected as @{user.username} · {user.role}
           </p>
+          {/* سحب الرصيد إلى محفظة Pi */}
+          <button onClick={() => { setShowWithdraw(true); setWError("") }} disabled={(balance ?? 0) <= 0}
+            className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-amber-400 py-2.5 text-[13px] font-bold text-black disabled:opacity-40 active:scale-[0.99]">
+            <Banknote className="h-4 w-4" />Withdraw to Pi
+          </button>
         </div>
+
+        {/* طلبات السحب المعلّقة */}
+        {withdrawals.filter(w => w.status === "pending").length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Pending Withdrawals</p>
+            {withdrawals.filter(w => w.status === "pending").map(w => (
+              <div key={w.id} className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-bold">{w.amount}π</p>
+                  <p className="text-[10px] text-muted-foreground">Requested {new Date(w.created_at!).toLocaleDateString()}</p>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400">Processing</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* المعاملات */}
         <div className="space-y-2">
@@ -130,6 +169,29 @@ export default function WalletPage() {
           )}
         </div>
       </div>
+
+      {/* نافذة سحب الرصيد */}
+      {showWithdraw && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowWithdraw(false)}>
+          <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold flex items-center gap-2"><Banknote className="h-4 w-4 text-amber-400" />Withdraw to Pi</p>
+              <button onClick={() => setShowWithdraw(false)}><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-[12px] text-muted-foreground">Available: <span className="font-bold text-foreground">{(balance ?? 0).toLocaleString()}π</span>. Your Pi is sent to your linked Pi wallet after review.</p>
+            {wError && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{wError}</p>}
+            {!user.pi_uid && <p className="rounded-lg bg-amber-400/10 px-3 py-2 text-[11px] text-amber-400">Link your Pi identity (open in Pi Browser) so we can pay you.</p>}
+            <div className="flex items-center gap-2">
+              <input type="number" value={wAmount} onChange={e => setWAmount(e.target.value)} placeholder="Amount in π" max={balance ?? 0}
+                className="flex-1 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              <button onClick={() => setWAmount(String(balance ?? 0))} className="rounded-xl border border-border px-3 py-2.5 text-[12px] font-bold text-muted-foreground">Max</button>
+            </div>
+            <button onClick={submitWithdraw} disabled={wBusy} className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
+              {wBusy ? "Requesting…" : "Request withdrawal"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
