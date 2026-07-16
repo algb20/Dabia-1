@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import {
   getPendingUsers, approveUser, rejectUser,
-  meetsVerificationRequirements, VERIFICATION_REQUIREMENTS, getBusinessEmailSignal, type DBUser
+  meetsVerificationRequirements, VERIFICATION_REQUIREMENTS, getBusinessEmailSignal,
+  adminListReports, adminResolveReport, type DBUser, type DBReport
 } from "@/lib/dabia/db"
 import {
   X, ShieldCheck, CheckCircle2, XCircle, Loader2,
   Building, Store, Factory, Handshake, Briefcase, Users,
-  RefreshCw, CheckCheck, AlertCircle
+  RefreshCw, CheckCheck, AlertCircle, Flag, Trash2
 } from "lucide-react"
 
 // ─── قائمة الإيميلات المسموح لها بالوصول للوحة التحكم ────────────────────────
@@ -35,14 +36,23 @@ export default function AdminPage() {
 
   const isAdmin = user && ADMIN_EMAILS.includes(user.emall)
 
+  const [reports, setReports] = useState<DBReport[]>([])
+
   const load = useCallback(async () => {
     setLoading(true)
     const list = await getPendingUsers()
     setPending(list)
+    if (user?.id) adminListReports(user.id).then(setReports).catch(() => {})
     setLoading(false)
-  }, [])
+  }, [user?.id])
 
   useEffect(() => { if (isAdmin) load() }, [isAdmin, load])
+
+  const resolveReport = async (r: DBReport, status: "actioned" | "dismissed", del = false) => {
+    if (!user?.id || !r.id) return
+    await adminResolveReport(user.id, r.id, status, del)
+    setReports(prev => prev.filter(x => x.id !== r.id))
+  }
 
   if (!user) return (
     <div className="flex min-h-dvh items-center justify-center bg-background">
@@ -151,6 +161,25 @@ export default function AdminPage() {
             <strong>Auto-Approve</strong> only approves accounts that already meet their role's requirements (e.g. store name set). <strong>Approve Selected</strong> manually approves whichever accounts you check below, regardless of completeness.
           </p>
         </div>
+
+        {/* بلاغات المحتوى — إشراف */}
+        {reports.length > 0 && (
+          <div className="rounded-2xl border border-red-400/20 bg-red-400/5 p-4 space-y-2.5">
+            <p className="text-[11px] font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5"><Flag className="h-3.5 w-3.5" />Content Reports ({reports.length})</p>
+            {reports.map(r => (
+              <div key={r.id} className="rounded-xl border border-border bg-card p-3 space-y-2">
+                <p className="text-[12px] font-bold capitalize">{r.target_type} · {r.reason}</p>
+                {r.description && <p className="text-[11px] text-muted-foreground">{r.description}</p>}
+                <p className="text-[10px] text-muted-foreground font-mono">ID: {r.target_id}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => resolveReport(r, "actioned", true)} className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-1.5 text-[11px] font-bold text-white"><Trash2 className="h-3 w-3" />Remove content</button>
+                  <button onClick={() => resolveReport(r, "actioned", false)} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-black">Mark actioned</button>
+                  <button onClick={() => resolveReport(r, "dismissed")} className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-bold text-muted-foreground">Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* قائمة الحسابات قيد المراجعة */}
         {loading ? (

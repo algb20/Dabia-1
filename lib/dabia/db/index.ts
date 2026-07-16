@@ -1225,44 +1225,35 @@ export async function requestOrderCancellation(orderId: string, reason: string):
 // NOTIFICATIONS — إشعارات حقيقية مبنية على أحداث فعلية للمستخدم (لا بيانات ثابتة)
 // ═══════════════════════════════════════════════════════════════════════════════
 export interface RealNotif {
-  id: string; type: string; title: string; body: string; time: string; read: boolean
+  id: string; type: string; title: string; body: string; time: string; read: boolean; link?: string
 }
 
 export async function getRealNotifications(userId: string): Promise<RealNotif[]> {
   try {
     const notifs: RealNotif[] = []
 
-    // 1) إشعار من حالة الحساب (تحت المراجعة / مقبول)
+    // 1) الإشعارات المحفوظة (أحداث فعلية: متابعة/رسالة/نزاع/طلب/منشور) — المصدر
+    // الأساسي، بحالة "مقروء" حقيقية محفوظة في القاعدة.
+    try {
+      const { data: persisted } = await supabase.rpc('get_notifications', { p_me: Number(userId), p_limit: 60 })
+      ;(persisted as any[] ?? []).forEach(n => notifs.push({
+        id: `db-${n.id}`, type: n.type, title: n.title, body: n.body || "",
+        time: n.created_at, read: n.read, link: n.link || undefined,
+      }))
+    } catch {}
+
+    // 2) تنبيه حالة الحساب (تحت المراجعة) — حالة قائمة، إعلامية (لا تُحتسب كغير مقروءة)
     const user = await getUserById(userId)
     if (user?.status === "pending") {
       notifs.push({
         id: "account-pending", type: "account",
         title: "Account Under Review",
         body: `Your ${user.role} account is being verified. We'll notify you once approved.`,
-        time: user.created_at || new Date().toISOString(), read: false,
-      })
-    } else if (user?.status === "active" && user.role !== "buyer") {
-      notifs.push({
-        id: "account-approved", type: "account",
-        title: "Account Approved ✓",
-        body: `Your ${user.role} account is now active. You can start adding products.`,
-        time: user.created_at || new Date().toISOString(), read: true,
+        time: user.created_at || new Date().toISOString(), read: true, link: "/account",
       })
     }
 
-    // 2) إشعارات حقيقية من آخر طلبات المستخدم الفعلية
-    const orders = await getOrdersByBuyer(userId)
-    orders.slice(0, 5).forEach(o => {
-      notifs.push({
-        id: `order-${o.id}`, type: "order",
-        title: o.status === "confirmed" ? "Order Confirmed" : `Order ${o.status}`,
-        body: `Your order of ${o.total_price}π has been ${o.status}.`,
-        time: o.created_at || new Date().toISOString(), read: true,
-      })
-    })
-
-    // 3) تنبيهات انخفاض السعر — منتج حفظته أصبح الآن ضمن تخفيض/عرض محدود.
-    // ميزة حقيقية مبنية على بيانات فعلية (المحفوظات × العروض النشطة) بلا بيانات وهمية.
+    // 3) تنبيهات انخفاض السعر — منتج حفظته أصبح الآن ضمن تخفيض/عرض محدود (إعلامية)
     const now = Date.now()
     const saved = await getSavedProducts(userId)
     saved.forEach(p => {
@@ -1274,36 +1265,38 @@ export async function getRealNotifications(userId: string): Promise<RealNotif[]>
         id: `deal-${p.id}`, type: "deal",
         title: pct ? `Price drop · ${pct}% off` : "Limited-time offer",
         body: `"${p.name}" you saved is now ${p.price}π${discounted ? ` (was ${p.original_price}π)` : ""}.`,
-        time: p.updated_at || p.deal_ends_at || new Date().toISOString(), read: false,
+        time: p.updated_at || p.deal_ends_at || new Date().toISOString(), read: true,
       })
     })
-
-    // 4) إشعارات المتابعة: مَن تابعك + منشورات الحسابات التي فعّلت إشعارها
-    try {
-      const { data: fn } = await supabase.rpc('get_follow_notifications', { p_me: Number(userId) })
-      ;(fn as any[] ?? []).forEach((r, i) => {
-        if (r.kind === 'follow') {
-          notifs.push({
-            id: `follow-${r.actor_id}-${r.created_at}`, type: 'follow',
-            title: `${r.actor_name} started following you`,
-            body: 'Tap to view their profile — follow back if you like.',
-            time: r.created_at, read: false,
-          })
-        } else {
-          notifs.push({
-            id: `fpost-${r.actor_id}-${r.created_at}-${i}`, type: 'new_arrival',
-            title: `${r.actor_name} shared something`,
-            body: (r.ref || 'New post').slice(0, 120),
-            time: r.created_at, read: false,
-          })
-        }
-      })
-    } catch {}
 
     // ترتيب الأحدث أولاً
     notifs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
     return notifs
   } catch { return [] }
+}
+
+// ── بلاغات المحتوى (إساءة/كراهية/احتيال) ──────────────────────────────────
+export interface DBReport {
+  id?: string; reporter_id: string; target_type: 'post' | 'user' | 'product'; target_id: string
+  reason: string; description?: string | null; status?: string; created_at?: string
+}
+export async function reportContent(reporterId: string, targetType: 'post' | 'user' | 'product', targetId: string, reason: string, description?: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('report_content', { p_reporter: Number(reporterId), p_type: targetType, p_target: String(targetId), p_reason: reason, p_desc: description ?? null }); return !error } catch { return false }
+}
+export async function adminListReports(adminId: string): Promise<DBReport[]> {
+  try { const { data, error } = await supabase.rpc('admin_list_reports', { p_admin: Number(adminId) }); if (error || !data) return []; return data as DBReport[] } catch { return [] }
+}
+export async function adminResolveReport(adminId: string, reportId: string, status: 'reviewed' | 'actioned' | 'dismissed', deleteTarget = false): Promise<boolean> {
+  try { const { error } = await supabase.rpc('admin_resolve_report', { p_admin: Number(adminId), p_report: Number(reportId), p_status: status, p_delete_target: deleteTarget }); return !error } catch { return false }
+}
+
+// عدد الإشعارات غير المقروءة (المحفوظة فقط) — لشارة الجرس
+export async function getNotificationsUnread(userId: string): Promise<number> {
+  try { const { data } = await supabase.rpc('notifications_unread', { p_me: Number(userId) }); return Number(data) || 0 } catch { return 0 }
+}
+// تعليم كل الإشعارات كمقروءة عند فتح اللوحة
+export async function markNotificationsRead(userId: string): Promise<void> {
+  try { await supabase.rpc('mark_notifications_read', { p_me: Number(userId) }) } catch {}
 }
 // ملاحظة: تعريف updateOrderStatus القديم (id, status, pi_tx_id) حُذف — استُبدل
 // بالنسخة الأحدث أعلاه (orderId, status, note) التي تدعم كامل تتبع الطلبات

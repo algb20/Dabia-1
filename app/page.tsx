@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, getSellerTrust, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -1161,10 +1161,25 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
     account: <ShieldCheck className="h-4 w-4 text-amber-400" />,
     order:   <Truck className="h-4 w-4 text-emerald-400" />,
     deal: <Tag className="h-4 w-4 text-emerald-400" />, follow: <UserPlus className="h-4 w-4 text-amber-400" />,
+    message: <MessageCircle className="h-4 w-4 text-blue-400" />, dispute: <AlertCircle className="h-4 w-4 text-red-400" />,
+    post: <Sparkles className="h-4 w-4 text-blue-400" />,
     price_drop: <Tag className="h-4 w-4 text-emerald-400" />, new_arrival: <Sparkles className="h-4 w-4 text-blue-400" />,
     trending: <TrendingUp className="h-4 w-4 text-amber-400" />,
     group_invite: <Users className="h-4 w-4 text-purple-400" />, auction: <Radio className="h-4 w-4 text-amber-400" />,
   }
+  const Row = ({ n }: { n: RealNotif }) => (
+    <div className={`flex items-start gap-3 border-b border-border px-4 py-3.5 ${!n.read ? "bg-secondary/30" : ""}`}>
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-card">
+        {iconMap[n.type] ?? <Bell className="h-4 w-4 text-muted-foreground" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm ${!n.read ? "font-bold" : "font-medium"}`}>{n.title}</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{n.body}</p>
+        <p className="mt-1 text-[10px] text-muted-foreground">{new Date(n.time).toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+      </div>
+      {!n.read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />}
+    </div>
+  )
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background animate-slide-up">
       <header className="flex items-center gap-3 border-b border-border px-4 py-3 pt-safe shrink-0">
@@ -1178,17 +1193,9 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
             <Bell className="h-10 w-10 opacity-30" /><p className="text-sm">All caught up</p>
           </div>
         ) : notifs.map(n => (
-          <div key={n.id} className={`flex items-start gap-3 border-b border-border px-4 py-3.5 ${!n.read ? "bg-secondary/30" : ""}`}>
-            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-card">
-              {iconMap[n.type] ?? <Bell className="h-4 w-4 text-muted-foreground" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className={`text-sm ${!n.read ? "font-bold" : "font-medium"}`}>{n.title}</p>
-              <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{n.body}</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">{new Date(n.time).toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
-            </div>
-            {!n.read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />}
-          </div>
+          n.link
+            ? <Link key={n.id} href={n.link} onClick={onClose} className="block"><Row n={n} /></Link>
+            : <div key={n.id}><Row n={n} /></div>
         ))}
       </div>
     </div>
@@ -1699,6 +1706,15 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, is
   const [editText, setEditText] = useState(post.text || "")
   const [savingEdit, setSavingEdit] = useState(false)
   const canEditText = post.type === "text" || post.type === "announcement"
+  // بلاغ عن منشور مسيء (لغير المالك)
+  const [showReport, setShowReport] = useState(false)
+  const [reportReason, setReportReason] = useState("Spam or scam")
+  const [reported, setReported] = useState(false)
+  const submitReport = async () => {
+    if (!currentUser?.id) return
+    await reportContent(currentUser.id, "post", postId, reportReason)
+    setReported(true); setShowReport(false)
+  }
 
   const savePostEdit = async () => {
     const t = editText.trim()
@@ -1820,7 +1836,40 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, is
             )}
           </div>
         )}
+        {/* بلاغ عن منشور — لغير المالك */}
+        {!isOwner && currentUser && (
+          <div className="relative shrink-0">
+            <button onClick={() => setShowMenu(v => !v)} aria-label="Post options" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary">
+              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {showMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+                <div className="absolute right-0 top-9 z-20 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+                  <button onClick={() => { setShowMenu(false); setShowReport(true) }} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] text-red-400 hover:bg-secondary"><AlertCircle className="h-3.5 w-3.5" />Report</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* نافذة البلاغ */}
+      {showReport && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowReport(false)}>
+          <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-bold flex items-center gap-2"><AlertCircle className="h-4 w-4 text-red-400" />Report this post</p>
+            <div className="space-y-1.5">
+              {["Spam or scam", "Hate or harassment", "Nudity or sexual content", "Violence", "Misinformation", "Other"].map(r => (
+                <button key={r} onClick={() => setReportReason(r)}
+                  className={`w-full rounded-xl border px-3 py-2.5 text-left text-[13px] ${reportReason === r ? "border-amber-400/40 bg-amber-400/10 font-bold" : "border-border text-muted-foreground"}`}>{r}</button>
+              ))}
+            </div>
+            <button onClick={submitReport} className="w-full rounded-xl bg-red-500 py-3 text-sm font-bold text-white">Submit report</button>
+          </div>
+        </div>
+      )}
+      {reported && <p className="px-3 pb-2 text-[11px] text-emerald-400">✓ Reported — our team will review it.</p>}
 
       <div className="px-3 pb-2">
         {editingPost && canEditText ? (
@@ -3379,9 +3428,21 @@ export default function DabiaApp() {
     })
   }, [])
 
-  const { data: alertsData   } = useAlerts(dbUser?.id)
+  const { data: alertsData, mutate: refreshNotifs } = useAlerts(dbUser?.id)
   const notifs   = alertsData?.notifications ?? []
-  const unread   = notifs.filter(n => !n.read).length
+
+  // شارة إشعارات غير مقروءة (محفوظة) — تحديث كل ١٠ ثوانٍ
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    if (!dbUser?.id) { setUnread(0); return }
+    const load = () => getNotificationsUnread(dbUser.id!).then(setUnread)
+    load(); const t = setInterval(load, 10000); return () => clearInterval(t)
+  }, [dbUser?.id])
+  // فتح لوحة الإشعارات → تعليم الكل كمقروء
+  const openNotifs = useCallback(() => {
+    setShowNotifs(true)
+    if (dbUser?.id) { markNotificationsRead(dbUser.id).then(() => { setUnread(0); refreshNotifs() }) }
+  }, [dbUser?.id, refreshNotifs])
 
   // شارة رسائل غير مقروءة — تحديث كل ١٠ ثوانٍ
   const [dmUnread, setDmUnread] = useState(0)
@@ -3476,7 +3537,7 @@ export default function DabiaApp() {
               )}
             </Link>
           )}
-          <button onClick={() => setShowNotifs(true)} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
+          <button onClick={openNotifs} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
             <Bell className="h-4 w-4" />
             {unread > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{unread}</span>
