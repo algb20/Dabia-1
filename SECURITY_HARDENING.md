@@ -1,53 +1,55 @@
 # Security hardening — password hash vault
 
-## The issue
-The `users` table has a `password` column (a salted **pbkdf2** hash). Because the
-app talks to Supabase with the public **anon** key and the table is readable, a
-`select('*')` on `users` (login, user search, profiles) returns that hash to the
-browser. Salted pbkdf2 is not trivially reversible, but **password hashes should
-never be world-readable** — they enable offline cracking.
+## The issue (fixed in code, one deploy-gated step left)
+`users.password` was readable with the public **anon** key via `select('*')`
+(login, people-search, profiles). Some accounts even stored **plaintext**
+passwords. Password credentials must never be world-readable.
 
-## The permanent fix (prepared, ready to activate)
-Move the hash into a locked **`user_secrets`** vault (RLS denies anon +
-authenticated; only the service-role key reaches it), verify credentials in a
-**server route**, and drop the public column. Nothing is left readable.
+## What was done — the permanent fix
+The hash now lives only in a locked **`user_secrets`** vault (RLS denies anon +
+authenticated). All verification runs inside **SECURITY DEFINER** functions
+callable with the anon key, so **no service-role key is needed** and the hash
+never reaches the browser. PBKDF2 is implemented in SQL and was verified
+**byte-identical** to the app's Web Crypto output.
 
-Files added (all inert until you flip the switch — **zero runtime change today**):
+**Applied & live on the database (tested end-to-end):**
+- `user_secrets` vault + backfill + RLS deny.
+- `dabia_login(email,password)` → returns the user with **no** hash.
+- `dabia_set_initial_secret(user_id,password)` → first-time only (can't hijack an
+  existing / Pi-only account).
+- `dabia_change_password(user_id,current,new)` → verifies current, then updates.
+- `dabia_reset_password(new)` → authorized by the OTP-verified `auth.email()`.
 
-| File | Purpose |
-|---|---|
-| `lib/dabia/migrations/hide_password_hash.sql` | Creates + backfills + locks `user_secrets`; gated `DROP COLUMN` |
-| `lib/dabia/password.ts` | Shared pbkdf2 verify/hash (verified identical to the app's) |
-| `app/api/dabia/auth/login/route.ts` | Server credential check (service-role), returns a user **without** the hash |
+Live test results (throwaway account): register ✓, second-set blocked ✓, login
+correct ✓, case-insensitive ✓, wrong password rejected ✓, returned user has no
+`password` key ✓, change-password ✓ (wrong-current rejected ✓), old password
+rejected after change ✓.
 
-The pbkdf2 round-trip was validated in the Node runtime, so existing hashes
-verify correctly server-side.
+**Client wired** (`lib/dabia/db/index.ts`): `loginWithEmailPassword`,
+`registerUser`, `changePassword`, `resetPasswordWithCode` all go through the
+vault RPCs. Every user read excludes the hash. No code path touches the column.
 
-## Cutover — the safe order (needs one live login test)
-Do this together, and test on the live site between the steps that matter:
+## The one remaining step (deploy-gated, not test-gated)
+Dropping the legacy `users.password` column is what finally removes the exposure.
+It must run **after this branch is deployed to production**, because the
+currently-deployed old code still reads that column — dropping it first would
+break live login.
 
-1. **Stage 1 (safe, additive):** run the top of `hide_password_hash.sql`
-   (`user_secrets` create + backfill + RLS). Nothing changes for users.
-2. **Wire login:** point the client's email/password login at
-   `POST /api/dabia/auth/login` (then create the Supabase Auth session as today).
-   Requires `SUPABASE_SERVICE_ROLE_KEY` set on the host.
-3. **Smoke-test:** log in with a real account on the live site. Confirm it works.
-4. **Stage 2 (cutover):** uncomment `ALTER TABLE users DROP COLUMN password;` and
-   run it. The exposure is now closed. (Rollback SQL is in the migration file.)
-
-> This is gated on purpose: steps 2–4 touch **production sign-in**, which can't be
-> end-to-end tested from the build sandbox (Supabase is network-blocked here).
-> Flipping it blind risks locking users out — so it waits for a 30-second live test.
+```sql
+-- run once this branch is live in production:
+ALTER TABLE users DROP COLUMN IF EXISTS password;
+```
+Rollback is in `lib/dabia/migrations/hide_password_hash.sql`. Ping me right after
+you deploy and I'll run the drop (and confirm anon can no longer read anything
+sensitive), or run the one line yourself.
 
 ## Deferred (do WITH live Pi Browser testing — not blind)
 Locking the low-risk permissive tables (`product_likes`, `product_shares`,
 `saved_products`, `saved_posts`, `mentions`, `stream_*`, `live_streams`,
-`app_official_links`) to `auth.uid()` is **not safe to apply yet**: Pi-only and
-guest sessions don't always carry a Supabase Auth session, so `auth.uid()` locks
-would break liking/saving for those users. This should follow the "Supabase Auth
-as the sole identity" migration and be verified inside Pi Browser. Documented so
-it isn't forgotten.
+`app_official_links`) to `auth.uid()` isn't safe yet: Pi-only and guest sessions
+don't always carry a Supabase Auth session, so those locks would break
+liking/saving for them. Follows the "Supabase Auth as sole identity" migration.
 
-## Also on your side (operational)
+## Operational (your side)
 - Rotate the previously-exposed Pi API key in the Pi Developer portal.
 - Enable Supabase leaked-password protection (paid plan). MFA already enabled.

@@ -202,15 +202,25 @@ export async function registerUser(d: {
     wallet_balance: 0, profile: {},
     auth_id: authData?.user?.id || null,
   }
-  if (d.password)     row.password     = await hashPassword(d.password)
+  // NOTE: the password is NOT stored on the users row. It goes into the locked
+  // user_secrets vault via a SECURITY DEFINER RPC below, so the hash is never
+  // world-readable.
   if (d.phone)        row.phone        = d.phone
   if (d.country)      row.country      = d.country
   if (d.pi_uid)       row.pi_uid       = d.pi_uid
   if (d.store_name)   row.store_name   = d.store_name
   if (d.website_url)  row.website_url  = d.website_url
 
+  // stores the password in the vault for the freshly-created account (guarded:
+  // first-time only, so it can't hijack an existing/Pi account)
+  const setSecret = async (userId?: string) => {
+    if (userId && d.password) {
+      try { await supabase.rpc('dabia_set_initial_secret', { p_user_id: Number(userId), p_password: d.password }) } catch {}
+    }
+  }
+
   const { data, error } = await supabase.from('users').insert(row).select(USER_PUBLIC_COLS).single()
-  if (!error && data) return data as DBUser
+  if (!error && data) { await setSecret((data as DBUser).id); return data as DBUser }
 
   if (error?.message.includes('column')) {
     const { data: d2, error: e2 } = await supabase
@@ -218,6 +228,7 @@ export async function registerUser(d: {
       .insert({ username: d.username, emall: d.emall, role, status })
       .select(USER_PUBLIC_COLS).single()
     if (e2) throw new Error(e2.message)
+    await setSecret((d2 as DBUser).id)
     return d2 as DBUser
   }
   throw new Error(error?.message || 'Registration failed')
@@ -227,29 +238,22 @@ export async function getUserByEmail(emall: string): Promise<DBUser | null> {
   try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('emall', emall).maybeSingle(); return data as DBUser | null } catch { return null }
 }
 
-// Internal only: reads the credential (password hash) for the login fallback.
-// Never expose this to display/search paths.
-async function getUserRowWithSecret(emall: string): Promise<(DBUser & { password?: string }) | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('emall', emall).maybeSingle(); return data as (DBUser & { password?: string }) | null } catch { return null }
-}
-
 // تسجيل الدخول لحساب موجود فعلاً بالإيميل وكلمة السر — هذا ما كان مفقوداً تماماً
 export async function loginWithEmailPassword(email: string, password: string): Promise<{ ok: boolean; user?: DBUser; error?: string }> {
   try {
-    const row = await getUserRowWithSecret(email)
-    if (!row) return { ok: false, error: "No account found with this email" }
-    if (!row.password) return { ok: false, error: "This account has no password set. Use 'Forgot Password' to set one." }
-    const valid = await verifyPassword(password, row.password)
-    if (!valid) return { ok: false, error: "Incorrect password" }
-    // never keep the hash on the returned object
-    const user = { ...row } as DBUser & { password?: string }
-    delete user.password
-
-    // ترقية تلقائية شفّافة: أي كلمة سر بصيغة قديمة (نص عادي أو SHA-256) تُعاد
-    // تجزئتها إلى PBKDF2 الآن في الخلفية دون إزعاج المستخدم.
-    if (needsRehash(row.password) && user.id) {
-      hashPassword(password).then(upgraded => updateUser(user.id!, { password: upgraded }))
+    // Credentials are verified inside the locked vault (SECURITY DEFINER RPC);
+    // the password hash never reaches the browser. Legacy formats are upgraded
+    // to pbkdf2 server-side on success.
+    const { data, error } = await supabase.rpc('dabia_login', { p_email: email, p_password: password })
+    if (error) return { ok: false, error: error.message }
+    const res = (data ?? {}) as { ok?: boolean; reason?: string; user?: DBUser }
+    if (!res.ok || !res.user) {
+      const msg = res.reason === 'no_account' ? 'No account found with this email'
+        : res.reason === 'no_password' ? "This account has no password set. Use 'Forgot Password' to set one."
+        : 'Incorrect password'
+      return { ok: false, error: msg }
     }
+    const user = res.user
 
     // إنشاء جلسة Supabase Auth حقيقية — أساس عمل كل سياسات RLS والحمايات
     // (auth.uid() يعتمد على جلسة فعلية). مع التأكيد التلقائي للبريد تُنشأ الجلسة
@@ -417,19 +421,17 @@ export async function updateUser(id: string, u: Partial<DBUser>): Promise<DBUser
 // ═══════════════════════════════════════════════════════════════════════════════
 export async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const { data: user, error: fetchErr } = await supabase.from('users').select('password, emall').eq('id', userId).single()
-    if (fetchErr || !user) return { ok: false, error: 'Account not found' }
-    if (!user.password) return { ok: false, error: 'No password set on this account yet' }
-
-    const valid = await verifyPassword(currentPassword, user.password)
-    if (!valid) return { ok: false, error: 'Current password is incorrect' }
     if (newPassword.length < 6) return { ok: false, error: 'New password must be at least 6 characters' }
 
-    const hashed = await hashPassword(newPassword)
-    const { error: updateErr } = await supabase.from('users').update({ password: hashed }).eq('id', userId)
-    if (updateErr) return { ok: false, error: updateErr.message }
+    // Verify current + store new entirely inside the locked vault (server-side,
+    // SECURITY DEFINER). The password hash never touches the browser.
+    const { data, error } = await supabase.rpc('dabia_change_password', {
+      p_user_id: Number(userId), p_current: currentPassword, p_new: newPassword,
+    })
+    if (error) return { ok: false, error: error.message }
+    if (data !== true) return { ok: false, error: 'Current password is incorrect' }
 
-    // مزامنة كلمة السر مع Supabase Auth الحقيقي إن وُجدت جلسة (يبقيها متوافقة لتسجيل الدخول لاحقاً)
+    // Keep the Supabase Auth credential in sync if a session exists (optional).
     try { await supabase.auth.updateUser({ password: newPassword }) } catch {}
 
     return { ok: true }
@@ -1148,11 +1150,14 @@ export async function resetPasswordWithCode(email: string, code: string, newPass
     if (error) return { ok: false, error: error.message }
     if (!data.session && !data.user) return { ok: false, error: 'Invalid or expired code' }
 
-    // تحديث كلمة السر في جدول users (المصدر الذي يستخدمه التطبيق فعلياً للتحقق)
-    const user = await getUserByEmail(email)
-    if (!user?.id) return { ok: false, error: 'Account not found' }
-    const updated = await updateUser(user.id, { password: await hashPassword(newPassword) })
-    if (!updated) return { ok: false, error: 'Failed to update password' }
+    // Store the new password in the locked vault, authorized by the OTP-verified
+    // session (the RPC uses auth.email(), not a client-supplied id).
+    const { data: done, error: rpcErr } = await supabase.rpc('dabia_reset_password', { p_new: newPassword })
+    if (rpcErr) return { ok: false, error: rpcErr.message }
+    if (done !== true) return { ok: false, error: 'Failed to update password. Please retry the reset.' }
+
+    // keep the Supabase Auth credential in sync when possible
+    try { await supabase.auth.updateUser({ password: newPassword }) } catch {}
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Reset failed' }
