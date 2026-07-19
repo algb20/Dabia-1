@@ -65,6 +65,13 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// Explicit column list for reading users WITHOUT the password hash. Every public
+// user read uses this so the hash is never returned to the browser via select('*').
+// (The hash lives only in the guarded `user_secrets` vault / legacy `password`
+// column, read exclusively by the server-side auth path.)
+const USER_PUBLIC_COLS =
+  "id, username, emall, role, status, created_at, country, phone, pi_uid, store_name, wallet_balance, profile, auth_id, avatar_url, bio, website_url, social_links, account_type"
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface DBUser {
   id?:             string
@@ -202,14 +209,14 @@ export async function registerUser(d: {
   if (d.store_name)   row.store_name   = d.store_name
   if (d.website_url)  row.website_url  = d.website_url
 
-  const { data, error } = await supabase.from('users').insert(row).select().single()
+  const { data, error } = await supabase.from('users').insert(row).select(USER_PUBLIC_COLS).single()
   if (!error && data) return data as DBUser
 
   if (error?.message.includes('column')) {
     const { data: d2, error: e2 } = await supabase
       .from('users')
       .insert({ username: d.username, emall: d.emall, role, status })
-      .select().single()
+      .select(USER_PUBLIC_COLS).single()
     if (e2) throw new Error(e2.message)
     return d2 as DBUser
   }
@@ -217,21 +224,30 @@ export async function registerUser(d: {
 }
 
 export async function getUserByEmail(emall: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('emall', emall).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('emall', emall).maybeSingle(); return data as DBUser | null } catch { return null }
+}
+
+// Internal only: reads the credential (password hash) for the login fallback.
+// Never expose this to display/search paths.
+async function getUserRowWithSecret(emall: string): Promise<(DBUser & { password?: string }) | null> {
+  try { const { data } = await supabase.from('users').select('*').eq('emall', emall).maybeSingle(); return data as (DBUser & { password?: string }) | null } catch { return null }
 }
 
 // تسجيل الدخول لحساب موجود فعلاً بالإيميل وكلمة السر — هذا ما كان مفقوداً تماماً
 export async function loginWithEmailPassword(email: string, password: string): Promise<{ ok: boolean; user?: DBUser; error?: string }> {
   try {
-    const user = await getUserByEmail(email)
-    if (!user) return { ok: false, error: "No account found with this email" }
-    if (!user.password) return { ok: false, error: "This account has no password set. Use 'Forgot Password' to set one." }
-    const valid = await verifyPassword(password, user.password)
+    const row = await getUserRowWithSecret(email)
+    if (!row) return { ok: false, error: "No account found with this email" }
+    if (!row.password) return { ok: false, error: "This account has no password set. Use 'Forgot Password' to set one." }
+    const valid = await verifyPassword(password, row.password)
     if (!valid) return { ok: false, error: "Incorrect password" }
+    // never keep the hash on the returned object
+    const user = { ...row } as DBUser & { password?: string }
+    delete user.password
 
     // ترقية تلقائية شفّافة: أي كلمة سر بصيغة قديمة (نص عادي أو SHA-256) تُعاد
     // تجزئتها إلى PBKDF2 الآن في الخلفية دون إزعاج المستخدم.
-    if (needsRehash(user.password) && user.id) {
+    if (needsRehash(row.password) && user.id) {
       hashPassword(password).then(upgraded => updateUser(user.id!, { password: upgraded }))
     }
 
@@ -258,7 +274,7 @@ export async function loginWithEmailPassword(email: string, password: string): P
   }
 }
 export async function getUserById(id: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('id', id).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('id', id).maybeSingle(); return data as DBUser | null } catch { return null }
 }
 
 // تسجيل/دخول بمعرّف Pi فقط — أبسط طريقة: نقرة واحدة داخل Pi Browser بلا بريد/كلمة سر.
@@ -281,11 +297,11 @@ export async function loginOrRegisterWithPi(piUid: string, piUsername: string): 
   }
 }
 export async function getUserByAuthId(auth_id: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('auth_id', auth_id).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('auth_id', auth_id).maybeSingle(); return data as DBUser | null } catch { return null }
 }
 
 export async function getUserByPiUid(pi_uid: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('pi_uid', pi_uid).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('pi_uid', pi_uid).maybeSingle(); return data as DBUser | null } catch { return null }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -311,7 +327,7 @@ export async function searchAccounts(query: string): Promise<AccountSearchResult
     if (byPiUid) {
       return [{ id: byPiUid.id!, username: byPiUid.username, role: byPiUid.role || 'buyer', pi_uid: byPiUid.pi_uid, avatar_url: byPiUid.avatar_url, store_name: byPiUid.store_name, emallMasked: maskEmail(byPiUid.emall) }]
     }
-    const { data } = await supabase.from('users').select('*').or(`username.ilike.%${q}%,store_name.ilike.%${q}%`).limit(10)
+    const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).or(`username.ilike.%${q}%,store_name.ilike.%${q}%`).limit(10)
     return ((data ?? []) as DBUser[]).map(u => ({ id: u.id!, username: u.username, role: u.role || 'buyer', pi_uid: u.pi_uid, avatar_url: u.avatar_url, store_name: u.store_name, emallMasked: maskEmail(u.emall) }))
   } catch { return [] }
 }
@@ -381,7 +397,7 @@ export async function updateUser(id: string, u: Partial<DBUser>): Promise<DBUser
     const { data: session } = await supabase.auth.getSession()
     const payload: any = { ...u }
     if (session?.session?.user?.id) payload.auth_id = session.session.user.id
-    const { data, error } = await supabase.from('users').update(payload).eq('id', id).select().single()
+    const { data, error } = await supabase.from('users').update(payload).eq('id', id).select(USER_PUBLIC_COLS).single()
     if (error) {
       // مهم: لا نُخفي الخطأ — الواجهة (handleSave وغيرها) تحتاج معرفة الفشل
       // الحقيقي بدل افتراض النجاح. هذا كان يجعل الحفظ "يبدو ناجحاً" دائماً
@@ -586,7 +602,7 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
 }
 
 export async function getPendingUsers(): Promise<DBUser[]> {
-  try { const { data } = await supabase.from('users').select('*').eq('status','pending').order('created_at',{ascending:false}); return (data??[]) as DBUser[] } catch { return [] }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('status','pending').order('created_at',{ascending:false}); return (data??[]) as DBUser[] } catch { return [] }
 }
 // موافقة/رفض الأدمن — عبر دالة موثوقة تتحقق أن المُنفِّذ حسابه admin فعلاً
 export async function approveUser(id: string): Promise<DBUser | null> {
