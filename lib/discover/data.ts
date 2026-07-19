@@ -16,6 +16,11 @@ export const SOURCES: Source[] = [
   { id: "garmin", name: "Garmin", kind: "brand", official: true, domain: "garmin.com", code: "GMN" },
   { id: "dyson", name: "Dyson", kind: "brand", official: true, domain: "dyson.com", code: "DYS" },
   { id: "anker", name: "Anker", kind: "brand", official: true, domain: "anker.com", code: "ANK" },
+  { id: "canon", name: "Canon", kind: "brand", official: true, domain: "canon.com", code: "CAN" },
+  { id: "gopro", name: "GoPro", kind: "brand", official: true, domain: "gopro.com", code: "GPR" },
+  { id: "dell", name: "Dell", kind: "brand", official: true, domain: "dell.com", code: "DEL" },
+  { id: "logitech", name: "Logitech", kind: "brand", official: true, domain: "logitech.com", code: "LOG" },
+  { id: "jbl", name: "JBL", kind: "brand", official: true, domain: "jbl.com", code: "JBL" },
   { id: "amazon", name: "Amazon", kind: "marketplace", official: true, domain: "amazon.com", code: "AMZ" },
   { id: "noon", name: "Noon", kind: "marketplace", official: true, domain: "noon.com", code: "NOO" },
 ];
@@ -25,17 +30,24 @@ export const CATEGORIES: Category[] = [
   { id: "wearables", slug: "wearables", name: "Wearables", blurb: "Smartwatches and fitness bands." },
   { id: "mobile", slug: "mobile", name: "Mobile & Tablets", blurb: "Phones and tablets, official-source only." },
   { id: "home", slug: "home", name: "Home Tech", blurb: "Cleaning, air and everyday home devices." },
+  { id: "cameras", slug: "cameras", name: "Cameras", blurb: "Mirrorless, action and vlog cameras." },
+  { id: "computing", slug: "computing", name: "Computing", blurb: "Laptops and desk gear, official-source only." },
 ];
 
 export const BRANDS: Brand[] = [
-  { id: "apple", slug: "apple", name: "Apple", official: true, monogram: "Ap", hue: 220, blurb: "iPhone, Apple Watch and AirPods — sold from Apple and authorized sellers.", categoryIds: ["audio", "wearables", "mobile"] },
+  { id: "apple", slug: "apple", name: "Apple", official: true, monogram: "Ap", hue: 220, blurb: "iPhone, Apple Watch, AirPods and Mac — sold from Apple and authorized sellers.", categoryIds: ["audio", "wearables", "mobile", "computing"] },
   { id: "samsung", slug: "samsung", name: "Samsung", official: true, monogram: "Sa", hue: 210, blurb: "Galaxy phones, tablets and watches from Samsung's official channels.", categoryIds: ["wearables", "mobile"] },
-  { id: "sony", slug: "sony", name: "Sony", official: true, monogram: "So", hue: 250, blurb: "Audio and imaging, verified from Sony and authorized retail.", categoryIds: ["audio"] },
+  { id: "sony", slug: "sony", name: "Sony", official: true, monogram: "So", hue: 250, blurb: "Audio and imaging, verified from Sony and authorized retail.", categoryIds: ["audio", "cameras"] },
   { id: "bose", slug: "bose", name: "Bose", official: true, monogram: "Bo", hue: 0, blurb: "Noise-cancelling headphones and speakers, official source.", categoryIds: ["audio"] },
   { id: "sonos", slug: "sonos", name: "Sonos", official: true, monogram: "Sn", hue: 30, blurb: "Home speakers and systems from Sonos.", categoryIds: ["audio"] },
   { id: "garmin", slug: "garmin", name: "Garmin", official: true, monogram: "Ga", hue: 200, blurb: "GPS and multisport watches, official warranty.", categoryIds: ["wearables"] },
   { id: "dyson", slug: "dyson", name: "Dyson", official: true, monogram: "Dy", hue: 300, blurb: "Cordless cleaning and air treatment, sold from Dyson.", categoryIds: ["home"] },
   { id: "anker", slug: "anker", name: "Anker", official: true, monogram: "An", hue: 190, blurb: "Charging and audio accessories, official Anker store.", categoryIds: ["audio", "home"] },
+  { id: "canon", slug: "canon", name: "Canon", official: true, monogram: "Ca", hue: 350, blurb: "Cameras and lenses, official Canon and authorized retail.", categoryIds: ["cameras"] },
+  { id: "gopro", slug: "gopro", name: "GoPro", official: true, monogram: "Go", hue: 200, blurb: "Action cameras from GoPro, official warranty.", categoryIds: ["cameras"] },
+  { id: "dell", slug: "dell", name: "Dell", official: true, monogram: "De", hue: 215, blurb: "Laptops and monitors from Dell's official store.", categoryIds: ["computing"] },
+  { id: "logitech", slug: "logitech", name: "Logitech", official: true, monogram: "Lo", hue: 195, blurb: "Keyboards, mice and desk gear, official Logitech.", categoryIds: ["computing", "audio"] },
+  { id: "jbl", slug: "jbl", name: "JBL", official: true, monogram: "Jb", hue: 20, blurb: "Portable speakers and audio from JBL.", categoryIds: ["audio"] },
 ];
 
 // helper to build a short, deterministic price history (base currency)
@@ -143,6 +155,65 @@ export const PRODUCTS: Product[] = [
     specs: [{ label: "Power", value: "100 W" }, { label: "Ports", value: "2× C, 1× A" }, { label: "Tech", value: "GaNPrime" }],
     hue: 188, currency: "USD", history: hist(79.99, [79.99, 79.99, 74.99, 69.99, 69.99, 69.99]),
   },
+  // ---- Cameras ----
+  {
+    id: "p-a7iv", slug: "sony-alpha-7-iv", name: "Sony Alpha 7 IV", brandId: "sony", categoryId: "cameras",
+    summary: "Full-frame hybrid mirrorless.",
+    description: "A 33MP full-frame mirrorless built for stills and 4K video, with fast hybrid autofocus. Verified from Sony and authorized imaging retail.",
+    specs: [{ label: "Sensor", value: "33 MP full-frame" }, { label: "Video", value: "4K 60p" }, { label: "AF", value: "759-point hybrid" }, { label: "Mount", value: "Sony E" }],
+    hue: 248, currency: "USD", history: hist(2499, [2499, 2499, 2499, 2399, 2399, 2398]),
+  },
+  {
+    id: "p-r6ii", slug: "canon-eos-r6-mark-ii", name: "Canon EOS R6 Mark II", brandId: "canon", categoryId: "cameras",
+    summary: "Fast full-frame for action.",
+    description: "A 24MP full-frame mirrorless with up to 40fps shooting and strong subject tracking. Official Canon and authorized retail only.",
+    specs: [{ label: "Sensor", value: "24 MP full-frame" }, { label: "Burst", value: "40 fps" }, { label: "Video", value: "4K 60p" }, { label: "Mount", value: "Canon RF" }],
+    hue: 352, currency: "USD", history: hist(2499, [2499, 2499, 2499, 2499, 2399, 2399]),
+  },
+  {
+    id: "p-hero13", slug: "gopro-hero13-black", name: "GoPro HERO13 Black", brandId: "gopro", categoryId: "cameras",
+    summary: "Flagship action camera.",
+    description: "Waterproof action camera with 5.3K video, HyperSmooth stabilization and swappable lenses. Sold from GoPro with official warranty.",
+    specs: [{ label: "Video", value: "5.3K 60" }, { label: "Stabilization", value: "HyperSmooth 6" }, { label: "Waterproof", value: "10 m" }],
+    hue: 205, currency: "USD", history: hist(399, [399, 399, 399, 399, 399, 399]),
+  },
+  {
+    id: "p-zv1ii", slug: "sony-zv-1-ii", name: "Sony ZV-1 II", brandId: "sony", categoryId: "cameras",
+    summary: "Compact camera for creators.",
+    description: "A pocket vlog camera with a wide zoom, directional mic and creator-focused controls. Verified from Sony and authorized retail.",
+    specs: [{ label: "Sensor", value: "1-inch" }, { label: "Lens", value: "18–50 mm equiv." }, { label: "Video", value: "4K 30p" }],
+    hue: 252, currency: "USD", history: hist(899, [899, 899, 879, 848, 848, 848]),
+  },
+  // ---- Computing ----
+  {
+    id: "p-mba-m3", slug: "apple-macbook-air-m3", name: "MacBook Air (M3, 13-inch)", brandId: "apple", categoryId: "computing",
+    summary: "Thin, silent, all-day laptop.",
+    description: "Apple's fanless M3 laptop with an 18-hour battery and a Liquid Retina display. Verified from Apple and authorized sellers.",
+    specs: [{ label: "Chip", value: "Apple M3" }, { label: "Display", value: "13.6\" Liquid Retina" }, { label: "Battery", value: "Up to 18 h" }, { label: "Weight", value: "1.24 kg" }],
+    hue: 222, currency: "USD", history: hist(1099, [1099, 1099, 1049, 999, 999, 999]),
+  },
+  {
+    id: "p-xps13", slug: "dell-xps-13", name: "Dell XPS 13", brandId: "dell", categoryId: "computing",
+    summary: "Compact premium ultrabook.",
+    description: "A machined-aluminium 13-inch laptop with an edge-to-edge display. Sold from Dell's official store and authorized retail.",
+    specs: [{ label: "Display", value: "13.4\" InfinityEdge" }, { label: "Build", value: "CNC aluminium" }, { label: "Weight", value: "1.19 kg" }],
+    hue: 216, currency: "USD", history: hist(999, [999, 999, 979, 949, 949, 949]),
+  },
+  {
+    id: "p-mx3s", slug: "logitech-mx-master-3s", name: "Logitech MX Master 3S", brandId: "logitech", categoryId: "computing",
+    summary: "Precision productivity mouse.",
+    description: "A quiet, high-precision wireless mouse with an 8K DPI sensor and fast scrolling. Official Logitech and authorized retail.",
+    specs: [{ label: "Sensor", value: "8000 DPI" }, { label: "Battery", value: "Up to 70 d" }, { label: "Connect", value: "Bolt / BT" }],
+    hue: 196, currency: "USD", history: hist(99.99, [99.99, 99.99, 94.99, 89.99, 89.99, 89.99]),
+  },
+  // ---- Audio (extra) ----
+  {
+    id: "p-charge5", slug: "jbl-charge-5", name: "JBL Charge 5", brandId: "jbl", categoryId: "audio",
+    summary: "Rugged portable speaker + powerbank.",
+    description: "A waterproof portable speaker with 20-hour playtime that also charges your phone. Official JBL and authorized retail.",
+    specs: [{ label: "Rating", value: "IP67" }, { label: "Playtime", value: "20 h" }, { label: "Extras", value: "USB powerbank" }],
+    hue: 22, currency: "USD", history: hist(179.95, [179.95, 179.95, 159.95, 149.95, 149.95, 149.95]),
+  },
 ];
 
 // Offers: same product, several official / authorized sources, multi-currency.
@@ -194,7 +265,32 @@ export const OFFERS: Offer[] = [
   // Anker Prime
   { id: "o32", productId: "p-prime", sourceId: "anker", price: 79.99, currency: "USD", url: "https://www.anker.com/products/a2340", availability: "in_stock", updatedAt: "2026-07-13", shipsTo: "US" },
   { id: "o33", productId: "p-prime", sourceId: "amazon", price: 69.99, currency: "USD", url: "https://www.amazon.com/s?k=anker+prime+100w", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  // Sony A7 IV
+  { id: "o34", productId: "p-a7iv", sourceId: "sony", price: 2499, currency: "USD", url: "https://electronics.sony.com/imaging/interchangeable-lens-cameras/all-interchangeable-lens-cameras/p/ilce7m4-b", availability: "in_stock", updatedAt: "2026-07-12", shipsTo: "US" },
+  { id: "o35", productId: "p-a7iv", sourceId: "amazon", price: 2398, currency: "USD", url: "https://www.amazon.com/s?k=sony+a7+iv", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  // Canon R6 II
+  { id: "o36", productId: "p-r6ii", sourceId: "canon", price: 2499, currency: "USD", url: "https://www.usa.canon.com/shop/p/eos-r6-mark-ii", availability: "in_stock", updatedAt: "2026-07-11", shipsTo: "US" },
+  { id: "o37", productId: "p-r6ii", sourceId: "amazon", price: 2399, currency: "USD", url: "https://www.amazon.com/s?k=canon+eos+r6+mark+ii", availability: "low", updatedAt: "2026-07-16", shipsTo: "US" },
+  // GoPro HERO13
+  { id: "o38", productId: "p-hero13", sourceId: "gopro", price: 399, currency: "USD", url: "https://gopro.com/en/us/shop/cameras/hero13-black/CHDHX-131-master.html", availability: "in_stock", updatedAt: "2026-07-13", shipsTo: "US" },
+  { id: "o39", productId: "p-hero13", sourceId: "amazon", price: 399, currency: "USD", url: "https://www.amazon.com/s?k=gopro+hero13+black", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  // Sony ZV-1 II
+  { id: "o40", productId: "p-zv1ii", sourceId: "sony", price: 899, currency: "USD", url: "https://electronics.sony.com/imaging/point-and-shoot-cameras/p/zv1m2-b", availability: "in_stock", updatedAt: "2026-07-12", shipsTo: "US" },
+  { id: "o41", productId: "p-zv1ii", sourceId: "amazon", price: 848, currency: "USD", url: "https://www.amazon.com/s?k=sony+zv-1+ii", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  // MacBook Air M3
+  { id: "o42", productId: "p-mba-m3", sourceId: "apple", price: 1099, currency: "USD", url: "https://www.apple.com/shop/buy-mac/macbook-air/13-inch-m3", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o43", productId: "p-mba-m3", sourceId: "amazon", price: 999, currency: "USD", url: "https://www.amazon.com/s?k=macbook+air+m3", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o44", productId: "p-mba-m3", sourceId: "noon", price: 4199, currency: "AED", url: "https://www.noon.com/uae-en/search?q=macbook%20air%20m3", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "AE" },
+  // Dell XPS 13
+  { id: "o45", productId: "p-xps13", sourceId: "dell", price: 999, currency: "USD", url: "https://www.dell.com/en-us/shop/dell-laptops/xps-13-laptop/spd/xps-13-9340-laptop", availability: "in_stock", updatedAt: "2026-07-10", shipsTo: "US" },
+  { id: "o46", productId: "p-xps13", sourceId: "amazon", price: 949, currency: "USD", url: "https://www.amazon.com/s?k=dell+xps+13", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  // Logitech MX Master 3S
+  { id: "o47", productId: "p-mx3s", sourceId: "logitech", price: 99.99, currency: "USD", url: "https://www.logitech.com/en-us/products/mice/mx-master-3s.html", availability: "in_stock", updatedAt: "2026-07-13", shipsTo: "US" },
+  { id: "o48", productId: "p-mx3s", sourceId: "amazon", price: 89.99, currency: "USD", url: "https://www.amazon.com/s?k=logitech+mx+master+3s", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  // JBL Charge 5
+  { id: "o49", productId: "p-charge5", sourceId: "jbl", price: 179.95, currency: "USD", url: "https://www.jbl.com/portable-speakers/JBL+CHARGE+5.html", availability: "in_stock", updatedAt: "2026-07-12", shipsTo: "US" },
+  { id: "o50", productId: "p-charge5", sourceId: "amazon", price: 149.95, currency: "USD", url: "https://www.amazon.com/s?k=jbl+charge+5", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
 ];
 
 // Trending order (ids) — would come from click/conversion analytics in production.
-export const TRENDING_IDS = ["p-xm5", "p-ip16p", "p-app2", "p-v15", "p-s24u", "p-aw10", "p-qcu", "p-fenix8"];
+export const TRENDING_IDS = ["p-xm5", "p-ip16p", "p-mba-m3", "p-a7iv", "p-app2", "p-v15", "p-s24u", "p-aw10"];

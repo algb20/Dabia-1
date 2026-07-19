@@ -95,9 +95,9 @@ export function Header() {
         </Link>
         <nav className="d-nav" aria-label="Primary">
           <Link href={href("/c/audio")}>Audio</Link>
-          <Link href={href("/c/wearables")}>Wearables</Link>
           <Link href={href("/c/mobile")}>Mobile</Link>
-          <Link href={href("/c/home")}>Home</Link>
+          <Link href={href("/c/cameras")}>Cameras</Link>
+          <Link href={href("/c/computing")}>Computing</Link>
           <Link href={href("/how-it-works")}>How it works</Link>
         </nav>
         <div className="d-head-search">
