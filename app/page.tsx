@@ -721,18 +721,20 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
         {
           onReadyForServerApproval: async (paymentId: string) => {
             try {
+              const { data: { session } } = await supabase.auth.getSession()
               await fetch("/api/dabia/payments", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) },
                 body: JSON.stringify({ action: "approve", paymentId }),
               })
             } catch {}
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
             try {
+              const { data: { session } } = await supabase.auth.getSession()
               await fetch("/api/dabia/payments", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) },
                 body: JSON.stringify({ action: "complete", paymentId, txid }),
               })
             } catch {}
@@ -2932,10 +2934,10 @@ function BusinessTab() {
         },
         {
           onReadyForServerApproval: async (paymentId: string) => {
-            try { await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve", paymentId }) }) } catch {}
+            try { const { data: { session } } = await supabase.auth.getSession(); await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) }, body: JSON.stringify({ action: "approve", paymentId }) }) } catch {}
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
-            try { await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "complete", paymentId, txid }) }) } catch {}
+            try { const { data: { session } } = await supabase.auth.getSession(); await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) }, body: JSON.stringify({ action: "complete", paymentId, txid }) }) } catch {}
             // فقط بعد اكتمال دفع Pi حقيقي ومُوافَق عليه، نُفعِّل الاشتراك بمعرّف المعاملة الحقيقي
             const res = await fetch("/api/dabia/subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: bizUser.id, tier, txId: txid }) })
             const data = await res.json()

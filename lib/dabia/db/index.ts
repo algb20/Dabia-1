@@ -326,13 +326,25 @@ function maskEmail(email: string): string {
 export async function searchAccounts(query: string): Promise<AccountSearchResult[]> {
   const q = query.trim()
   if (!q) return []
+  // strip PostgREST filter-special chars to prevent .or() filter injection
+  const safe = q.replace(/[(),]/g, '').slice(0, 100)
+  if (!safe) return []
   try {
     const byPiUid = await getUserByPiUid(q)
     if (byPiUid) {
       return [{ id: byPiUid.id!, username: byPiUid.username, role: byPiUid.role || 'buyer', pi_uid: byPiUid.pi_uid, avatar_url: byPiUid.avatar_url, store_name: byPiUid.store_name, emallMasked: maskEmail(byPiUid.emall) }]
     }
-    const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).or(`username.ilike.%${q}%,store_name.ilike.%${q}%`).limit(10)
-    return ((data ?? []) as DBUser[]).map(u => ({ id: u.id!, username: u.username, role: u.role || 'buyer', pi_uid: u.pi_uid, avatar_url: u.avatar_url, store_name: u.store_name, emallMasked: maskEmail(u.emall) }))
+    // Use separate .ilike() calls (fully parameterised) rather than .or() string interpolation
+    const [r1, r2] = await Promise.all([
+      supabase.from('users').select(USER_PUBLIC_COLS).ilike('username',   `%${safe}%`).limit(10),
+      supabase.from('users').select(USER_PUBLIC_COLS).ilike('store_name', `%${safe}%`).limit(10),
+    ])
+    const seen = new Set<string>()
+    const rows: DBUser[] = []
+    for (const u of [...(r1.data ?? []), ...(r2.data ?? [])] as DBUser[]) {
+      if (u.id && !seen.has(u.id)) { seen.add(u.id); rows.push(u) }
+    }
+    return rows.map(u => ({ id: u.id!, username: u.username, role: u.role || 'buyer', pi_uid: u.pi_uid, avatar_url: u.avatar_url, store_name: u.store_name, emallMasked: maskEmail(u.emall) }))
   } catch { return [] }
 }
 // ── روابط التواصل الرسمية للتطبيق (وليست الشخصية) ──────────────────
@@ -587,9 +599,14 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
     const emailSignal = getBusinessEmailSignal(user)
     if (emailSignal.domainVerified) {
       try {
+        const { data: { session } } = await supabase.auth.getSession()
         const res = await fetch('/api/dabia/verify-business', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url, userId: user.id }),
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url }),
         })
         const verify = await res.json()
         if (verify.activated) {
