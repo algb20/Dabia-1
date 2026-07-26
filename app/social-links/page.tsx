@@ -34,12 +34,23 @@ export default function SocialLinksPage() {
     </div>
   )
 
+  const safeUrl = (u: string): string => {
+    const t = u.trim()
+    if (!t) return ""
+    try {
+      const parsed = new URL(t.startsWith("http") ? t : `https://${t}`)
+      return (parsed.protocol === "https:" || parsed.protocol === "http:") ? parsed.href : ""
+    } catch { return "" }
+  }
+
   const handleSave = async () => {
     setSaving(true); setError("")
     try {
       await updateProfile({
         social_links: {
-          telegram, instagram, x,
+          telegram:  { ...telegram,  url: safeUrl(telegram.url)  },
+          instagram: { ...instagram, url: safeUrl(instagram.url) },
+          x:         { ...x,         url: safeUrl(x.url)         },
           email_public: { enabled: emailPublic },
         },
       })

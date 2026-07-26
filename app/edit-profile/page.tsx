@@ -96,6 +96,15 @@ export default function EditProfilePage() {
 
   const handleSave = async () => {
     setSaving(true); setError("")
+    const safeUrl = (u: string) => {
+      const trimmed = u.trim()
+      if (!trimmed) return undefined
+      try {
+        const parsed = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`)
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined
+        return parsed.href
+      } catch { return undefined }
+    }
     try {
       const identity_card: Record<string, string | string[]> = {}
       for (const f of identityFields) {
@@ -106,7 +115,7 @@ export default function EditProfilePage() {
       await updateProfile({
         avatar_url:  avatarUrl  || undefined,
         bio:         bio.trim() || undefined,
-        website_url: websiteUrl.trim() || undefined,
+        website_url: safeUrl(websiteUrl),
         profile:     { ...(user.profile || {}), identity_card },
       })
       setSaved(true)

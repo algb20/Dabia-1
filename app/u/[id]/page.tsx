@@ -185,7 +185,7 @@ export default function PublicProfilePage() {
 
           {profile.bio && <p className="text-[12px] text-muted-foreground leading-relaxed">{profile.bio}</p>}
 
-          {profile.website_url && (
+          {profile.website_url && /^https?:\/\//i.test(profile.website_url) && (
             <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[11px] text-amber-400 truncate">
               <Globe2 className="h-3 w-3 shrink-0" />{profile.website_url}
             </a>
@@ -193,9 +193,9 @@ export default function PublicProfilePage() {
 
           {(social?.telegram?.enabled || social?.instagram?.enabled || social?.x?.enabled) && (
             <div className="flex items-center gap-2">
-              {social?.telegram?.enabled && social.telegram.url && <a href={social.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Send className="h-3.5 w-3.5" /></a>}
-              {social?.instagram?.enabled && social.instagram.url && <a href={social.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Instagram className="h-3.5 w-3.5" /></a>}
-              {social?.x?.enabled && social.x.url && <a href={social.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Twitter className="h-3.5 w-3.5" /></a>}
+              {social?.telegram?.enabled && social.telegram.url && /^https?:\/\//i.test(social.telegram.url) && <a href={social.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Send className="h-3.5 w-3.5" /></a>}
+              {social?.instagram?.enabled && social.instagram.url && /^https?:\/\//i.test(social.instagram.url) && <a href={social.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Instagram className="h-3.5 w-3.5" /></a>}
+              {social?.x?.enabled && social.x.url && /^https?:\/\//i.test(social.x.url) && <a href={social.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Twitter className="h-3.5 w-3.5" /></a>}
             </div>
           )}
         </div>

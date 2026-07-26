@@ -3286,7 +3286,7 @@ function ProfileTab() {
                 {profileUser.bio && (
                   <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">{profileUser.bio}</p>
                 )}
-                {profileUser.website_url && (
+                {profileUser.website_url && /^https?:\/\//i.test(profileUser.website_url) && (
                   <a href={profileUser.website_url} target="_blank" rel="noopener noreferrer"
                     className="mt-1 flex items-center gap-1 text-[10px] text-amber-400 truncate">
                     <Globe2 className="h-2.5 w-2.5 shrink-0" />{profileUser.website_url}
@@ -3316,13 +3316,13 @@ function ProfileTab() {
 
             {/* Social links row */}
             <div className="px-4 pb-3 flex items-center gap-2">
-              {profileUser.social_links?.telegram?.enabled && profileUser.social_links.telegram.url && (
+              {profileUser.social_links?.telegram?.enabled && profileUser.social_links.telegram.url && /^https?:\/\//i.test(profileUser.social_links.telegram.url) && (
                 <a href={profileUser.social_links.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Send className="h-3 w-3" /></a>
               )}
-              {profileUser.social_links?.instagram?.enabled && profileUser.social_links.instagram.url && (
+              {profileUser.social_links?.instagram?.enabled && profileUser.social_links.instagram.url && /^https?:\/\//i.test(profileUser.social_links.instagram.url) && (
                 <a href={profileUser.social_links.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Instagram className="h-3 w-3" /></a>
               )}
-              {profileUser.social_links?.x?.enabled && profileUser.social_links.x.url && (
+              {profileUser.social_links?.x?.enabled && profileUser.social_links.x.url && /^https?:\/\//i.test(profileUser.social_links.x.url) && (
                 <a href={profileUser.social_links.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Twitter className="h-3 w-3" /></a>
               )}
               <Link href="/social-links" className="ml-auto text-[10px] text-amber-400 font-semibold">
