@@ -35,9 +35,8 @@ revoke all on user_secrets from anon, authenticated;
 -- See the applied migrations password_vault_auth_functions,
 -- password_vault_qualify_pgcrypto and password_vault_reset_rpc for the bodies.
 
--- ---------- STAGE 2 (cutover — run AFTER this branch is deployed) ----------
--- Once production runs the vault-based code, the legacy column is unused:
---   ALTER TABLE users DROP COLUMN IF EXISTS password;
+-- ---------- STAGE 2 (APPLIED 2026-07-26) ----------
+-- ALTER TABLE users DROP COLUMN IF EXISTS password;   ← EXECUTED, column gone.
 -- Rollback (if ever needed):
 --   ALTER TABLE users ADD COLUMN password text;
 --   UPDATE users u SET password = s.password_hash FROM user_secrets s WHERE s.user_id = u.id;

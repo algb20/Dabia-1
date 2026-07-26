@@ -29,19 +29,10 @@ rejected after change ✓.
 `registerUser`, `changePassword`, `resetPasswordWithCode` all go through the
 vault RPCs. Every user read excludes the hash. No code path touches the column.
 
-## The one remaining step (deploy-gated, not test-gated)
-Dropping the legacy `users.password` column is what finally removes the exposure.
-It must run **after this branch is deployed to production**, because the
-currently-deployed old code still reads that column — dropping it first would
-break live login.
-
-```sql
--- run once this branch is live in production:
-ALTER TABLE users DROP COLUMN IF EXISTS password;
-```
-Rollback is in `lib/dabia/migrations/hide_password_hash.sql`. Ping me right after
-you deploy and I'll run the drop (and confirm anon can no longer read anything
-sensitive), or run the one line yourself.
+## Stage 2 — DONE (2026-07-26)
+`users.password` column **dropped in production**.
+Verified: `user_secrets` vault has 3 rows intact; anon has zero password-related
+columns to select from `users`. No rollback needed — the vault is the permanent store.
 
 ## Deferred (do WITH live Pi Browser testing — not blind)
 Locking the low-risk permissive tables (`product_likes`, `product_shares`,
