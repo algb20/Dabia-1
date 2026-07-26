@@ -12,19 +12,21 @@ type SP = { q?: string; category?: string; brand?: string; sort?: string };
 export default async function SearchPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const q = (sp.q || "").trim();
-  const category = sp.category ? getCategoryBySlug(sp.category) : undefined;
-  const brand = sp.brand ? getBrandBySlug(sp.brand) : undefined;
   const sort = (sp.sort as "relevance" | "price_asc" | "price_desc" | "name") || "relevance";
 
-  const results = listProducts({
+  const [categories, brands, category, brand] = await Promise.all([
+    getCategories(),
+    getBrands(),
+    sp.category ? getCategoryBySlug(sp.category) : Promise.resolve(undefined),
+    sp.brand    ? getBrandBySlug(sp.brand)        : Promise.resolve(undefined),
+  ]);
+
+  const results = await listProducts({
     q,
     categoryId: category?.id,
     brandId: brand?.id,
     sort,
   });
-
-  const categories = getCategories();
-  const brands = getBrands();
 
   return (
     <section className="d-wrap d-section" style={{ paddingTop: 34 }}>
@@ -33,7 +35,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         <h1 className="d-h2">
           {q ? (
             <>
-              Results for <span style={{ color: "var(--pine)" }}>“{q}”</span>
+              Results for <span style={{ color: "var(--pine)" }}>"{q}"</span>
             </>
           ) : category ? (
             category.name

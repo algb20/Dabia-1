@@ -4,21 +4,24 @@ import { getBrands, getBrandBySlug, getBrandProducts } from "@/lib/discover/stor
 import { ProductCard, Tile, Seal } from "@/components/discover/ui";
 import { FollowBrand } from "@/components/discover/client";
 
-export function generateStaticParams() {
-  return getBrands().map((b) => ({ slug: b.slug }));
+export async function generateStaticParams() {
+  const brands = await getBrands();
+  return brands.map((b) => ({ slug: b.slug }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const b = getBrandBySlug(slug);
+  const b = await getBrandBySlug(slug);
   return b ? { title: b.name, description: b.blurb } : { title: "Brand" };
 }
 
 export default async function BrandPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const brand = getBrandBySlug(slug);
+  const [brand, products] = await Promise.all([
+    getBrandBySlug(slug),
+    getBrandProducts(slug),
+  ]);
   if (!brand) notFound();
-  const products = getBrandProducts(brand.id);
 
   return (
     <section className="d-wrap d-section" style={{ paddingTop: 34 }}>

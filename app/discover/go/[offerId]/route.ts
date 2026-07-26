@@ -33,7 +33,7 @@ async function recordClick(offerId: string, sourceId: string): Promise<void> {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ offerId: string }> }) {
   const { offerId } = await ctx.params;
-  const offer = getOfferView(offerId);
+  const offer = await getOfferView(offerId);
 
   if (!offer) {
     return NextResponse.redirect(new URL(SITE.basePath, _req.url), { status: 302 });

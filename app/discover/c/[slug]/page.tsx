@@ -3,21 +3,24 @@ import type { Metadata } from "next";
 import { getCategories, getCategoryBySlug, getCategoryProducts } from "@/lib/discover/store";
 import { ProductCard } from "@/components/discover/ui";
 
-export function generateStaticParams() {
-  return getCategories().map((c) => ({ slug: c.slug }));
+export async function generateStaticParams() {
+  const cats = await getCategories();
+  return cats.map((c) => ({ slug: c.slug }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const c = getCategoryBySlug(slug);
+  const c = await getCategoryBySlug(slug);
   return c ? { title: c.name, description: c.blurb } : { title: "Category" };
 }
 
 export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const category = getCategoryBySlug(slug);
+  const [category, products] = await Promise.all([
+    getCategoryBySlug(slug),
+    getCategoryProducts(slug),
+  ]);
   if (!category) notFound();
-  const products = getCategoryProducts(category.id);
 
   return (
     <section className="d-wrap d-section" style={{ paddingTop: 34 }}>

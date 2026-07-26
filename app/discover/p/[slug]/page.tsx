@@ -7,13 +7,14 @@ import { SaveButton, AlertButton } from "@/components/discover/client";
 import { money } from "@/lib/discover/format";
 import { href } from "@/lib/discover/config";
 
-export function generateStaticParams() {
-  return allProductSlugs().map((slug) => ({ slug }));
+export async function generateStaticParams() {
+  const slugs = await allProductSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const p = getProductView(slug);
+  const p = await getProductView(slug);
   if (!p) return { title: "Not found" };
   return {
     title: p.name,
@@ -24,11 +25,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const p = getProductView(slug);
+  const [p, related] = await Promise.all([
+    getProductView(slug),
+    getCategoryProducts(slug).then((all) => all.filter((r) => r.slug !== slug).slice(0, 4)),
+  ]);
   if (!p) notFound();
 
   const best = p.bestOffer;
-  const related = getCategoryProducts(p.categoryId).filter((r) => r.id !== p.id).slice(0, 4);
   const first = p.history[0]?.price;
   const last = p.history[p.history.length - 1]?.price;
   const drop = first && last ? Math.round(((first - last) / first) * 100) : 0;
@@ -80,15 +83,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <div className="d-row" style={{ marginTop: 4 }}>
               {best ? (
                 <div className="d-row" style={{ gap: 10, alignItems: "baseline" }}>
-                  <span className="d-faint" style={{ fontSize: 13 }}>
-                    From
-                  </span>
+                  <span className="d-faint" style={{ fontSize: 13 }}>From</span>
                   <span style={{ fontFamily: "var(--mono)", fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em" }}>
                     {money(best.price, best.currency)}
                   </span>
-                  <span className="d-faint" style={{ fontSize: 13 }}>
-                    at {best.source.name}
-                  </span>
+                  <span className="d-faint" style={{ fontSize: 13 }}>at {best.source.name}</span>
                 </div>
               ) : null}
             </div>
@@ -109,9 +108,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                   Down {drop}% since Feb
                 </span>
               ) : (
-                <span className="d-faint" style={{ fontSize: 13 }}>
-                  Stable
-                </span>
+                <span className="d-faint" style={{ fontSize: 13 }}>Stable</span>
               )}
             </div>
             <div style={{ marginTop: 12 }}>

@@ -5,10 +5,12 @@ import { getTrending, getCategories, getBrands, STATS } from "@/lib/discover/sto
 import { ProductCard, Tile, Seal } from "@/components/discover/ui";
 import { SearchBox } from "@/components/discover/client";
 
-export default function DiscoverHome() {
-  const trending = getTrending(8);
-  const categories = getCategories();
-  const brands = getBrands();
+export default async function DiscoverHome() {
+  const [trending, categories, brands] = await Promise.all([
+    getTrending(8),
+    getCategories(),
+    getBrands(),
+  ]);
 
   return (
     <>

@@ -23,7 +23,6 @@ export const metadata: Metadata = {
     title: appName,
     description: appDescription,
   },
-    generator: 'v0.app'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

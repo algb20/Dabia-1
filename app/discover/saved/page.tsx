@@ -22,9 +22,12 @@ export default function SavedPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const toViews = (slugs: string[]) => slugs.map((s) => getProductView(s)).filter(Boolean) as ProductView[];
-    setSaved(toViews(read("dsc-saved")));
-    setAlerts(toViews(read("dsc-alerts")));
+    const toViews = async (slugs: string[]) => {
+      const views = await Promise.all(slugs.map((s) => getProductView(s)));
+      return views.filter(Boolean) as ProductView[];
+    };
+    toViews(read("dsc-saved")).then(setSaved);
+    toViews(read("dsc-alerts")).then(setAlerts);
     setReady(true);
   }, []);
 
