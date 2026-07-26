@@ -34,6 +34,17 @@ vault RPCs. Every user read excludes the hash. No code path touches the column.
 Verified: `user_secrets` vault has 3 rows intact; anon has zero password-related
 columns to select from `users`. No rollback needed — the vault is the permanent store.
 
+## Stage 3 — DONE (2026-07-26)
+Fixed remaining Supabase advisor warnings:
+
+- **`function_search_path_mutable`** — `_dabia_pbkdf2`, `_dabia_verify`, `_dabia_hash` now have
+  `SET search_path = extensions, public`, preventing search-path hijacking on SECURITY DEFINER calls.
+- **`rls_enabled_no_policy`** resolved for three tables:
+  - `notifications` → users can SELECT / DELETE their own rows (via `users.auth_id = auth.uid()` subquery)
+  - `content_reports` → users can INSERT their own reports
+  - `withdrawal_requests` → users can SELECT / INSERT their own requests
+- Still intentional deny-all (no policies added): `user_secrets`, `discover_conversions`, `public.Dabia` (test artifact).
+
 ## Deferred (do WITH live Pi Browser testing — not blind)
 Locking the low-risk permissive tables (`product_likes`, `product_shares`,
 `saved_products`, `saved_posts`, `mentions`, `stream_*`, `live_streams`,
