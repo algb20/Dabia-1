@@ -27,6 +27,23 @@ export async function GET(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 })
   const admin = getAdminClient()
   if (!admin) return NextResponse.json({ error: "Server is not configured (missing service role key)" }, { status: 503 })
+
+  // Only the owner may read their own subscription data
+  const authHeader = req.headers.get("Authorization") ?? ""
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+  if (token) {
+    const { data: { user: authUser } } = await admin.auth.getUser(token)
+    if (authUser) {
+      const { data: appUser } = await admin.from("users").select("id").eq("auth_id", authUser.id).maybeSingle()
+      if (!appUser || String(appUser.id) !== String(userId)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
+    }
+  }
+  // If no token is present we still serve the data (backward compat for
+  // in-app SWR fetches that haven't yet been updated to send auth headers).
+  // A future hardening pass can flip this to require auth unconditionally.
+
   const subscription = await getSubscriptionAdmin(admin, userId)
   return NextResponse.json({ subscription })
 }

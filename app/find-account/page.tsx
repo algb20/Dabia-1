@@ -35,7 +35,7 @@ export default function FindAccountPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}
               placeholder="Username, store name or Pi UID"
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm" />
           </div>
           <button onClick={handleSearch} disabled={loading || !query.trim()} className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}

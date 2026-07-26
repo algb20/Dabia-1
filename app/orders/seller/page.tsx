@@ -189,8 +189,8 @@ export default function SellerOrdersPage() {
               <button onClick={() => setShipFor(null)}><X className="h-4 w-4" /></button>
             </div>
             <p className="text-[12px] text-muted-foreground">Add the carrier and tracking number so the buyer can follow the shipment.</p>
-            <input value={carrier} onChange={e => setCarrier(e.target.value)} placeholder="Carrier (e.g. DHL, Aramex)" className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={trackingNo} onChange={e => setTrackingNo(e.target.value)} placeholder="Tracking number" className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={carrier} onChange={e => setCarrier(e.target.value)} placeholder="Carrier (e.g. DHL, Aramex)" className="input-field w-full rounded-xl px-3 py-2.5 text-sm" />
+            <input value={trackingNo} onChange={e => setTrackingNo(e.target.value)} placeholder="Tracking number" className="input-field w-full rounded-xl px-3 py-2.5 text-sm" />
             <button onClick={confirmShip} disabled={updating === shipFor.id}
               className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
               {updating === shipFor.id ? "Saving…" : "Mark as Shipped"}

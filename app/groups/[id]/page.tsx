@@ -259,7 +259,7 @@ export default function GroupDetailPage() {
           <div className="flex items-center gap-2">
             <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && submitPost()}
               placeholder="Share something with the community…"
-              className="flex-1 rounded-xl border border-border bg-background px-3 py-2.5 text-[13px] outline-none focus:border-amber-400/50" />
+              className="flex-1 rounded-xl input-field px-3 py-2.5 text-[13px]" />
             <button onClick={submitPost} disabled={posting || !text.trim()}
               className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400 text-black disabled:opacity-40">
               {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

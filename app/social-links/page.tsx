@@ -107,7 +107,7 @@ export default function SocialLinksPage() {
               value={state.url}
               onChange={e => setState((s: any) => ({ ...s, url: e.target.value }))}
               placeholder={placeholder}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50"
+              className="input-field w-full rounded-xl px-3 py-2.5 text-sm"
             />
             <p className="text-[10px] text-muted-foreground">
               {state.enabled ? "✓ Visible on your public profile" : "Hidden — toggle on to show this link"}

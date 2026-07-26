@@ -183,7 +183,7 @@ export default function WalletPage() {
             {!user.pi_uid && <p className="rounded-lg bg-amber-400/10 px-3 py-2 text-[11px] text-amber-400">Link your Pi identity (open in Pi Browser) so we can pay you.</p>}
             <div className="flex items-center gap-2">
               <input type="number" value={wAmount} onChange={e => setWAmount(e.target.value)} placeholder="Amount in π" max={balance ?? 0}
-                className="flex-1 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+                className="flex-1 rounded-xl input-field px-3 py-2.5 text-sm" />
               <button onClick={() => setWAmount(String(balance ?? 0))} className="rounded-xl border border-border px-3 py-2.5 text-[12px] font-bold text-muted-foreground">Max</button>
             </div>
             <button onClick={submitWithdraw} disabled={wBusy} className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">

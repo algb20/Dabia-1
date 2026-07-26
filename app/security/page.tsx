@@ -67,20 +67,20 @@ export default function SecurityPage() {
 
           <div className="relative">
             <input type={showCurrent ? "text" : "password"} value={current} onChange={e => setCurrent(e.target.value)} placeholder="Current password"
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-10 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field px-3 py-2.5 pr-10 text-sm" />
             <button type="button" onClick={() => setShowCurrent(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
           <div className="relative">
             <input type={showNext ? "text" : "password"} value={next} onChange={e => setNext(e.target.value)} placeholder="New password (min 6 characters)"
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-10 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field px-3 py-2.5 pr-10 text-sm" />
             <button type="button" onClick={() => setShowNext(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               {showNext ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
           <input type={showNext ? "text" : "password"} value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Confirm new password"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
 
           <button onClick={handleChangePassword} disabled={saving} className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Update Password"}

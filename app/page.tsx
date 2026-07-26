@@ -283,7 +283,7 @@ function LanguageModal({ onClose, lang, setLang, translating }: {
       <div className="px-4 py-2 border-b border-border">
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search language..." autoFocus
-          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-amber-400/50" />
+          className="w-full rounded-xl input-field px-3 py-2 text-[13px]" />
       </div>
       <div className="flex-1 overflow-y-auto">
         {filtered.map(l => (
@@ -565,7 +565,7 @@ const SecurityModal = memo(function SecurityModal({ amount, onClose, onComplete 
         {stage === 2 && (
           <>
             <p className="mb-2 text-[11px] text-emerald-400">✓ Code sent — check your inbox</p>
-            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g,''))} placeholder="Enter the code" className="mb-4 w-full rounded-xl border border-border bg-background px-3 py-3 text-center text-lg font-mono tracking-widest outline-none focus:border-amber-400/50" maxLength={8} />
+            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g,''))} placeholder="Enter the code" className="mb-4 w-full rounded-xl input-field px-3 py-3 text-center text-lg font-mono tracking-widest" maxLength={8} />
           </>
         )}
         {error && <p className="mb-3 rounded-lg bg-red-400/10 px-3 py-2 text-[11px] text-red-400">{error}</p>}
@@ -946,7 +946,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                     maxLength={300}
                     rows={2}
                     placeholder="Share your experience (optional)…"
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50 resize-none"
+                    className="w-full rounded-xl input-field px-3 py-2 text-[12px] resize-none"
                   />
                   <button onClick={submitReview} disabled={savingReview || myRating < 1}
                     className={`w-full rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:opacity-50 ${reviewSaved ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
@@ -1127,12 +1127,12 @@ function CheckoutSheet({ product, unitPrice, user, paying, error, isHighValue, o
         <div className="space-y-2">
           <p className="text-[12px] font-bold flex items-center gap-1.5"><Truck className="h-3.5 w-3.5 text-amber-400" />Shipping details</p>
           <div className="grid grid-cols-2 gap-2">
-            <input value={co.recipient_name} onChange={set("recipient_name")} placeholder="Full name *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.recipient_phone} onChange={set("recipient_phone")} placeholder="Phone *" inputMode="tel" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_country} onChange={set("ship_country")} placeholder="Country *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_city} onChange={set("ship_city")} placeholder="City *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_address} onChange={set("ship_address")} placeholder="Street address *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_postal} onChange={set("ship_postal")} placeholder="Postal code (optional)" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.recipient_name} onChange={set("recipient_name")} placeholder="Full name *" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.recipient_phone} onChange={set("recipient_phone")} placeholder="Phone *" inputMode="tel" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_country} onChange={set("ship_country")} placeholder="Country *" className="rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_city} onChange={set("ship_city")} placeholder="City *" className="rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_address} onChange={set("ship_address")} placeholder="Street address *" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_postal} onChange={set("ship_postal")} placeholder="Postal code (optional)" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
           </div>
           {touched && !valid && <p className="text-[11px] text-red-400">Please fill all required (*) fields</p>}
         </div>
@@ -1624,7 +1624,7 @@ function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5">
+        <div className="flex items-center gap-2 rounded-xl input-field px-3 py-2.5">
           <p className="flex-1 truncate text-[12px] text-muted-foreground">{url}</p>
           <button onClick={copyLink} className={`shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-colors ${copied ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
             {copied ? "Copied!" : "Copy"}
@@ -1965,7 +1965,7 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, is
         {editingPost && canEditText ? (
           <div className="space-y-2">
             <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-amber-400/50 resize-none" />
+              className="w-full rounded-xl input-field px-3 py-2 text-[13px] resize-none" />
             <div className="flex gap-2">
               <button onClick={savePostEdit} disabled={savingEdit || !editText.trim()} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black disabled:opacity-40">{savingEdit ? "Saving…" : "Save"}</button>
               <button onClick={() => { setEditingPost(false); setEditText(post.text || "") }} className="rounded-lg border border-border px-3 py-1.5 text-[12px] font-semibold">Cancel</button>
@@ -2052,14 +2052,14 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
         </div>
         {mode === "text" ? (
           <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Share something... use @username to mention"
-            className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+            className="w-full rounded-xl input-field p-3 text-sm" />
         ) : (
           <div className="space-y-2">
             <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask a question..."
-              className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field p-3 text-sm" />
             {options.map((o, i) => (
               <input key={i} value={o} onChange={e => setOptions(opts => opts.map((x, j) => j === i ? e.target.value : x))} placeholder={`Option ${i + 1}`}
-                className="w-full rounded-xl border border-border bg-background p-2.5 text-[13px] outline-none focus:border-amber-400/50" />
+                className="w-full rounded-xl input-field p-2.5 text-[13px]" />
             ))}
             {options.length < 4 && <button onClick={() => setOptions(o => [...o, ""])} className="text-[11px] text-amber-400 font-semibold">+ Add option</button>}
           </div>
@@ -2523,7 +2523,7 @@ function RealAuctionCard({ auction }: { auction: DBAuction }) {
           <>
             <div className="flex gap-2">
               <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)} placeholder={`Min ${minNext}π`}
-                className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-amber-400/50" />
+                className="flex-1 rounded-xl input-field px-3 py-2 text-sm" />
               <button onClick={handleBid} disabled={bidding} className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
                 {bidding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Bid"}
               </button>
@@ -2616,14 +2616,14 @@ function CreateAuctionModal({ onClose, onCreated, user }: { onClose: () => void;
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
         <div className="space-y-2.5">
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Item name" className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Item name" className="w-full rounded-xl input-field p-3 text-sm" />
           <div className="grid grid-cols-2 gap-2">
-            <input type="number" value={startPrice} onChange={e => setStartPrice(e.target.value)} placeholder="Starting price (π)" className="rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
-            <input type="number" value={increment} onChange={e => setIncrement(e.target.value)} placeholder="Min increment (π)" className="rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+            <input type="number" value={startPrice} onChange={e => setStartPrice(e.target.value)} placeholder="Starting price (π)" className="rounded-xl input-field p-3 text-sm" />
+            <input type="number" value={increment} onChange={e => setIncrement(e.target.value)} placeholder="Min increment (π)" className="rounded-xl input-field p-3 text-sm" />
           </div>
           <div className="space-y-1">
             <label className="text-[11px] text-muted-foreground">Duration (hours)</label>
-            <input type="number" value={hours} onChange={e => setHours(e.target.value)} className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+            <input type="number" value={hours} onChange={e => setHours(e.target.value)} className="w-full rounded-xl input-field p-3 text-sm" />
           </div>
         </div>
         <button onClick={submit} disabled={creating} className="mt-3 w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
@@ -2825,16 +2825,16 @@ function CreateStreamModal({ onClose, user, onGoLive, onScheduled }:
         </div>
         {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{error}</p>}
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Stream title (e.g. New arrivals 🔥)" maxLength={80}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+          className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
         <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Description (optional)" rows={2} maxLength={200}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50 resize-none" />
+          className="w-full rounded-xl input-field px-3 py-2.5 text-sm resize-none" />
         <div className="flex gap-2">
           <button onClick={() => setMode("now")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "now" ? "bg-red-600 text-white" : "border border-border text-muted-foreground"}`}>Go live now</button>
           <button onClick={() => setMode("schedule")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "schedule" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Schedule</button>
         </div>
         {mode === "schedule" && (
           <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
         )}
         <button onClick={submit} disabled={busy}
           className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black active:scale-[0.99] disabled:opacity-50">
@@ -2994,7 +2994,7 @@ function BusinessTab() {
               {editingId === String(a.id) ? (
                 <>
                   <textarea value={editVal} onChange={e => setEditVal(e.target.value)} rows={3}
-                    className="w-full rounded-lg border border-border bg-background p-2 text-[12px] outline-none focus:border-amber-400/50 resize-none" />
+                    className="w-full rounded-lg input-field p-2 text-[12px] resize-none" />
                   <div className="flex gap-2">
                     <button onClick={() => saveAnnouncementEdit(String(a.id))} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-black">Save</button>
                     <button onClick={() => setEditingId(null)} className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-muted-foreground">Cancel</button>
@@ -3024,7 +3024,7 @@ function BusinessTab() {
             </div>
             <textarea value={announceText} onChange={e => setAnnounceText(e.target.value)} rows={4}
               placeholder="New product launch, sale, or update..."
-              className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field p-3 text-sm" />
             {announceMsg && <p className="mt-2 text-[12px] text-amber-400">{announceMsg}</p>}
             <button onClick={sendAnnouncement} disabled={announcing} className="mt-3 w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
               {announcing ? "Sending…" : "Send to Everyone"}

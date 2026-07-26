@@ -218,9 +218,9 @@ function CreateGroupModal({ user, onClose, onCreated }: {
           </p>
         )}
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Community name" maxLength={60}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+          className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
         <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What is this community about?" rows={3} maxLength={280}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50 resize-none" />
+          className="w-full rounded-xl input-field px-3 py-2.5 text-sm resize-none" />
         <div className="flex flex-wrap gap-1.5">
           {CATEGORIES.filter(c => c !== "All").map(c => (
             <button key={c} onClick={() => setCategory(c)}

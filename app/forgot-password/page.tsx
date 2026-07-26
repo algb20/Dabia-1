@@ -86,7 +86,7 @@ export default function ForgotPasswordPage() {
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              className="input-field w-full rounded-xl pl-9 pr-3 py-2.5 text-sm" />
           </div>
         </div>
 
@@ -121,7 +121,7 @@ export default function ForgotPasswordPage() {
           <label className="text-[12px] font-semibold text-muted-foreground">Verification Code</label>
           <input type="text" inputMode="numeric" maxLength={8} value={code}
             onChange={e => setCode(e.target.value.replace(/[^0-9]/g, ""))} placeholder="• • • • • •"
-            className="w-full rounded-xl border border-border bg-background px-4 py-4 text-center text-2xl font-black tracking-[0.3em] outline-none focus:border-amber-400/50" />
+            className="input-field w-full rounded-xl px-4 py-4 text-center text-2xl font-black tracking-[0.3em]" />
         </div>
 
         <div className="space-y-1">
@@ -129,7 +129,7 @@ export default function ForgotPasswordPage() {
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input type={showPass ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min 6 characters"
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-10 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              className="input-field w-full rounded-xl pl-9 pr-10 py-2.5 text-sm" />
             <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
@@ -141,7 +141,7 @@ export default function ForgotPasswordPage() {
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input type={showPass ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter password"
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-10 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              className="input-field w-full rounded-xl pl-9 pr-10 py-2.5 text-sm" />
             <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>

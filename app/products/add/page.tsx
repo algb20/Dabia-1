@@ -251,7 +251,7 @@ function AddProductInner() {
           <label className="text-[12px] font-semibold text-muted-foreground">Name *</label>
           <div className="relative"><Package className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input type="text" value={form.name} onChange={s("name")} placeholder="Product / Service name"
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm" />
           </div>
         </div>
 
@@ -260,7 +260,7 @@ function AddProductInner() {
           <label className="text-[12px] font-semibold text-muted-foreground">Short Description</label>
           <div className="relative"><AlignLeft className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <textarea value={form.description} onChange={s("description")} placeholder="Brief description..." rows={2} maxLength={200}
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50 resize-none" />
+              className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm resize-none" />
           </div>
         </div>
 
@@ -270,14 +270,14 @@ function AddProductInner() {
             <label className="text-[12px] font-semibold text-muted-foreground">Price (π) *</label>
             <div className="relative"><DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input type="number" value={form.price} onChange={s("price")} placeholder="99" min="0.1" step="0.1"
-                className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+                className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm" />
             </div>
           </div>
           <div className="space-y-1">
             <label className="text-[12px] font-semibold text-muted-foreground">Stock</label>
             <div className="relative"><Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input type="number" value={form.stock} onChange={s("stock")} placeholder="1" min="1"
-                className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+                className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm" />
             </div>
           </div>
         </div>
@@ -285,7 +285,7 @@ function AddProductInner() {
         <div className="space-y-1">
           <label className="text-[12px] font-semibold text-muted-foreground flex items-center gap-1.5"><Percent className="h-3.5 w-3.5 text-emerald-400" />Original Price — optional, shows a discount badge</label>
           <input type="number" value={form.originalPrice} onChange={s("originalPrice")} placeholder="Leave empty for no discount" min="0" step="0.1"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
           {form.originalPrice && +form.originalPrice > +form.price && form.price && (
             <p className="text-[11px] text-emerald-400 font-semibold">
               -{Math.round((1 - +form.price / +form.originalPrice) * 100)}% off — will show as a discount badge
@@ -301,13 +301,13 @@ function AddProductInner() {
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-muted-foreground">Offer ends at</label>
             <input type="datetime-local" value={form.dealEndsAt} onChange={s("dealEndsAt")}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
           </div>
           {form.dealEndsAt && (
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-muted-foreground">Offer label</label>
               <input type="text" value={form.dealLabel} onChange={s("dealLabel")} maxLength={30} placeholder="Limited offer"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+                className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
             </div>
           )}
           {form.dealEndsAt && new Date(form.dealEndsAt).getTime() > Date.now() && (
@@ -323,7 +323,7 @@ function AddProductInner() {
         <div className="space-y-1">
           <label className="text-[12px] font-semibold text-muted-foreground">Category</label>
           <div className="relative"><Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <select value={form.category} onChange={s("category")} className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50 appearance-none">
+            <select value={form.category} onChange={s("category")} className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm appearance-none">
               {CATS.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
@@ -369,7 +369,7 @@ function AddProductInner() {
             <div className="space-y-1">
               <label className="text-[12px] font-semibold flex items-center gap-1.5"><Box className="h-3.5 w-3.5 text-amber-400" />3D Model URL (.glb)</label>
               <input type="url" value={form.model3dUrl} onChange={s("model3dUrl")} placeholder="https://model.glb"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
+                className="w-full rounded-lg input-field px-3 py-2 text-[12px]" />
             </div>
           )}
 
@@ -377,7 +377,7 @@ function AddProductInner() {
             <div className="space-y-1">
               <label className="text-[12px] font-semibold">Minimum Order Qty (MOQ)</label>
               <input type="number" value={form.moq} onChange={s("moq")} placeholder="e.g. 100"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
+                className="w-full rounded-lg input-field px-3 py-2 text-[12px]" />
             </div>
           )}
 
@@ -385,7 +385,7 @@ function AddProductInner() {
             <div className="space-y-1">
               <label className="text-[12px] font-semibold">Certification / Standard</label>
               <input type="text" value={form.cert} onChange={s("cert")} placeholder="ISO 9001, CE, etc."
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
+                className="w-full rounded-lg input-field px-3 py-2 text-[12px]" />
             </div>
           )}
 
@@ -393,7 +393,7 @@ function AddProductInner() {
             <div className="space-y-1">
               <label className="text-[12px] font-semibold">Service Duration</label>
               <input type="text" value={form.duration} onChange={s("duration")} placeholder="e.g. 2 hours, 3 days"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
+                className="w-full rounded-lg input-field px-3 py-2 text-[12px]" />
             </div>
           )}
         </div>

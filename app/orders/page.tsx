@@ -171,11 +171,11 @@ function OrderCard({ order, buyerId, onConfirm }: { order: DBOrder; buyerId: str
               <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 space-y-2">
                 <p className="text-[11px] font-bold">Report a problem</p>
                 <select value={dReason} onChange={e => setDReason(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-[12px] outline-none focus:border-amber-400/50">
+                  className="w-full rounded-lg input-field px-2.5 py-2 text-[12px]">
                   {DISPUTE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
                 <textarea value={dDesc} onChange={e => setDDesc(e.target.value)} rows={2} placeholder="Add details (optional)"
-                  className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-[12px] outline-none focus:border-amber-400/50 resize-none" />
+                  className="w-full rounded-lg input-field px-2.5 py-2 text-[12px] resize-none" />
                 <div className="flex gap-2">
                   <button onClick={submitDispute} disabled={dBusy} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black disabled:opacity-50">{dBusy ? "Submitting…" : "Submit dispute"}</button>
                   <button onClick={() => setShowDispute(false)} className="rounded-lg border border-border px-3 py-1.5 text-[12px] font-semibold text-muted-foreground">Cancel</button>

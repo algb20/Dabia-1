@@ -181,7 +181,7 @@ export default function EditProfilePage() {
                 ? "Tell others a bit about yourself…"
                 : "Describe your business, what you sell, and what makes you trustworthy…"
             }
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50 resize-none"
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm resize-none"
           />
           <p className="text-[10px] text-muted-foreground text-right">{bio.length}/160</p>
         </div>
@@ -196,7 +196,7 @@ export default function EditProfilePage() {
             value={websiteUrl}
             onChange={e => setWebsiteUrl(e.target.value)}
             placeholder="https://yourbusiness.com"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50"
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm"
           />
         </div>
 
@@ -216,7 +216,7 @@ export default function EditProfilePage() {
                   value={identityCard[f.key] || ""}
                   onChange={e => setIdentityCard(prev => ({ ...prev, [f.key]: e.target.value }))}
                   placeholder={f.placeholder}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50"
+                  className="w-full rounded-xl input-field px-3 py-2.5 text-sm"
                 />
               </div>
             ))}
