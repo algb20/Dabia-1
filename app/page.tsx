@@ -6,7 +6,7 @@ import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -396,6 +396,21 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
           <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
           <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
         </div>
+
+        {/* Trust score bar */}
+        {p.trustScore !== undefined && (
+          <div className="flex items-center gap-1">
+            <div className="h-1 flex-1 rounded-full bg-secondary overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${p.trustScore >= 80 ? "bg-emerald-400" : p.trustScore >= 60 ? "bg-amber-400" : "bg-orange-400"}`}
+                style={{ width: `${p.trustScore}%` }}
+              />
+            </div>
+            <span className={`text-[8px] font-bold shrink-0 ${p.trustScore >= 80 ? "text-emerald-400" : p.trustScore >= 60 ? "text-amber-400" : "text-orange-400"}`}>
+              {p.trustScore}
+            </span>
+          </div>
+        )}
 
         <div className="mt-auto flex items-baseline gap-1">
           <span className="text-xs font-black text-amber-400 sm:text-sm">{fmtPi(p.price)}</span>
@@ -3230,231 +3245,198 @@ function ProfileTab() {
   ]
 
   return (
-    <div className="space-y-4 pb-6">
-      {/* ── Identity card — يُميّز فعلياً بين مستخدم مسجَّل وزائر مستكشف ── */}
+    <div className="space-y-3 pb-6">
+
+      {/* ── BENTO HERO ───────────────────────────────────────────────────────── */}
       {profileUser ? (
-        <div className="rounded-2xl border-2 border-amber-400/30 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-2xl font-black text-black select-none overflow-hidden">
-              {profileUser.avatar_url
-                ? <img src={profileUser.avatar_url} alt="" className="h-full w-full object-cover" />
-                : (profileUser.username || "U")[0].toUpperCase()
-              }
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <p className="font-black text-base truncate">{profileUser.username}</p>
-                <span className="flex items-center gap-1 shrink-0 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[9px] font-bold text-emerald-400 border border-emerald-400/20">
-                  <CheckCircle2 className="h-2.5 w-2.5" />Signed In
+        <>
+          {/* Hero card */}
+          <div className="relative rounded-3xl overflow-hidden border border-amber-400/20 bg-gradient-to-br from-amber-400/8 via-background to-background">
+            {/* Subtle accent glow */}
+            <div className="absolute -top-8 -right-8 h-32 w-32 rounded-full bg-amber-400/8 blur-2xl pointer-events-none" />
+
+            <div className="relative p-4 flex items-start gap-3">
+              {/* Avatar */}
+              <div className="relative shrink-0">
+                <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-3xl font-black text-black overflow-hidden select-none">
+                  {profileUser.avatar_url
+                    ? <img src={profileUser.avatar_url} alt="" className="h-full w-full object-cover" />
+                    : (profileUser.username || "U")[0].toUpperCase()
+                  }
+                </div>
+                <span className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background ${profileUser.status === "pending" ? "bg-amber-400" : "bg-emerald-400"}`}>
+                  {profileUser.status === "pending"
+                    ? <Clock className="h-2.5 w-2.5 text-black" />
+                    : <CheckCircle2 className="h-2.5 w-2.5 text-black" />
+                  }
                 </span>
               </div>
-              {profileUser.pi_uid && (
-                <p className="text-[11px] text-amber-400 font-mono truncate mt-0.5">Pi UID: {profileUser.pi_uid}</p>
-              )}
-              {(profileUser.social_links?.email_public?.enabled) && (
-                <p className="text-[11px] text-muted-foreground truncate mt-0.5">{profileUser.emall}</p>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5 shrink-0">
-              <Link href="/edit-profile">
-                <button className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-400/10 active:scale-95 transition-transform" title="Edit profile">
-                  <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+
+              {/* Identity */}
+              <div className="flex-1 min-w-0 pt-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-lg font-black leading-none truncate">{profileUser.username}</p>
+                  {sub && (
+                    <span className="flex items-center gap-0.5 rounded-full bg-amber-400/15 border border-amber-400/25 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+                      <Crown className="h-2 w-2" />{sub.tier.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground capitalize mt-0.5">{profileUser.role?.replace("_", " ")} · {profileUser.status === "pending" ? "Under Review" : "Active"}</p>
+                {profileUser.bio && (
+                  <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">{profileUser.bio}</p>
+                )}
+                {profileUser.website_url && (
+                  <a href={profileUser.website_url} target="_blank" rel="noopener noreferrer"
+                    className="mt-1 flex items-center gap-1 text-[10px] text-amber-400 truncate">
+                    <Globe2 className="h-2.5 w-2.5 shrink-0" />{profileUser.website_url}
+                  </a>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <Link href="/edit-profile">
+                  <button className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-400/10 active:scale-95" title="Edit">
+                    <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+                  </button>
+                </Link>
+                <button onClick={async () => {
+                  const url = `https://dabiaacdfb2093.pinet.com/u/${profileUser.id}`
+                  const text = `Check out ${profileUser.username} on Dabia${profileUser.store_name ? ` — ${profileUser.store_name}` : ""}`
+                  try {
+                    if (navigator.share) { await navigator.share({ title: profileUser.username, text, url }) }
+                    else { await navigator.clipboard?.writeText(`${text} ${url}`); setShareMsg("✓ Copied"); setTimeout(() => setShareMsg(""), 2500) }
+                  } catch {}
+                }} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border active:scale-95" title="Share">
+                  <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
-              </Link>
-              <button onClick={async () => {
-                const url = `https://dabiaacdfb2093.pinet.com/u/${profileUser.id}`
-                const text = `Check out ${profileUser.username} on Dabia${profileUser.store_name ? ` — ${profileUser.store_name}` : ""}`
-                try {
-                  if (navigator.share) {
-                    await navigator.share({ title: profileUser.username, text, url })
-                  } else {
-                    await navigator.clipboard?.writeText(`${text} ${url}`)
-                    setShareMsg("✓ Profile link copied to clipboard")
-                    setTimeout(() => setShareMsg(""), 2500)
-                  }
-                } catch {
-                  // المستخدم أغلق نافذة المشاركة — لا حاجة لرسالة خطأ
-                }
-              }} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border active:scale-95 transition-transform" title="Share profile">
-                <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </div>
-          </div>
-
-          {/* المتابعون / يتابع — قابلة للنقر لفتح القائمة والإدارة */}
-          <div className="mt-3 flex items-center gap-5">
-            <button onClick={() => setConnTab("followers")} className="text-[12px]"><span className="font-black">{followCounts.followers}</span> <span className="text-muted-foreground">Followers</span></button>
-            <button onClick={() => setConnTab("following")} className="text-[12px]"><span className="font-black">{followCounts.following}</span> <span className="text-muted-foreground">Following</span></button>
-          </div>
-
-          {profileUser.bio && (
-            <p className="mt-3 text-[12px] text-muted-foreground leading-relaxed">{profileUser.bio}</p>
-          )}
-
-          {profileUser.website_url && (
-            <a href={profileUser.website_url} target="_blank" rel="noopener noreferrer"
-              className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-400 truncate">
-              <Globe2 className="h-3 w-3 shrink-0" />{profileUser.website_url}
-            </a>
-          )}
-
-          {/* روابط السوشيال — تظهر فقط ما فعّله المستخدم بنفسه */}
-          {(profileUser.social_links?.telegram?.enabled || profileUser.social_links?.instagram?.enabled || profileUser.social_links?.x?.enabled) && (
-            <div className="mt-2 flex items-center gap-2">
-              {profileUser.social_links?.telegram?.enabled && profileUser.social_links.telegram.url && (
-                <a href={profileUser.social_links.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Send className="h-3.5 w-3.5" /></a>
-              )}
-              {profileUser.social_links?.instagram?.enabled && profileUser.social_links.instagram.url && (
-                <a href={profileUser.social_links.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Instagram className="h-3.5 w-3.5" /></a>
-              )}
-              {profileUser.social_links?.x?.enabled && profileUser.social_links.x.url && (
-                <a href={profileUser.social_links.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Twitter className="h-3.5 w-3.5" /></a>
-              )}
-              <Link href="/social-links" className="ml-auto text-[10px] text-amber-400 font-semibold">Manage links</Link>
-            </div>
-          )}
-          {!(profileUser.social_links?.telegram?.enabled || profileUser.social_links?.instagram?.enabled || profileUser.social_links?.x?.enabled) && (
-            <Link href="/social-links" className="mt-2 inline-block text-[11px] text-amber-400 font-semibold">+ Add social links</Link>
-          )}
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-background/60 border border-border px-3 py-2">
-              <p className="text-[9px] text-muted-foreground uppercase tracking-wider">Account Type</p>
-              <p className="text-[12px] font-bold capitalize mt-0.5">{profileUser.role?.replace("_", " ")}</p>
-            </div>
-            <div className="rounded-xl bg-background/60 border border-border px-3 py-2">
-              <p className="text-[9px] text-muted-foreground uppercase tracking-wider">Status</p>
-              <p className={`text-[12px] font-bold mt-0.5 ${profileUser.status === "pending" ? "text-amber-400" : "text-emerald-400"}`}>
-                {profileUser.status === "pending" ? "⏳ Under Review" : "✓ Active"}
-              </p>
-            </div>
-          </div>
-
-          {sub ? (
-            <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-400/20">
-              <Crown className="h-2.5 w-2.5" />{sub.tier.toUpperCase()}
-            </span>
-          ) : (
-            <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Standard Account</span>
-          )}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-4 flex items-center gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-secondary text-2xl font-black text-muted-foreground select-none">?</div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="font-black text-base text-muted-foreground">Guest</p>
-              <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[9px] font-bold text-muted-foreground border border-border">
-                Exploring
-              </span>
-            </div>
-            <p className="text-[11px] text-muted-foreground">Not signed in · Browsing only</p>
-            <div className="mt-2 flex gap-2">
-              <Link href="/login">
-                <button className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] font-bold active:scale-95">
-                  <LogIn className="h-3 w-3" />Sign In
-                </button>
-              </Link>
-              <Link href="/register">
-                <button className="flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-bold text-amber-400 active:scale-95">
-                  <UserPlus className="h-3 w-3" />Create Account
-                </button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Wallet — Real balance from Supabase */}
-      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="flex items-center gap-2 text-xs font-bold"><Wallet className="h-4 w-4 text-amber-400" />Dabia Balance</p>
-          <button onClick={(e) => {
-            e.preventDefault()
-            setHideBalancePreview(v => {
-              try { localStorage.setItem("dabia_hide_balance", String(!v)) } catch {}
-              return !v
-            })
-          }} className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground active:scale-95">
-            {hideBalancePreview ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-            {hideBalancePreview ? "Show" : "Hide"}
-          </button>
-        </div>
-        <Link href="/wallet" className="block active:scale-[0.98] transition-transform cursor-pointer">
-          <p className="text-3xl font-black text-amber-400">
-            {!profileUser ? "—π" : hideBalancePreview ? "★★★★" : `${(profileUser.wallet_balance ?? 0).toLocaleString()}π`}
-          </p>
-          <div className="flex gap-4 text-[11px] text-muted-foreground mt-1">
-            <span>User: <strong className="text-foreground">{profileUser?.username ?? "..."}</strong></span>
-            <span>Role: <strong className="text-foreground capitalize">{profileUser?.role ?? "..."}</strong></span>
-          </div>
-          <Progress value={96} className="h-1.5 mt-2" />
-        </Link>
-      </div>
-
-      {/* Active plan features */}
-      {sub && (
-        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 space-y-2">
-          <p className="flex items-center gap-2 text-xs font-bold"><Crown className="h-4 w-4 text-amber-400" />Your Plan</p>
-          <p className="text-sm font-black capitalize">{sub.tier}</p>
-          <ul className="space-y-1">
-            {sub.features.map(f => (
-              <li key={f} className="flex items-center gap-2 text-[11px]">
-                <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400" />
-                <span className="text-muted-foreground">{f}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="text-[10px] text-muted-foreground">Expires {sub.expiresAt.slice(0, 10)}</p>
-        </div>
-      )}
-
-      {/* Quick actions */}
-      {shareMsg && (
-        <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-400 text-center">{shareMsg}</div>
-      )}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        {actions.map((item, i) => (
-          item.href ? (
-            <Link key={item.label} href={item.href}>
-              <button className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
-                <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
-                {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
-                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              </button>
-            </Link>
-          ) : (
-            <button key={item.label} onClick={(item as any).onAction ?? undefined}
-              className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
-              <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
-              {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
-              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-            </button>
-          )
-        ))}
-      </div>
-
-      {/* Account types */}
-      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
-        <p className="text-xs font-bold">Account Types</p>
-        <div className="space-y-2">
-          {[
-            { type: "standard" as AccountType, title: "Standard",      desc: "Core shopping and discovery",                        icon: <User className="h-4 w-4 text-muted-foreground" />, color: "border-border bg-secondary/30"      },
-            { type: "premium"  as AccountType, title: "Premium Seller", desc: "Analytics, priority placement, and advanced tools",  icon: <Crown className="h-4 w-4 text-amber-400" />,      color: "border-amber-400/20 bg-amber-400/5" },
-            { type: "official" as AccountType, title: "Official Brand", desc: "Manufacturer storefront with verified badge",      icon: <Building className="h-4 w-4 text-blue-400" />,    color: "border-blue-400/20 bg-blue-400/5"   },
-          ].map(tier => (
-            <div key={tier.type} className={`flex items-start gap-3 rounded-xl border p-3 ${tier.color}`}>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-card">{tier.icon}</div>
-              <div>
-                <p className="text-[12px] font-bold">{tier.title}</p>
-                <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{tier.desc}</p>
               </div>
             </div>
-          ))}
+
+            {/* Social links row */}
+            <div className="px-4 pb-3 flex items-center gap-2">
+              {profileUser.social_links?.telegram?.enabled && profileUser.social_links.telegram.url && (
+                <a href={profileUser.social_links.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Send className="h-3 w-3" /></a>
+              )}
+              {profileUser.social_links?.instagram?.enabled && profileUser.social_links.instagram.url && (
+                <a href={profileUser.social_links.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Instagram className="h-3 w-3" /></a>
+              )}
+              {profileUser.social_links?.x?.enabled && profileUser.social_links.x.url && (
+                <a href={profileUser.social_links.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Twitter className="h-3 w-3" /></a>
+              )}
+              <Link href="/social-links" className="ml-auto text-[10px] text-amber-400 font-semibold">
+                {(profileUser.social_links?.telegram?.enabled || profileUser.social_links?.instagram?.enabled || profileUser.social_links?.x?.enabled) ? "Manage" : "+ Add links"}
+              </Link>
+            </div>
+          </div>
+
+          {/* ── BENTO STATS GRID ─────────────────────────────────────────────── */}
+          <div className="grid grid-cols-4 gap-2">
+            <button onClick={() => setConnTab("followers")}
+              className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{followCounts.followers}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Followers</span>
+            </button>
+            <button onClick={() => setConnTab("following")}
+              className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{followCounts.following}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Following</span>
+            </button>
+            <Link href="/orders" className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{orderCount === null ? "…" : orderCount}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Orders</span>
+            </Link>
+            <Link href="/saved" className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{savedCountReal === null ? "…" : savedCount}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Saved</span>
+            </Link>
+          </div>
+
+          {/* ── WALLET BENTO ─────────────────────────────────────────────────── */}
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                <Wallet className="h-3.5 w-3.5 text-amber-400" />Balance
+              </p>
+              <button onClick={() => setHideBalancePreview(v => { try { localStorage.setItem("dabia_hide_balance", String(!v)) } catch {} return !v })}
+                className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground active:scale-95">
+                {hideBalancePreview ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {hideBalancePreview ? "Show" : "Hide"}
+              </button>
+            </div>
+            <Link href="/wallet" className="block active:scale-[0.98] transition-transform">
+              <p className="text-3xl font-black text-amber-400 tracking-tight">
+                {hideBalancePreview ? "•••π" : `${(profileUser.wallet_balance ?? 0).toLocaleString()}π`}
+              </p>
+              <Progress value={96} className="h-1 mt-2.5 mb-1" />
+              <p className="text-[10px] text-muted-foreground">96% profile strength · <span className="text-amber-400 font-semibold">View wallet →</span></p>
+            </Link>
+          </div>
+
+          {/* ── PLAN CARD (if subscribed) ─────────────────────────────────────── */}
+          {sub && (
+            <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400/15">
+                <Crown className="h-5 w-5 text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-black capitalize">{sub.tier} Plan</p>
+                <p className="text-[10px] text-muted-foreground">Expires {sub.expiresAt.slice(0, 10)} · {sub.features.length} features</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-amber-400 shrink-0" />
+            </div>
+          )}
+
+          {/* ── QUICK ACTIONS BENTO ──────────────────────────────────────────── */}
+          {shareMsg && (
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-400 text-center">{shareMsg}</div>
+          )}
+          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            {actions.map((item, i) => (
+              item.href ? (
+                <Link key={item.label} href={item.href}>
+                  <button className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
+                    <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
+                    {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </button>
+                </Link>
+              ) : (
+                <button key={item.label} onClick={(item as any).onAction ?? undefined}
+                  className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
+                  <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
+                  {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </button>
+              )
+            ))}
+          </div>
+        </>
+      ) : (
+        /* ── GUEST STATE ──────────────────────────────────────────────────────── */
+        <div className="rounded-2xl border border-dashed border-border bg-card p-5 flex flex-col items-center gap-4 text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-secondary text-3xl font-black text-muted-foreground select-none">?</div>
+          <div>
+            <p className="font-black text-base">You're browsing as a guest</p>
+            <p className="text-[12px] text-muted-foreground mt-1">Sign in to unlock orders, saved items, and your wallet</p>
+          </div>
+          <div className="flex w-full gap-2">
+            <Link href="/login" className="flex-1">
+              <button className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-border py-2.5 text-[12px] font-bold active:scale-95">
+                <LogIn className="h-3.5 w-3.5" />Sign In
+              </button>
+            </Link>
+            <Link href="/register" className="flex-1">
+              <button className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 py-2.5 text-[12px] font-bold text-amber-400 active:scale-95">
+                <UserPlus className="h-3.5 w-3.5" />Create Account
+              </button>
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
 
       {profileUser && connTab && <ConnectionsModal userId={profileUser.id!} viewerId={profileUser.id} initialTab={connTab} onClose={() => setConnTab(null)} />}
     </div>
@@ -3504,25 +3486,32 @@ export default function DabiaApp() {
   const { data: alertsData, mutate: refreshNotifs } = useAlerts(dbUser?.id)
   const notifs   = alertsData?.notifications ?? []
 
-  // شارة إشعارات غير مقروءة (محفوظة) — تحديث كل ١٠ ثوانٍ
+  // شارة إشعارات غير مقروءة — Realtime بدلاً من polling
   const [unread, setUnread] = useState(0)
   useEffect(() => {
     if (!dbUser?.id) { setUnread(0); return }
-    const load = () => getNotificationsUnread(dbUser.id!).then(setUnread)
-    load(); const t = setInterval(load, 10000); return () => clearInterval(t)
-  }, [dbUser?.id])
+    getNotificationsUnread(dbUser.id!).then(setUnread)
+    const channel = supabase
+      .channel(`notifs-${dbUser.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'notifications',
+        filter: `user_id=eq.${dbUser.id}`,
+      }, () => { setUnread(c => c + 1); refreshNotifs() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [dbUser?.id, refreshNotifs])
   // فتح لوحة الإشعارات → تعليم الكل كمقروء
   const openNotifs = useCallback(() => {
     setShowNotifs(true)
     if (dbUser?.id) { markNotificationsRead(dbUser.id).then(() => { setUnread(0); refreshNotifs() }) }
   }, [dbUser?.id, refreshNotifs])
 
-  // شارة رسائل غير مقروءة — تحديث كل ١٠ ثوانٍ
+  // شارة رسائل غير مقروءة — polling بفترة أطول (30 ثانية)
   const [dmUnread, setDmUnread] = useState(0)
   useEffect(() => {
     if (!dbUser?.id) { setDmUnread(0); return }
     const load = () => getDMUnreadCount(dbUser.id!).then(setDmUnread)
-    load(); const t = setInterval(load, 10000); return () => clearInterval(t)
+    load(); const t = setInterval(load, 30000); return () => clearInterval(t)
   }, [dbUser?.id])
 
   // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
