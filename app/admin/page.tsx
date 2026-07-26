@@ -15,10 +15,6 @@ import {
   RefreshCw, CheckCheck, AlertCircle, Flag, Trash2
 } from "lucide-react"
 
-// ─── قائمة الإيميلات المسموح لها بالوصول للوحة التحكم ────────────────────────
-// عدّل هذه القائمة بإيميلك الحقيقي لتقييد الوصول لمن يدير التطبيق فقط
-const ADMIN_EMAILS = ["maskmal088@gmail.com"]
-
 const ROLE_ICON: Record<string, any> = {
   merchant: Store, company: Building, factory: Factory,
   agent: Handshake, service_provider: Briefcase, partner: Users,
@@ -35,7 +31,9 @@ export default function AdminPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [msg,      setMsg]      = useState("")
 
-  const isAdmin = user && ADMIN_EMAILS.includes(user.emall)
+  // Admin access is granted by role='admin' in the users table (set via Supabase dashboard).
+  // Falls back to the owner email so the first admin can bootstrap without a DB change.
+  const isAdmin = user && (user.role === "admin" || user.emall === "maskmal088@gmail.com")
 
   const [reports, setReports] = useState<DBReport[]>([])
   const [payouts, setPayouts] = useState<DBWithdrawal[]>([])

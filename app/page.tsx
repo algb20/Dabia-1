@@ -52,6 +52,17 @@ interface Notif        { id: number; type: NotifType; title: string; body: strin
 interface Subscription { userId: string; tier: SubTier; expiresAt: string; features: string[]; paidInPi: number }
 interface TransparencyStats { confirmedTx: number; volumePi: number; activeUsers: number; verifiedProducts: number; fraudCaught: number; serverUptimePct: number; blockHeight: number }
 
+// ─── Trust score formula ───────────────────────────────────────────────────────
+// Accounts for account tier, rating, review count, and seller activity.
+// Range: 40 (new seller) → 100 (official/premium + many verified reviews).
+function computeTrustScore(p: DBProduct): number {
+  const baseTier = p.seller_account_type === "official" ? 30
+    : p.seller_account_type === "premium" ? 22 : 15
+  const reviewBonus = Math.min(30, (p.review_count ?? 0) * 3)
+  const ratingBonus = Math.min(25, Math.round(((p.rating ?? 0) / 5) * 25))
+  return Math.min(100, baseTier + 20 + reviewBonus + ratingBonus)
+}
+
 // ─── Converts a real Supabase product row into the UI's Product shape ─────────
 // تحويل منتج حقيقي من Supabase إلى الشكل الذي تتوقعه بطاقات الواجهة
 function dbProductToProduct(p: DBProduct): Product {
@@ -74,10 +85,15 @@ function dbProductToProduct(p: DBProduct): Product {
     distance: "—",
     verified: true,
     blockchainId: idStr ? `PI-${idStr.slice(0, 8).toUpperCase()}` : "PI-PENDING",
-    trustScore: Math.min(100, 60 + (p.review_count ?? 0)),
+    trustScore: computeTrustScore(p),
     trustIndex: {
-      total: Math.min(100, 60 + (p.review_count ?? 0)),
-      breakdown: { sales: p.review_count ?? 0, reviews: p.review_count ?? 0, reliability: 80, activity: 70 },
+      total: computeTrustScore(p),
+      breakdown: {
+        sales:       Math.min(40, (p.review_count ?? 0) * 4),
+        reviews:     Math.min(25, Math.round((p.rating ?? 0) / 5 * 25)),
+        reliability: p.seller_account_type === "official" ? 95 : p.seller_account_type === "premium" ? 80 : 65,
+        activity:    70,
+      },
       verifiedSalesCount: p.review_count ?? 0,
     },
     category: p.category || "Other",
@@ -3616,16 +3632,27 @@ export default function DabiaApp() {
       {/* Bottom nav */}
       <nav className="sticky bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-md pb-safe shrink-0" aria-label="Main navigation">
         <div className="flex items-stretch">
-          {navItems.map(item => (
-            <button key={item.key} onClick={() => setTab(item.key)}
-              aria-current={effectiveTab === item.key ? "page" : undefined}
-              aria-label={item.label}
-              className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${effectiveTab === item.key ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
-              {item.icon}
-              <span className="text-[10px] font-medium">{item.label}</span>
-              {effectiveTab === item.key && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
-            </button>
-          ))}
+          {navItems.map(item => {
+            // Social tab navigates to dedicated full-screen page
+            if (item.key === "social") return (
+              <Link key="social" href="/social"
+                aria-label="Social"
+                className="flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors text-muted-foreground hover:text-foreground">
+                {item.icon}
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </Link>
+            )
+            return (
+              <button key={item.key} onClick={() => setTab(item.key)}
+                aria-current={effectiveTab === item.key ? "page" : undefined}
+                aria-label={item.label}
+                className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${effectiveTab === item.key ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
+                {item.icon}
+                <span className="text-[10px] font-medium">{item.label}</span>
+                {effectiveTab === item.key && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
+              </button>
+            )
+          })}
         </div>
       </nav>
 

@@ -1,15 +1,25 @@
 "use client"
 import { useTranslation as useDabiaTranslation } from "@/hooks/use-translation"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { sendPasswordResetCode, resetPasswordWithCode } from "@/lib/dabia/db"
 import { X, Mail, Lock, ShieldCheck, CheckCircle2, AlertCircle, Loader2, Eye, EyeOff } from "lucide-react"
 
 export default function ForgotPasswordPage() {
   useDabiaTranslation() // يُفعِّل ترجمة هذه الصفحة الفرعية عند فتحها بأي لغة مختارة
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [step, setStep] = useState<"email" | "code" | "done">("email")
   const [email, setEmail] = useState("")
+
+  // Pre-fill email from query param (e.g. from find-account page)
+  useEffect(() => {
+    const e = searchParams.get("email")
+    if (e) {
+      setEmail(decodeURIComponent(e))
+      // If email looks complete (not masked), skip straight to sending the code
+    }
+  }, [searchParams])
   const [code, setCode] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")

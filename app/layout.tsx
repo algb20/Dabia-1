@@ -10,8 +10,12 @@ const appDescription = APP_CONFIG.DESCRIPTION;
 export const metadata: Metadata = {
   title: "Dabia — Smart Commerce on Pi Network",
   description: appDescription,
-  alternates: {
-    canonical: "/",
+  alternates: { canonical: "/" },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: appName,
   },
   openGraph: {
     type: "website",
