@@ -5,8 +5,9 @@ import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
+import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -988,19 +989,24 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
 
           {/* منتجات مشابهة — نفس الفئة */}
           {similar.length > 0 && (
-            <section className="space-y-2 pt-1">
+            <section className="space-y-2.5 pt-1">
               <p className="text-xs font-bold flex items-center gap-2">
-                <LayoutGrid className="h-3.5 w-3.5 text-amber-400" />Similar products
+                <LayoutGrid className="h-3.5 w-3.5 text-amber-400" />Similar Products
               </p>
-              <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+              <div className="grid grid-cols-2 gap-2.5">
                 {similar.map(sp => (
                   <button key={`sim-${sp.id}`} onClick={() => setSimilarSelected(sp)}
-                    className="shrink-0 w-28 rounded-2xl border border-border bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
-                    <div className="h-16 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-2xl">
-                      {sp.image.startsWith("http") ? <img src={sp.image} alt="" className="h-full w-full object-cover" /> : sp.image}
+                    className="rounded-2xl border border-border bg-card overflow-hidden text-left active:scale-[0.98] transition-transform">
+                    <div className="aspect-[4/3] w-full overflow-hidden bg-secondary flex items-center justify-center text-4xl">
+                      {sp.image.startsWith("http") ? <img src={sp.image} alt={sp.name} className="h-full w-full object-cover" /> : sp.image}
                     </div>
-                    <p className="text-[10px] font-bold leading-tight line-clamp-2">{sp.name}</p>
-                    <p className="text-[11px] font-black text-amber-400">{fmtPi(sp.price)}</p>
+                    <div className="p-2.5 space-y-0.5">
+                      <p className="text-[12px] font-bold leading-tight line-clamp-2">{sp.name}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[13px] font-black text-amber-400">{fmtPi(sp.price)}</p>
+                        {sp.rating > 0 && <div className="flex items-center gap-0.5"><Star className="h-3 w-3 fill-amber-400 text-amber-400" /><span className="text-[10px] font-bold">{sp.rating}</span></div>}
+                      </div>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -2072,6 +2078,147 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
   )
 }
 
+function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefresh, onOpenProduct }: {
+  post: DBPost
+  currentUser: DBUser | null
+  isFollowed: boolean
+  onToggleFollow: (id: string) => void
+  onRefresh: () => void
+  onOpenProduct: (productId: string) => void
+}) {
+  const [liked, setLiked] = useState(false)
+  const [likeCount, setLikeCount] = useState(0)
+  const [saved, setSaved] = useState(false)
+  const [shareCount, setShareCount] = useState(0)
+  const [showComments, setShowComments] = useState(false)
+  const postId = String(post.id)
+
+  useEffect(() => {
+    getLikeCount(postId).then(setLikeCount)
+    getShareCount(postId).then(setShareCount)
+    if (currentUser?.id) {
+      isLikedByUser(currentUser.id, postId).then(setLiked)
+      isPostSaved(currentUser.id, postId).then(setSaved)
+    }
+  }, [postId, currentUser?.id])
+
+  const handleLike = async () => {
+    if (!currentUser?.id) return
+    const { liked: nowLiked } = await toggleLike(currentUser.id, postId)
+    setLiked(nowLiked)
+    setLikeCount(c => nowLiked ? c + 1 : Math.max(0, c - 1))
+  }
+
+  const handleSave = async () => {
+    if (!currentUser?.id) return
+    const { saved: nowSaved } = await toggleSavePost(currentUser.id, postId)
+    setSaved(nowSaved)
+  }
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/?post=${post.id}`
+    try { await (navigator as any).share({ url }) } catch {
+      try { await navigator.clipboard.writeText(url) } catch {}
+    }
+    recordShare(postId, currentUser?.id)
+    setShareCount(c => c + 1)
+  }
+
+  const bg = post.product_snapshot?.image?.startsWith("http") ? post.product_snapshot.image : null
+
+  return (
+    <div className="relative flex-shrink-0 overflow-hidden bg-zinc-950" style={{ height: "100%", scrollSnapAlign: "start" }}>
+      {bg && <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />}
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-black/40" />
+
+      {/* Right side actions */}
+      <div className="absolute right-3 bottom-8 z-10 flex flex-col items-center gap-5">
+        <div className="relative mb-1">
+          <Link href={`/u/${post.user_id}`}>
+            <div className="h-11 w-11 rounded-full border-2 border-white overflow-hidden bg-zinc-800">
+              {post.avatar_url
+                ? <img src={post.avatar_url} alt="" className="h-full w-full object-cover" />
+                : <span className="flex h-full w-full items-center justify-center text-sm font-black text-white">{(post.username || "U")[0]?.toUpperCase()}</span>}
+            </div>
+          </Link>
+          {currentUser && String(post.user_id) !== String(currentUser.id) && (
+            <button onClick={() => onToggleFollow(String(post.user_id))}
+              className={`absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full ${isFollowed ? "bg-white/80 text-zinc-900" : "bg-amber-400 text-black"}`}>
+              {isFollowed ? <CheckCheck className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={handleLike} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+            <Heart className={`h-5 w-5 transition-colors ${liked ? "fill-red-500 text-red-500" : "text-white"}`} />
+          </button>
+          <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(likeCount)}</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={() => setShowComments(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+            <MessageCircle className="h-5 w-5 text-white" />
+          </button>
+          <span className="text-[11px] font-bold text-white drop-shadow">0</span>
+        </div>
+
+        <button onClick={handleSave} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+          <Bookmark className={`h-5 w-5 transition-colors ${saved ? "fill-amber-400 text-amber-400" : "text-white"}`} />
+        </button>
+
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={handleShare} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+            <Share2 className="h-5 w-5 text-white" />
+          </button>
+          {shareCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(shareCount)}</span>}
+        </div>
+      </div>
+
+      {/* Bottom content */}
+      <div className="absolute bottom-6 left-4 right-16 z-10 space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="text-[14px] font-black text-white drop-shadow">@{post.username}</p>
+          {post.account_type === "official" && <BadgeCheck className="h-4 w-4 text-blue-400" />}
+          {post.account_type === "premium" && <Crown className="h-3.5 w-3.5 text-amber-400" />}
+        </div>
+        {post.text && <p className="text-[13px] text-white/90 leading-relaxed line-clamp-3 drop-shadow">{post.text}</p>}
+
+        {post.product_snapshot && post.product_id && (
+          <button onClick={() => onOpenProduct(String(post.product_id))}
+            className="w-full flex items-center gap-2 rounded-xl bg-white/10 backdrop-blur-md px-3 py-2 border border-white/15 active:bg-white/20 transition-colors text-left">
+            <div className="h-9 w-9 rounded-lg overflow-hidden bg-zinc-800 flex items-center justify-center text-lg shrink-0">
+              {post.product_snapshot.image?.startsWith("http")
+                ? <img src={post.product_snapshot.image} alt="" className="h-full w-full object-cover" />
+                : (post.product_snapshot.image || "📦")}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] font-bold text-white truncate">{post.product_snapshot.name}</p>
+              <p className="text-[11px] font-black text-amber-400">{post.product_snapshot.price}π</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-white/50 shrink-0" />
+          </button>
+        )}
+
+        {post.poll && <PollCard post={post} currentUserId={currentUser?.id} />}
+        {post.created_at && <p className="text-[10px] text-white/40">{new Date(post.created_at).toLocaleDateString()}</p>}
+      </div>
+
+      {showComments && (
+        <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col rounded-t-3xl border-t border-white/10 bg-zinc-950/95 backdrop-blur-md" style={{ maxHeight: "65%" }}>
+          <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-white/10">
+            <p className="text-sm font-bold text-white">Comments</p>
+            <button onClick={() => setShowComments(false)}><X className="h-4 w-4 text-white" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SocialTab() {
   const { user } = useUserAuth()
   const [scope, setScope] = useState<"foryou" | "following">("foryou")
@@ -2079,21 +2226,8 @@ function SocialTab() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [followingSet, setFollowingSet] = useState<Set<string>>(new Set())
-  const [notifySet, setNotifySet] = useState<Set<string>>(new Set())
-  // بحث الأشخاص/الحسابات للمتابعة والدخول لملفاتهم (مثل فيسبوك/تيك توك)
-  const [peopleQuery, setPeopleQuery] = useState("")
-  const [peopleResults, setPeopleResults] = useState<Awaited<ReturnType<typeof searchAccounts>>>([])
-  const [searchingPeople, setSearchingPeople] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
-  // المنتجات الرائجة الآن تظهر تلقائياً أعلى تبويب For You (تفاعل حقيقي)
-  const { data: trendingData } = useSWR(
-    "dabia-social-trending",
-    async () => (await getTrendingProducts(4)).filter(t => t.trend_score > 0).map(dbProductToProduct),
-    { refreshInterval: 30000 }
-  )
-  const trending = trendingData ?? []
-
-  // بثوث حية الآن — تظهر كبانر أعلى الاجتماعي وتفتح غرفة البث
   const { data: liveData } = useSWR("dabia-social-live", () => getLiveStreams(), { refreshInterval: 20000 })
   const liveStreams = liveData ?? []
   const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
@@ -2103,164 +2237,81 @@ function SocialTab() {
     getSocialFeed(scope, user?.id).then(setPosts).finally(() => setLoading(false))
     if (user?.id) getFollowing(user.id, user.id).then(list => {
       setFollowingSet(new Set(list.map(p => p.user_id)))
-      setNotifySet(new Set(list.filter(p => p.notify).map(p => p.user_id)))
     })
   }, [scope, user?.id])
   useEffect(() => { load() }, [load])
 
-  // متابعة/إلغاء متابعة كاتب منشور — تحديث تفاؤلي فوري
   const toggleFollow = useCallback(async (authorId: string) => {
     if (!user?.id) return
     const following = followingSet.has(authorId)
     setFollowingSet(prev => { const n = new Set(prev); following ? n.delete(authorId) : n.add(authorId); return n })
-    if (following) { await unfollowUser(user.id, authorId); setNotifySet(prev => { const n = new Set(prev); n.delete(authorId); return n }) }
+    if (following) await unfollowUser(user.id, authorId)
     else await followUser(user.id, authorId)
     if (scope === "following") load()
   }, [user?.id, followingSet, scope, load])
 
-  // تفعيل/إلغاء إشعارات منشورات هذا الحساب
-  const toggleNotify = useCallback(async (authorId: string) => {
-    if (!user?.id) return
-    const on = notifySet.has(authorId)
-    setNotifySet(prev => { const n = new Set(prev); on ? n.delete(authorId) : n.add(authorId); return n })
-    await setFollowNotify(user.id, authorId, !on)
-  }, [user?.id, notifySet])
-
-  // بحث حيّ عن الحسابات
-  useEffect(() => {
-    const q = peopleQuery.trim()
-    if (q.length < 1) { setPeopleResults([]); return }
-    let active = true
-    setSearchingPeople(true)
-    const t = setTimeout(() => {
-      searchAccounts(q).then(r => { if (active) { setPeopleResults(r); setSearchingPeople(false) } })
-    }, 250)
-    return () => { active = false; clearTimeout(t) }
-  }, [peopleQuery])
+  const handleOpenProduct = useCallback(async (productId: string) => {
+    const p = await getProductById(productId)
+    if (p) setSelectedProduct(dbProductToProduct(p))
+  }, [])
 
   if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
 
   return (
-    <div className="space-y-4 pb-6">
-      <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-2">
-          <Users2 className="h-5 w-5 text-amber-400" />
-          <div>
-            <h1 className="text-base font-black leading-none">Social</h1>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">For You & the people you follow</p>
-          </div>
+    <div className="relative h-full bg-black">
+      {/* Top overlay: LIVE pill + For You/Following tabs + Create button */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-3">
+        <div className="pointer-events-auto">
+          {liveStreams.length > 0 && (
+            <button onClick={() => setActiveStream(liveStreams[0])}
+              className="flex items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 backdrop-blur-sm active:scale-95">
+              <Radio className="h-3 w-3 text-white" />
+              <span className="text-[11px] font-black text-white">LIVE</span>
+            </button>
+          )}
         </div>
-        {user && (
-          <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black active:scale-95">
-            <Plus className="h-3.5 w-3.5" />Post
-          </button>
-        )}
-      </div>
-
-      {/* بحث الأشخاص — متابعة والدخول إلى حساباتهم مثل فيسبوك/تيك توك */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/30 px-3 py-2">
-          <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-          <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Find people & accounts to follow"
-            className="flex-1 bg-transparent text-[13px] outline-none" />
-          {peopleQuery && <button onClick={() => setPeopleQuery("")}><X className="h-4 w-4 text-muted-foreground" /></button>}
-        </div>
-        {peopleQuery.trim() && (
-          <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
-            {searchingPeople ? (
-              <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-amber-400" /></div>
-            ) : peopleResults.length === 0 ? (
-              <p className="text-center text-[12px] text-muted-foreground py-4">No accounts found</p>
-            ) : peopleResults.map(acc => {
-              const isMe = String(acc.id) === String(user?.id)
-              const isFol = followingSet.has(String(acc.id))
-              return (
-                <div key={acc.id} className="flex items-center gap-2.5 px-3 py-2.5">
-                  <Link href={`/u/${acc.id}`} className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-[12px] font-bold overflow-hidden">
-                      {acc.avatar_url ? <img src={acc.avatar_url} alt="" className="h-full w-full object-cover" /> : (acc.username || "U")[0]?.toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-bold truncate">{acc.store_name || acc.username}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">@{acc.username}{acc.role && acc.role !== "buyer" ? ` · ${acc.role}` : ""}</p>
-                    </div>
-                  </Link>
-                  {!isMe && user && (
-                    <button onClick={() => toggleFollow(String(acc.id))}
-                      className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold ${isFol ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
-                      {isFol ? "Following" : "Follow"}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* تبويبان بأسلوب TikTok: For You (خوارزمية) و Following (من تتابعهم) */}
-      <div className="flex items-center justify-center gap-6 border-b border-border">
-        {(["foryou", "following"] as const).map(s => (
-          <button key={s} onClick={() => setScope(s)}
-            className={`relative pb-2.5 text-[13px] font-bold transition-colors ${scope === s ? "text-foreground" : "text-muted-foreground"}`}>
-            {s === "foryou" ? "For You" : "Following"}
-            {scope === s && <span className="absolute -bottom-px left-1/2 -translate-x-1/2 h-0.5 w-7 rounded-full bg-amber-400" />}
-          </button>
-        ))}
-      </div>
-
-      {/* بث مباشر الآن — بانر أعلى الفيد */}
-      {liveStreams.length > 0 && (
-        <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4">
-          {liveStreams.map(ls => (
-            <button key={ls.id} onClick={() => setActiveStream(ls)}
-              className="shrink-0 flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/5 px-3 py-2 active:scale-95 transition-transform">
-              <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-red-600">
-                <Radio className="h-4 w-4 text-white" />
-                <span className="absolute -inset-0.5 rounded-full border-2 border-red-500 animate-ping opacity-60" />
-              </span>
-              <div className="text-left">
-                <p className="text-[11px] font-black text-red-500 leading-none">LIVE</p>
-                <p className="text-[11px] font-bold truncate max-w-[120px]">{ls.host_username}</p>
-              </div>
+        <div className="pointer-events-auto flex items-center gap-6">
+          {(["foryou", "following"] as const).map(s => (
+            <button key={s} onClick={() => setScope(s)}
+              className={`text-[14px] font-black drop-shadow-lg transition-colors ${scope === s ? "text-white border-b-2 border-white pb-0.5" : "text-white/50"}`}>
+              {s === "foryou" ? "For You" : "Following"}
             </button>
           ))}
         </div>
-      )}
+        <button onClick={() => user && setShowCreate(true)} className="pointer-events-auto active:scale-90 transition-transform">
+          <Plus className="h-5 w-5 text-white drop-shadow-lg" />
+        </button>
+      </div>
 
-      {/* رائج الآن — فقط في For You */}
-      {scope === "foryou" && trending.length > 0 && (
-        <section className="space-y-3">
-          <p className="text-xs font-bold flex items-center gap-2">
-            <TrendingUp className="h-3.5 w-3.5 text-amber-400" />Trending now
-            <span className="text-[9px] font-normal text-muted-foreground">auto-ranked from real activity</span>
-          </p>
-          {trending.map(tp => <SocialPostCard key={`trend-${tp.id}`} product={tp} user={user} />)}
-        </section>
-      )}
-
-      {loading ? (
-        <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-40 rounded-2xl bg-secondary/40 animate-pulse" />)}</div>
-      ) : posts.length === 0 && (scope === "following" || trending.length === 0) ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
-          <Users2 className="h-10 w-10 text-muted-foreground/30" />
-          <p className="text-[12px] text-muted-foreground">
-            {scope === "following"
-              ? (user ? "Follow people to see their posts here" : "Sign in and follow people to build your feed")
-              : "No posts yet — be the first to share something"}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {posts.map(post => (
-            <PostCard key={post.id} post={post} currentUser={user} onRefresh={load}
+      {/* Snap-scroll feed */}
+      <div className="h-full overflow-y-scroll no-scrollbar" style={{ scrollSnapType: "y mandatory" }}>
+        {loading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center px-8">
+            <Users2 className="h-12 w-12 text-white/20" />
+            <p className="text-sm text-white/50 font-medium">
+              {scope === "following" ? "Follow people to see their posts" : "No posts yet — be the first!"}
+            </p>
+            {user && (
+              <button onClick={() => setShowCreate(true)} className="rounded-2xl bg-amber-400 px-5 py-2.5 text-sm font-bold text-black active:scale-95">
+                Create Post
+              </button>
+            )}
+          </div>
+        ) : (
+          posts.map(post => (
+            <TikTokPostSlide key={post.id} post={post} currentUser={user}
               isFollowed={followingSet.has(String(post.user_id))} onToggleFollow={toggleFollow}
-              isNotified={notifySet.has(String(post.user_id))} onToggleNotify={toggleNotify} />
-          ))}
-        </div>
-      )}
+              onRefresh={load} onOpenProduct={handleOpenProduct} />
+          ))
+        )}
+      </div>
 
       {showCreate && user && <CreatePostModal onClose={() => setShowCreate(false)} onCreated={load} user={user} />}
+      {selectedProduct && <ProductDetail product={selectedProduct} onClose={() => setSelectedProduct(null)} />}
     </div>
   )
 }
@@ -2299,6 +2350,13 @@ function HomeTab() {
     async () => (await getRecommendations(homeUser?.id, 12)).map(dbProductToProduct),
     { refreshInterval: 120000 })
   const recs = recData ?? []
+
+  // منتجات قريبة — تُصفَّى حسب بلد البائع ليرى كل مستخدم ما يقرب منه
+  const { data: nearbyData } = useSWR<Product[]>(
+    homeUser?.country ? `dabia-nearby-${homeUser.country}` : null,
+    async () => (await getProductsByCountry(homeUser!.country!, 10)).map(dbProductToProduct),
+    { refreshInterval: 300000 })
+  const nearbyProducts = nearbyData ?? []
 
   const categories  = ["All", "Electronics", "Fashion", "Accessories", "Home", "Health", "Art"]
   const sortOptions: { key: SortKey; label: string }[] = [
@@ -2384,6 +2442,31 @@ function HomeTab() {
                 </div>
                 <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
                 <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Near You — منتجات وخدمات من نفس بلد المستخدم */}
+      {category === "All" && nearbyProducts.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <Globe2 className="h-3.5 w-3.5 text-blue-400" />Near You
+            <span className="text-[9px] font-normal text-muted-foreground">sellers in {homeUser?.country}</span>
+          </p>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+            {nearbyProducts.map(r => (
+              <button key={`near-${r.id}`} onClick={() => setSelected(r)}
+                className="shrink-0 w-32 rounded-2xl border border-blue-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                  {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
+                </div>
+                <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
+                  {r.rating > 0 && <span className="text-[9px] text-muted-foreground">★{r.rating}</span>}
+                </div>
               </button>
             ))}
           </div>
@@ -3449,7 +3532,14 @@ function ProfileTab() {
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function DabiaApp() {
-  const { user: dbUser, loading: userLoading } = useUserAuth()
+  const { user: dbUser, loading: userLoading, loginWithPi } = useUserAuth()
+  const { piUser } = usePiNetworkAuthentication()
+
+  // تسجيل دخول تلقائي بمعرف Pi Network عند فتح التطبيق من Pi Browser
+  useEffect(() => {
+    if (!piUser || dbUser || userLoading) return
+    loginWithPi().catch(() => {})
+  }, [piUser, dbUser, userLoading])
   const { lang, setLang, translating } = useTranslation()
   const [tab, setTabState] = useState<Tab>(() => {
     if (typeof window === "undefined") return "home"
@@ -3611,7 +3701,7 @@ export default function DabiaApp() {
       </header>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto px-4 pt-4">
+      <main className={`flex-1 ${effectiveTab === "social" ? "overflow-hidden p-0" : "overflow-y-auto px-4 pt-4"}`}>
         {effectiveTab === "home"     && <HomeTab />}
         {effectiveTab === "discover" && <DiscoverTab />}
         {effectiveTab === "social"   && <SocialTab />}
@@ -3624,14 +3714,15 @@ export default function DabiaApp() {
       <nav className="sticky bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-md pb-safe shrink-0" aria-label="Main navigation">
         <div className="flex items-stretch">
           {navItems.map(item => {
-            // Social tab navigates to dedicated full-screen page
             if (item.key === "social") return (
-              <Link key="social" href="/social"
+              <button key="social" onClick={() => setTab("social")}
+                aria-current={effectiveTab === "social" ? "page" : undefined}
                 aria-label="Social"
-                className="flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors text-muted-foreground hover:text-foreground">
+                className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${effectiveTab === "social" ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
                 {item.icon}
                 <span className="text-[10px] font-medium">{item.label}</span>
-              </Link>
+                {effectiveTab === "social" && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
+              </button>
             )
             return (
               <button key={item.key} onClick={() => setTab(item.key)}

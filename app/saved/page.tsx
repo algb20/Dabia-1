@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import { getSavedProducts, toggleSaveProduct, type DBProduct } from "@/lib/dabia/db"
-import { X, Loader2, Bookmark, BookmarkX } from "lucide-react"
+import { X, Loader2, Bookmark, BookmarkX, ChevronRight, Eye } from "lucide-react"
 
 export default function SavedProductsPage() {
   useDabiaTranslation()
@@ -47,17 +47,30 @@ export default function SavedProductsPage() {
             <p className="text-[12px] text-muted-foreground">Tap the bookmark icon on any product to save it here</p>
           </div>
         ) : products.map(p => (
-          <div key={p.id} className="rounded-2xl border border-border bg-card p-3.5 flex items-center gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-secondary text-2xl overflow-hidden">
-              {p.image?.startsWith("http") ? <img src={p.image} alt="" className="h-full w-full object-cover" /> : (p.image || "📦")}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-bold truncate">{p.name}</p>
-              <p className="text-amber-400 font-black text-sm">{p.price}π</p>
-            </div>
-            <button onClick={() => handleRemove(p.id!)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-400/20 bg-red-400/5">
-              <BookmarkX className="h-4 w-4 text-red-400" />
+          <div key={p.id} className="rounded-2xl border border-border bg-card overflow-hidden">
+            <button onClick={() => router.push(`/?p=${p.id}`)} className="w-full text-left flex items-center gap-3 p-3.5 active:bg-secondary/30 transition-colors">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-secondary text-3xl overflow-hidden">
+                {p.image?.startsWith("http") ? <img src={p.image} alt={p.name} className="h-full w-full object-cover" /> : (p.image || "📦")}
+              </div>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="text-[13px] font-bold truncate">{p.name}</p>
+                {p.category && <p className="text-[10px] text-muted-foreground capitalize">{p.category}</p>}
+                <p className="text-amber-400 font-black text-sm">{p.price}π</p>
+                {p.rating && p.rating > 0 ? (
+                  <p className="text-[10px] text-muted-foreground">★ {p.rating} · {p.review_count ?? 0} reviews</p>
+                ) : null}
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
             </button>
+            <div className="flex border-t border-border">
+              <button onClick={() => router.push(`/?p=${p.id}`)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-amber-400">
+                <Eye className="h-3.5 w-3.5" />View Details
+              </button>
+              <div className="w-px bg-border" />
+              <button onClick={() => handleRemove(p.id!)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-red-400">
+                <BookmarkX className="h-3.5 w-3.5" />Remove
+              </button>
+            </div>
           </div>
         ))}
       </div>

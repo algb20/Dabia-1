@@ -790,6 +790,19 @@ export async function getRecommendations(userId?: string, limit = 20): Promise<D
   } catch { return [] }
 }
 
+// ── منتجات قريبة: تُصفَّح حسب بلد البائع (ملف المستخدم → users.country) ────
+export async function getProductsByCountry(country: string, limit = 12): Promise<DBProduct[]> {
+  if (!country) return []
+  try {
+    const { data: sellers } = await supabase.from('users').select('id').ilike('country', country.trim()).limit(100)
+    if (!sellers?.length) return []
+    const ids = sellers.map((s: any) => s.id)
+    const { data } = await supabase.from('products').select('*').eq('active', true)
+      .in('seller_user_id', ids).order('created_at', { ascending: false }).limit(limit)
+    return await attachSellerAccountTypes((data ?? []) as DBProduct[])
+  } catch { return [] }
+}
+
 // ── Reels: فيديوهات منتجات قصيرة عمودية (اكتشاف بأسلوب TikTok) ─────────────
 export async function getReels(limit = 30): Promise<DBProduct[]> {
   try {
