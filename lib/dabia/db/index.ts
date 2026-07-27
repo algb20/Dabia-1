@@ -114,6 +114,7 @@ export interface DBProduct {
   seller_user_id?: string
   seller_name?:    string
   seller_account_type?: 'standard' | 'premium' | 'official' // شارة البائع — تُرفق عند الجلب لعرض العلامة الرسمية/المميّزة
+  seller_country?: string  // بلد البائع — يُرفق عند الجلب لعرض العلم
   stock?:          number
   rating?:         number
   review_count?:   number
@@ -641,9 +642,12 @@ export async function attachSellerAccountTypes(list: DBProduct[]): Promise<DBPro
   const ids = Array.from(new Set(list.map(p => p.seller_user_id).filter(Boolean))) as string[]
   if (ids.length === 0) return list
   try {
-    const { data } = await supabase.from('users').select('id, account_type').in('id', ids)
-    const byId = new Map((data ?? []).map((u: any) => [String(u.id), u.account_type as DBProduct['seller_account_type']]))
-    return list.map(p => ({ ...p, seller_account_type: byId.get(String(p.seller_user_id)) || 'standard' }))
+    const { data } = await supabase.from('users').select('id, account_type, country').in('id', ids)
+    const byId = new Map((data ?? []).map((u: any) => [String(u.id), { account_type: u.account_type as DBProduct['seller_account_type'], country: u.country as string | undefined }]))
+    return list.map(p => {
+      const info = byId.get(String(p.seller_user_id))
+      return { ...p, seller_account_type: info?.account_type || 'standard', seller_country: info?.country || undefined }
+    })
   } catch { return list }
 }
 

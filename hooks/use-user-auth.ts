@@ -52,6 +52,45 @@ async function detectAndSaveCountry(u: DBUser, onSaved: (fresh: DBUser) => void)
   } catch { /* كشف البلد ميزة تكميلية — لا نزعج المستخدم بفشلها */ }
 }
 
+// كشف الموقع الحقيقي عبر GPS المتصفح — مرة واحدة، صامت عند الرفض
+const GEO_KEY = 'dabia_geo_v1'
+export async function requestBrowserGeo(userId: string, onSaved: (country: string, city: string) => void): Promise<void> {
+  if (typeof window === 'undefined') return
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return
+  try {
+    localStorage.setItem(GEO_KEY, 'asked')
+  } catch {}
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      try {
+        const { latitude, longitude } = pos.coords
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 6000)
+        const res = await fetch(
+          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`,
+          { signal: ctrl.signal }
+        )
+        clearTimeout(timer)
+        const data = await res.json()
+        const country = data?.countryName as string | undefined
+        const city    = (data?.city || data?.locality || data?.principalSubdivision) as string | undefined
+        if (country) {
+          const updates: Record<string, string> = { country }
+          if (city) updates.city = city
+          await updateUser(userId, updates)
+          onSaved(country, city || '')
+        }
+      } catch { /* فشل صامت */ }
+    },
+    () => { /* رفض الإذن — صامت */ },
+    { timeout: 8000, maximumAge: 3600000 }
+  )
+}
+
+export function geoAlreadyAsked(): boolean {
+  try { return !!localStorage.getItem(GEO_KEY) } catch { return false }
+}
+
 export function useUserAuth() {
   const router  = useRouter()
   const [user,    setUser]    = useState<DBUser | null>(null)

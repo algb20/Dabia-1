@@ -101,3 +101,17 @@ export const COUNTRIES: Country[] = [
   { name: "Yemen", code: "YE", flag: "🇾🇪" }, { name: "Zambia", code: "ZM", flag: "🇿🇲" },
   { name: "Zimbabwe", code: "ZW", flag: "🇿🇼" },
 ]
+
+export function getCountryFlag(countryName?: string | null): string {
+  if (!countryName) return ""
+  const lower = countryName.toLowerCase().trim()
+  const found = COUNTRIES.find(c => c.name.toLowerCase() === lower || c.code.toLowerCase() === lower)
+  return found?.flag ?? ""
+}
+
+export function getCountryCode(countryName?: string | null): string {
+  if (!countryName) return ""
+  const lower = countryName.toLowerCase().trim()
+  const found = COUNTRIES.find(c => c.name.toLowerCase() === lower)
+  return found?.code ?? ""
+}

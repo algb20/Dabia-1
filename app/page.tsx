@@ -4,7 +4,8 @@ import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
-import { useUserAuth } from "@/hooks/use-user-auth"
+import { useUserAuth, requestBrowserGeo, geoAlreadyAsked } from "@/hooks/use-user-auth"
+import { getCountryFlag, COUNTRIES } from "@/lib/countries"
 import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
 import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
@@ -21,7 +22,8 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff,
+  MapPin, Navigation, ChevronDown
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -46,7 +48,7 @@ type NotifType   = "price_drop" | "new_arrival" | "trending" | "order" | "auctio
 interface Review       { id: number; author: string; rating: number; body: string; purchaseTxId: string; verified: boolean; timestamp: string }
 interface MerchantOffer { merchantName: string; accountType: AccountType; price: number; currency: "π"; inStock: boolean; deliveryDays: number; isOfficial: boolean; verified: boolean; rating: number; soldCount: number }
 interface TrustIndex   { total: number; breakdown: { sales: number; reviews: number; reliability: number; activity: number }; verifiedSalesCount: number }
-interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerUserId?: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
+interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerUserId?: string; sellerCountry?: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
 interface Auction      { id: string; productName: string; image: string; currentBid: number; minIncrement: number; currency: "π"; endsAt: string; status: AuctionStatus; bidCount: number; seller: string; blockchainId: string; verified: boolean }
 interface GroupShop    { id: string; productId: number; productName: string; image: string; originalPrice: number; groupPrice: number; currency: "π"; membersJoined: number; membersNeeded: number; endsAt: string; shareCode: string; status: "open" | "full" | "completed"; createdBy: string }
 interface Notif        { id: number; type: NotifType; title: string; body: string; time: string; read: boolean }
@@ -100,6 +102,7 @@ function dbProductToProduct(p: DBProduct): Product {
     category: p.category || "Other",
     seller: p.seller_name || "Dabia Seller",
     sellerUserId: p.seller_user_id ? String(p.seller_user_id) : undefined,
+    sellerCountry: p.seller_country || undefined,
     sellerAccountType: (p.seller_account_type as AccountType) || "standard",
     sellerTrust: 80,
     sold: p.review_count ?? 0,
@@ -333,7 +336,8 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
     >
       {/* Image */}
       <div className="relative overflow-hidden bg-secondary/30 aspect-square sm:aspect-[3/4]">
-        <img src={p.image} alt={p.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" decoding="async" />
+        <img src={p.image} alt={p.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" decoding="async"
+          onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
 
         {/* Official overlay ring */}
         {isOfficial && <div className="absolute inset-0 ring-2 ring-inset ring-blue-400/20 rounded-2xl pointer-events-none" aria-hidden />}
@@ -393,9 +397,14 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
 
         <p className="line-clamp-2 text-[10px] font-semibold leading-tight sm:text-[11px]">{p.name}</p>
 
-        <div className="flex items-center gap-0.5">
-          <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
-          <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-0.5">
+            <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
+            <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
+          </div>
+          {p.sellerCountry && (
+            <span className="text-[11px]" title={p.sellerCountry}>{getCountryFlag(p.sellerCountry)}</span>
+          )}
         </div>
 
         {/* Trust score bar */}
@@ -807,7 +816,8 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
       <div className="flex-1 overflow-y-auto">
         {/* Hero image */}
         <div className="relative aspect-[4/3] w-full bg-secondary/30 overflow-hidden">
-          <img src={p.image} alt={p.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+          <img src={p.image} alt={p.name} className="h-full w-full object-cover" loading="eager" decoding="async"
+            onError={e => { (e.target as HTMLImageElement).style.opacity = "0" }} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
           {/* Top badges */}
           <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
@@ -849,8 +859,22 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
         </div>
 
         {/* Product name + stats */}
-        <div className="border-b border-border px-4 pt-3 pb-3 space-y-2">
+        <div className="border-b border-border px-4 pt-3 pb-3 space-y-2.5">
           <h1 className="text-[17px] font-black leading-snug">{p.name}</h1>
+          {/* Seller row with country */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground">by</span>
+            <span className="text-[11px] font-semibold text-foreground">{activeOffer.merchantName}</span>
+            {p.sellerAccountType && p.sellerAccountType !== "standard" && (
+              <AccountBadge type={p.sellerAccountType} size="sm" />
+            )}
+            {p.sellerCountry && (
+              <span className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className="text-sm">{getCountryFlag(p.sellerCountry)}</span>
+                {p.sellerCountry}
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {p.viewCount > 0 && (
               <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
@@ -863,18 +887,12 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground capitalize">
               <Tag className="h-3 w-3" />{p.category}
             </span>
-            {p.location?.city && (
-              <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
-                <Globe2 className="h-3 w-3" />{p.location.city}
-              </span>
-            )}
             {p.dealEndsAt && (
               <span className="flex items-center gap-1 rounded-full border border-red-400/30 bg-red-400/10 px-2.5 py-1 text-[10px] font-bold text-red-400">
                 <Clock className="h-3 w-3" />{p.dealLabel || "Deal ends"} · <DealCountdown endsAt={p.dealEndsAt} />
               </span>
             )}
           </div>
-          <p className="text-[11px] text-muted-foreground">Sold by <span className="font-semibold text-foreground">{activeOffer.merchantName}</span></p>
         </div>
 
         {/* Tabs — Compare first */}
@@ -903,8 +921,18 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                     {isOfficial ? <Building className="h-6 w-6 text-blue-400" /> : <Store className="h-6 w-6 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-black truncate">{p.seller}</p>
-                    <AccountBadge type={p.sellerAccountType} size="sm" />
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-black truncate">{p.seller}</p>
+                      {p.sellerCountry && (
+                        <span className="text-base shrink-0" title={p.sellerCountry}>{getCountryFlag(p.sellerCountry)}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <AccountBadge type={p.sellerAccountType} size="sm" />
+                      {p.sellerCountry && (
+                        <span className="text-[9px] text-muted-foreground">{p.sellerCountry}</span>
+                      )}
+                    </div>
                   </div>
                   <div className="text-right shrink-0">
                     <p className={`text-xl font-black ${trustTotal >= 90 ? "text-emerald-400" : trustTotal >= 75 ? "text-amber-400" : "text-red-400"}`}>{trustTotal}</p>
@@ -941,6 +969,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                   { label: "Rating",         value: `${p.rating} / 5  (${fmtNum(p.reviewCount)} reviews)` },
                   { label: "Units Sold",     value: fmtNum(p.sold) },
                   p.viewCount > 0 ? { label: "Total Views", value: fmtNum(p.viewCount) } : null,
+                  p.sellerCountry ? { label: "Seller Country", value: `${getCountryFlag(p.sellerCountry)} ${p.sellerCountry}` } : null,
                   p.location?.city ? { label: "Origin",    value: p.location.city } : null,
                   p.originalPrice ? { label: "Was",        value: fmtPi(p.originalPrice) } : null,
                   { label: "Verified",       value: p.verified ? "✓ Yes" : "Pending" },
@@ -2162,12 +2191,14 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
   const [likeCount, setLikeCount] = useState(0)
   const [saved, setSaved] = useState(false)
   const [shareCount, setShareCount] = useState(0)
+  const [commentCount, setCommentCount] = useState(0)
   const [showComments, setShowComments] = useState(false)
   const postId = String(post.id)
 
   useEffect(() => {
     getLikeCount(postId).then(setLikeCount)
     getShareCount(postId).then(setShareCount)
+    getComments(postId).then(list => setCommentCount(list.length))
     if (currentUser?.id) {
       isLikedByUser(currentUser.id, postId).then(setLiked)
       isPostSaved(currentUser.id, postId).then(setSaved)
@@ -2232,7 +2263,7 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
           <button onClick={() => setShowComments(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
             <MessageCircle className="h-5 w-5 text-white" />
           </button>
-          <span className="text-[11px] font-bold text-white drop-shadow">0</span>
+          {commentCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(commentCount)}</span>}
         </div>
 
         <button onClick={handleSave} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
@@ -2392,6 +2423,126 @@ function SocialTab() {
   )
 }
 
+// ─── بانر إذن الموقع الجغرافي — يظهر مرة واحدة عند أول دخول ──────────────────
+function GeoPermissionBanner({ userId, onDone }: { userId: string; onDone: (country: string, city: string) => void }) {
+  const [visible, setVisible] = useState(false)
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      if (!localStorage.getItem('dabia_geo_v1')) setVisible(true)
+    } catch {}
+  }, [])
+  if (!visible) return null
+  const dismiss = () => { setVisible(false); try { localStorage.setItem('dabia_geo_v1', 'asked') } catch {} }
+  const allow = async () => {
+    setLoading(true)
+    await requestBrowserGeo(userId, (c, ci) => { onDone(c, ci); dismiss() })
+    setLoading(false)
+    dismiss()
+  }
+  return (
+    <div className="fixed bottom-[72px] left-0 right-0 z-40 px-4">
+      <div className="rounded-2xl border border-blue-400/25 bg-card shadow-xl p-4 flex gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-400/10">
+          <MapPin className="h-5 w-5 text-blue-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-bold">Better products near you</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Allow location to see listings from sellers in your area</p>
+          <div className="flex gap-2 mt-2.5">
+            <button onClick={allow} disabled={loading}
+              className="flex-1 rounded-xl bg-blue-500 py-2 text-[12px] font-bold text-white disabled:opacity-50 flex items-center justify-center gap-1 active:scale-95">
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Navigation className="h-3.5 w-3.5" />}
+              Allow
+            </button>
+            <button onClick={dismiss} className="rounded-xl border border-border px-3 py-2 text-[12px] font-semibold text-muted-foreground active:scale-95">Not now</button>
+          </div>
+        </div>
+        <button onClick={dismiss} className="shrink-0 self-start"><X className="h-4 w-4 text-muted-foreground" /></button>
+      </div>
+    </div>
+  )
+}
+
+// ─── منتقي الموقع لـ "Near You" — مثل Facebook Marketplace ──────────────────
+function NearLocationModal({ current, userId, onSelect, onClose }: {
+  current: string; userId?: string; onSelect: (loc: string) => void; onClose: () => void
+}) {
+  useCloseOnBack(onClose)
+  const [query, setQuery] = useState("")
+  const [gpsLoading, setGpsLoading] = useState(false)
+  const filtered = COUNTRIES.filter(c =>
+    c.name.toLowerCase().includes(query.toLowerCase()) && query.length > 0
+  ).slice(0, 8)
+
+  const useGPS = async () => {
+    if (!userId) return
+    setGpsLoading(true)
+    await requestBrowserGeo(userId, (country) => { onSelect(country); onClose() })
+    setGpsLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background animate-slide-up">
+      <header className="sticky top-0 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 pt-safe backdrop-blur shrink-0">
+        <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border active:scale-95"><X className="h-4 w-4" /></button>
+        <p className="text-sm font-black flex-1">Near You — Choose Location</p>
+      </header>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* GPS button */}
+        <button onClick={useGPS} disabled={gpsLoading}
+          className="w-full flex items-center gap-3 rounded-2xl border border-blue-400/25 bg-blue-400/8 px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-50">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-400/15 shrink-0">
+            {gpsLoading ? <Loader2 className="h-5 w-5 text-blue-400 animate-spin" /> : <Navigation className="h-5 w-5 text-blue-400" />}
+          </div>
+          <div>
+            <p className="text-[13px] font-bold">Use my current location</p>
+            <p className="text-[11px] text-muted-foreground">Detect automatically via GPS</p>
+          </div>
+        </button>
+
+        {/* Search input */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <input
+            type="text" value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Type a country…"
+            className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm"
+            autoFocus
+          />
+        </div>
+
+        {/* Results */}
+        {filtered.length > 0 && (
+          <div className="rounded-2xl border border-border overflow-hidden">
+            {filtered.map((c, i) => (
+              <button key={c.code} onClick={() => { onSelect(c.name); onClose() }}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/50 active:bg-secondary ${i > 0 ? "border-t border-border" : ""}`}>
+                <span className="text-2xl">{c.flag}</span>
+                <div className="flex-1">
+                  <p className="text-[13px] font-semibold">{c.name}</p>
+                </div>
+                {c.name === current && <span className="text-amber-400 font-bold text-[11px]">Current</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {current && (
+          <div>
+            <p className="text-[11px] text-muted-foreground mb-2 font-semibold">Current selection</p>
+            <div className="flex items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 px-4 py-3">
+              <span className="text-2xl">{getCountryFlag(current) || "📍"}</span>
+              <p className="text-[13px] font-bold">{current}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // عدّاد تنازلي حيّ لعرض محدود — يتحدّث كل ثانية
 function DealCountdown({ endsAt }: { endsAt: string }) {
   const [, tick] = useState(0)
@@ -2411,8 +2562,30 @@ function HomeTab() {
   const [sort, setSort]         = useState<SortKey>("smart")
   const [cols, setCols]         = useState<2 | 3>(3)
   const [selected, setSelected] = useState<Product | null>(null)
+  const [showNearPicker, setShowNearPicker] = useState(false)
+  const [showGeoBanner, setShowGeoBanner]   = useState(false)
   const { data, isLoading }     = useTrends(category, sort)
   const { user: homeUser }      = useUserAuth()
+
+  // موقع "Near You" — يُحفظ في localStorage لتجاوز إعداد الحساب
+  const [nearLocation, setNearLocation] = useState<string>(() => {
+    if (typeof window === 'undefined') return ""
+    try { return localStorage.getItem('dabia_near_loc') || "" } catch { return "" }
+  })
+  const effectiveNearLocation = nearLocation || homeUser?.country || ""
+
+  const saveNearLocation = (loc: string) => {
+    setNearLocation(loc)
+    try { localStorage.setItem('dabia_near_loc', loc) } catch {}
+  }
+
+  // إظهار بانر GPS إذا لم يُسأل المستخدم من قبل ولديه حساب
+  useEffect(() => {
+    if (homeUser?.id && !geoAlreadyAsked()) {
+      const t = setTimeout(() => setShowGeoBanner(true), 2000)
+      return () => clearTimeout(t)
+    }
+  }, [homeUser?.id])
 
   // العروض النشطة (تخفيض أو عرض محدود بوقت) — يضبطها التجار من إدارة متاجرهم
   const { data: dealsData } = useSWR<Product[]>("dabia-active-deals",
@@ -2427,10 +2600,10 @@ function HomeTab() {
     { refreshInterval: 120000 })
   const recs = recData ?? []
 
-  // منتجات قريبة — تُصفَّى حسب بلد البائع ليرى كل مستخدم ما يقرب منه
+  // منتجات قريبة — تُصفَّى حسب بلد البائع (موقع المستخدم أو اختياره اليدوي)
   const { data: nearbyData } = useSWR<Product[]>(
-    homeUser?.country ? `dabia-nearby-${homeUser.country}` : null,
-    async () => (await getProductsByCountry(homeUser!.country!, 10)).map(dbProductToProduct),
+    effectiveNearLocation ? `dabia-nearby-${effectiveNearLocation}` : null,
+    async () => (await getProductsByCountry(effectiveNearLocation, 10)).map(dbProductToProduct),
     { refreshInterval: 300000 })
   const nearbyProducts = nearbyData ?? []
 
@@ -2524,28 +2697,48 @@ function HomeTab() {
         </section>
       )}
 
-      {/* Near You — منتجات وخدمات من نفس بلد المستخدم */}
-      {category === "All" && nearbyProducts.length > 0 && (
+      {/* Near You — منتجات وخدمات من نفس بلد المستخدم أو الموقع المختار */}
+      {category === "All" && (
         <section className="space-y-2">
-          <p className="text-xs font-bold flex items-center gap-2">
-            <Globe2 className="h-3.5 w-3.5 text-blue-400" />Near You
-            <span className="text-[9px] font-normal text-muted-foreground">sellers in {homeUser?.country}</span>
-          </p>
-          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
-            {nearbyProducts.map(r => (
-              <button key={`near-${r.id}`} onClick={() => setSelected(r)}
-                className="shrink-0 w-32 rounded-2xl border border-blue-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
-                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
-                  {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
-                </div>
-                <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
-                  {r.rating > 0 && <span className="text-[9px] text-muted-foreground">★{r.rating}</span>}
-                </div>
-              </button>
-            ))}
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 text-blue-400" />Near You
+              {effectiveNearLocation && (
+                <span className="text-[9px] font-normal text-muted-foreground">
+                  {getCountryFlag(effectiveNearLocation)} {effectiveNearLocation}
+                </span>
+              )}
+            </p>
+            <button onClick={() => setShowNearPicker(true)}
+              className="flex items-center gap-1 rounded-full border border-blue-400/25 bg-blue-400/8 px-2.5 py-1 text-[10px] font-bold text-blue-400 active:scale-95">
+              <ChevronDown className="h-3 w-3" />Change
+            </button>
           </div>
+          {nearbyProducts.length > 0 ? (
+            <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+              {nearbyProducts.map(r => (
+                <button key={`near-${r.id}`} onClick={() => setSelected(r)}
+                  className="shrink-0 w-32 rounded-2xl border border-blue-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                  <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                    {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
+                    {r.sellerCountry && (
+                      <span className="absolute bottom-1 right-1 text-sm">{getCountryFlag(r.sellerCountry)}</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
+                    {r.rating > 0 && <span className="text-[9px] text-muted-foreground">★{r.rating}</span>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button onClick={() => setShowNearPicker(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl border border-dashed border-blue-400/25 py-5 text-[12px] text-blue-400 font-semibold active:scale-[0.99]">
+              <MapPin className="h-4 w-4" />Set your location to see nearby listings
+            </button>
+          )}
         </section>
       )}
 
@@ -2583,6 +2776,24 @@ function HomeTab() {
           : data?.ranked.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={homeUser} />)
         }
       </div>
+
+      {showNearPicker && (
+        <NearLocationModal
+          current={effectiveNearLocation}
+          userId={homeUser?.id}
+          onSelect={saveNearLocation}
+          onClose={() => setShowNearPicker(false)}
+        />
+      )}
+      {showGeoBanner && homeUser?.id && (
+        <GeoPermissionBanner
+          userId={homeUser.id}
+          onDone={(country) => {
+            if (country) saveNearLocation(country)
+            setShowGeoBanner(false)
+          }}
+        />
+      )}
     </div>
   )
 }
