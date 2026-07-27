@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supa = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-)
-
 // POST /api/dabia/auto-post-trending
 // Publishes top trending products to the social feed if they have no recent post.
 // Called from the client when the Social tab opens (fire-and-forget).
 export async function POST() {
+  const supa = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  )
   try {
     const { data: trending } = await supa
       .from('products')

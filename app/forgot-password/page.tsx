@@ -1,25 +1,22 @@
 "use client"
 import { useTranslation as useDabiaTranslation } from "@/hooks/use-translation"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { sendPasswordResetCode, resetPasswordWithCode } from "@/lib/dabia/db"
 import { X, Mail, Lock, ShieldCheck, CheckCircle2, AlertCircle, Loader2, Eye, EyeOff } from "lucide-react"
 
-export default function ForgotPasswordPage() {
-  useDabiaTranslation() // يُفعِّل ترجمة هذه الصفحة الفرعية عند فتحها بأي لغة مختارة
+function ForgotPasswordContent() {
+  useDabiaTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [step, setStep] = useState<"email" | "code" | "done">("email")
   const [email, setEmail] = useState("")
 
-  // Pre-fill email from query param (e.g. from find-account page)
   useEffect(() => {
     const e = searchParams.get("email")
-    if (e) {
-      setEmail(decodeURIComponent(e))
-      // If email looks complete (not masked), skip straight to sending the code
-    }
+    if (e) setEmail(decodeURIComponent(e))
   }, [searchParams])
+
   const [code, setCode] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -48,7 +45,6 @@ export default function ForgotPasswordPage() {
     else setError(res.error || "Invalid or expired code")
   }
 
-  // ── DONE ─────────────────────────────────────────────────────────────────
   if (step === "done") return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-background gap-4 px-6">
       <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-emerald-400/20 bg-emerald-400/10">
@@ -62,7 +58,6 @@ export default function ForgotPasswordPage() {
     </div>
   )
 
-  // ── STEP 1: EMAIL ────────────────────────────────────────────────────────
   if (step === "email") return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 pt-safe backdrop-blur">
@@ -98,7 +93,6 @@ export default function ForgotPasswordPage() {
     </div>
   )
 
-  // ── STEP 2: CODE + NEW PASSWORD ──────────────────────────────────────────
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 pt-safe backdrop-blur">
@@ -158,5 +152,13 @@ export default function ForgotPasswordPage() {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-dvh items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-amber-400" /></div>}>
+      <ForgotPasswordContent />
+    </Suspense>
   )
 }
