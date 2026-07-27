@@ -5,11 +5,15 @@ import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth } from "@/hooks/use-user-auth"
+import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getPostsByUser, togglePinPost, deletePost, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
+import { CommentsThread } from "@/components/comments-thread"
+import { PiBrowserGate } from "@/components/pi-browser-gate"
+import { ConnectionsModal } from "@/components/connections-modal"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -17,7 +21,7 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -49,6 +53,17 @@ interface Notif        { id: number; type: NotifType; title: string; body: strin
 interface Subscription { userId: string; tier: SubTier; expiresAt: string; features: string[]; paidInPi: number }
 interface TransparencyStats { confirmedTx: number; volumePi: number; activeUsers: number; verifiedProducts: number; fraudCaught: number; serverUptimePct: number; blockHeight: number }
 
+// ─── Trust score formula ───────────────────────────────────────────────────────
+// Accounts for account tier, rating, review count, and seller activity.
+// Range: 40 (new seller) → 100 (official/premium + many verified reviews).
+function computeTrustScore(p: DBProduct): number {
+  const baseTier = p.seller_account_type === "official" ? 30
+    : p.seller_account_type === "premium" ? 22 : 15
+  const reviewBonus = Math.min(30, (p.review_count ?? 0) * 3)
+  const ratingBonus = Math.min(25, Math.round(((p.rating ?? 0) / 5) * 25))
+  return Math.min(100, baseTier + 20 + reviewBonus + ratingBonus)
+}
+
 // ─── Converts a real Supabase product row into the UI's Product shape ─────────
 // تحويل منتج حقيقي من Supabase إلى الشكل الذي تتوقعه بطاقات الواجهة
 function dbProductToProduct(p: DBProduct): Product {
@@ -71,22 +86,28 @@ function dbProductToProduct(p: DBProduct): Product {
     distance: "—",
     verified: true,
     blockchainId: idStr ? `PI-${idStr.slice(0, 8).toUpperCase()}` : "PI-PENDING",
-    trustScore: Math.min(100, 60 + (p.review_count ?? 0)),
+    trustScore: computeTrustScore(p),
     trustIndex: {
-      total: Math.min(100, 60 + (p.review_count ?? 0)),
-      breakdown: { sales: p.review_count ?? 0, reviews: p.review_count ?? 0, reliability: 80, activity: 70 },
+      total: computeTrustScore(p),
+      breakdown: {
+        sales:       Math.min(40, (p.review_count ?? 0) * 4),
+        reviews:     Math.min(25, Math.round((p.rating ?? 0) / 5 * 25)),
+        reliability: p.seller_account_type === "official" ? 95 : p.seller_account_type === "premium" ? 80 : 65,
+        activity:    70,
+      },
       verifiedSalesCount: p.review_count ?? 0,
     },
     category: p.category || "Other",
     seller: p.seller_name || "Dabia Seller",
     sellerUserId: p.seller_user_id ? String(p.seller_user_id) : undefined,
+    sellerAccountType: (p.seller_account_type as AccountType) || "standard",
     sellerTrust: 80,
     sold: p.review_count ?? 0,
     liked: false,
     saved: false,
     isSponsored: false,
     location: { city: "Pi Network" },
-    viewCount: 0,
+    viewCount: p.view_count ?? 0,
   }
 }
 
@@ -152,10 +173,12 @@ function useTrends(category: string, sort: SortKey) {
       if (sort === "rating") ranked = [...ranked].sort((a, b) => b.rating - a.rating)
       if (sort === "smart") {
         // ترتيب حيّ بمحرّك التراند الحقيقي (إعجابات/تعليقات/مشاركات/طلبات/تقييمات)
+        // + أولوية ظهور فعلية لأصحاب الخطط المدفوعة (ميزة "Priority listing"):
+        // official (Official Brand) ثم premium (Pro) يحصلون على دفعة في الترتيب.
         const scores = await getTrendScores()
-        ranked = [...ranked].sort((a, b) =>
-          (scores.get(String(b.id))?.trend_score ?? 0) - (scores.get(String(a.id))?.trend_score ?? 0)
-        )
+        const tierBoost = (t?: AccountType) => t === "official" ? 6 : t === "premium" ? 3 : 0
+        const scoreOf = (p: Product) => (scores.get(String(p.id))?.trend_score ?? 0) + tierBoost(p.sellerAccountType)
+        ranked = [...ranked].sort((a, b) => scoreOf(b) - scoreOf(a))
       }
       return { ranked, totalEvaluated: ranked.length }
     },
@@ -261,7 +284,7 @@ function LanguageModal({ onClose, lang, setLang, translating }: {
       <div className="px-4 py-2 border-b border-border">
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search language..." autoFocus
-          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-amber-400/50" />
+          className="w-full rounded-xl input-field px-3 py-2 text-[13px]" />
       </div>
       <div className="flex-1 overflow-y-auto">
         {filtered.map(l => (
@@ -374,6 +397,21 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
           <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
           <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
         </div>
+
+        {/* Trust score bar */}
+        {p.trustScore !== undefined && (
+          <div className="flex items-center gap-1">
+            <div className="h-1 flex-1 rounded-full bg-secondary overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${p.trustScore >= 80 ? "bg-emerald-400" : p.trustScore >= 60 ? "bg-amber-400" : "bg-orange-400"}`}
+                style={{ width: `${p.trustScore}%` }}
+              />
+            </div>
+            <span className={`text-[8px] font-bold shrink-0 ${p.trustScore >= 80 ? "text-emerald-400" : p.trustScore >= 60 ? "text-amber-400" : "text-orange-400"}`}>
+              {p.trustScore}
+            </span>
+          </div>
+        )}
 
         <div className="mt-auto flex items-baseline gap-1">
           <span className="text-xs font-black text-amber-400 sm:text-sm">{fmtPi(p.price)}</span>
@@ -528,7 +566,7 @@ const SecurityModal = memo(function SecurityModal({ amount, onClose, onComplete 
         {stage === 2 && (
           <>
             <p className="mb-2 text-[11px] text-emerald-400">✓ Code sent — check your inbox</p>
-            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g,''))} placeholder="Enter the code" className="mb-4 w-full rounded-xl border border-border bg-background px-3 py-3 text-center text-lg font-mono tracking-widest outline-none focus:border-amber-400/50" maxLength={8} />
+            <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g,''))} placeholder="Enter the code" className="mb-4 w-full rounded-xl input-field px-3 py-3 text-center text-lg font-mono tracking-widest" maxLength={8} />
           </>
         )}
         {error && <p className="mb-3 rounded-lg bg-red-400/10 px-3 py-2 text-[11px] text-red-400">{error}</p>}
@@ -569,17 +607,19 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const [paymentError, setPaymentError] = useState("")
   const { user: buyerUser } = useUserAuth()
   const [showShareModal, setShowShareModal] = useState(false)
+  // درجة ثقة البائع الحقيقية (من تقييمات/طلبات/نزاعات فعلية)
+  const [sellerTrust, setSellerTrust] = useState<Awaited<ReturnType<typeof getSellerTrust>>>(null)
+  useEffect(() => { if (p.sellerUserId) getSellerTrust(p.sellerUserId).then(setSellerTrust) }, [p.sellerUserId])
+  // تسجيل مشاهدة المنتج مرة واحدة عند الفتح (تحليلات البائع)
+  useEffect(() => { recordProductView(String(p.id)) }, [p.id])
 
   // إعجاب/حفظ حقيقيان — انتقلا إلى صفحة المنتج (لا يظهران على البطاقة لتفادي التشويش)
-  const [dLiked, setDLiked] = useState(false)
   const [dSaved, setDSaved] = useState(false)
   useEffect(() => {
     if (buyerUser?.id) {
-      isLikedByUser(buyerUser.id, String(p.id)).then(setDLiked)
       isProductSaved(buyerUser.id, String(p.id)).then(setDSaved)
     }
   }, [buyerUser?.id, p.id])
-  const toggleDLike = async () => { if (!buyerUser?.id) return; setDLiked(v => !v); const { liked } = await toggleLike(buyerUser.id, String(p.id)); setDLiked(liked) }
   const toggleDSave = async () => { if (!buyerUser?.id) return; setDSaved(v => !v); const { saved } = await toggleSaveProduct(buyerUser.id, String(p.id)); setDSaved(saved) }
 
   // ── تقييمات حقيقية من القاعدة (تُحمَّل عند فتح تبويب Reviews) ──────────────
@@ -614,7 +654,9 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
   const activeOffer = selectedOffer ?? offers[0]
   const isHighValue = activeOffer.price >= HIGH_VALUE
   const isOfficial  = p.sellerAccountType === "official"
-  const trustTotal  = Math.round(p.trustIndex?.total ?? p.trustScore)
+  // نستخدم الدرجة الحقيقية إن توفّرت (وللبائع سجلّ فعلي)، وإلا التقديري
+  const trustTotal  = sellerTrust && (sellerTrust.reviews_count > 0 || sellerTrust.completed_orders > 0)
+    ? sellerTrust.score : Math.round(p.trustIndex?.total ?? p.trustScore)
 
   // ── نافذة إتمام الطلب (Checkout) — تُجمع فيها الكمية وبيانات الشحن قبل الدفع ──
   const [showCheckout, setShowCheckout] = useState(false)
@@ -680,18 +722,20 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
         {
           onReadyForServerApproval: async (paymentId: string) => {
             try {
+              const { data: { session } } = await supabase.auth.getSession()
               await fetch("/api/dabia/payments", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) },
                 body: JSON.stringify({ action: "approve", paymentId }),
               })
             } catch {}
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
             try {
+              const { data: { session } } = await supabase.auth.getSession()
               await fetch("/api/dabia/payments", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) },
                 body: JSON.stringify({ action: "complete", paymentId, txid }),
               })
             } catch {}
@@ -746,9 +790,6 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             </span>
           )}
           {p.verified && <BadgeCheck className="h-5 w-5 text-emerald-400" />}
-          <button onClick={toggleDLike} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dLiked ? "bg-red-500/10 border-red-500/30" : "hover:bg-secondary"}`} title="Like" aria-label="Like">
-            <Heart className={`h-3.5 w-3.5 ${dLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
-          </button>
           <button onClick={toggleDSave} className={`flex h-8 w-8 items-center justify-center rounded-xl border border-border transition-colors ${dSaved ? "bg-amber-400/10 border-amber-400/30" : "hover:bg-secondary"}`} title="Save" aria-label="Save">
             <Bookmark className={`h-3.5 w-3.5 ${dSaved ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
           </button>
@@ -765,40 +806,75 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
 
       <div className="flex-1 overflow-y-auto">
         {/* Hero image */}
-        <div className="relative aspect-[4/3] w-full bg-secondary/30">
+        <div className="relative aspect-[4/3] w-full bg-secondary/30 overflow-hidden">
           <img src={p.image} alt={p.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-          {isOfficial && (
-            <div className="absolute bottom-3 left-3">
-              <span className="flex items-center gap-1.5 rounded-full bg-blue-600/90 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
-                <Building className="h-3 w-3" />Official Brand Store
-              </span>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+          {/* Top badges */}
+          <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+            {p.trend === "hot" && <span className="flex items-center gap-1 rounded-full bg-red-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm"><Flame className="h-2.5 w-2.5" />Hot</span>}
+            {p.trend === "up"  && <span className="flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm"><TrendingUp className="h-2.5 w-2.5" />Rising</span>}
+            {p.trend === "new" && <span className="flex items-center gap-1 rounded-full bg-blue-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm"><Zap className="h-2.5 w-2.5" />New</span>}
+            {p.badge === "bestseller" && <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[10px] font-black text-black backdrop-blur-sm">Bestseller</span>}
+            {p.badge === "exclusive" && <span className="rounded-full bg-purple-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm">Exclusive</span>}
+            {p.badge === "premium"   && <span className="rounded-full bg-zinc-800/90 border border-amber-400/40 px-2.5 py-1 text-[10px] font-black text-amber-400 backdrop-blur-sm">Premium</span>}
+          </div>
+          {/* Official / high-value badges */}
+          <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
+            {isOfficial && <span className="flex items-center gap-1.5 rounded-full bg-blue-600/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm"><Building className="h-2.5 w-2.5" />Official</span>}
+            {isHighValue && <span className="flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-bold text-amber-400 backdrop-blur-sm"><Lock className="h-2.5 w-2.5" />Escrow</span>}
+          </div>
+          {/* Bottom: price overlay */}
+          <div className="absolute bottom-0 inset-x-0 px-4 pb-3 pt-6">
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-[22px] font-black text-amber-400 drop-shadow-lg leading-none">{fmtPi(activeOffer.price)}</p>
+                {p.originalPrice && (
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[12px] text-white/60 line-through">{fmtPi(p.originalPrice)}</span>
+                    <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-black text-white">
+                      -{Math.round((1 - p.price / p.originalPrice) * 100)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-0.5">
+                  {[1,2,3,4,5].map(i => <Star key={i} className={`h-3.5 w-3.5 ${i <= Math.floor(p.rating) ? "fill-amber-400 text-amber-400" : "fill-white/20 text-white/20"}`} />)}
+                  <span className="text-[12px] font-black text-white ml-1">{p.rating}</span>
+                </div>
+                <span className="text-[10px] text-white/60">{fmtNum(p.reviewCount)} reviews</span>
+              </div>
             </div>
-          )}
-          {isHighValue && (
-            <div className="absolute bottom-3 right-3">
-              <span className="flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1 text-[11px] font-bold text-amber-400 backdrop-blur-sm">
-                <Lock className="h-3 w-3" />Verified checkout
-              </span>
-            </div>
-          )}
+          </div>
         </div>
 
-        {/* Price summary */}
-        <div className="flex items-center gap-4 border-b border-border px-4 py-4">
-          <div className="flex-1 min-w-0">
-            <p className="text-2xl font-black text-amber-400">{fmtPi(activeOffer.price)}</p>
-            {p.originalPrice && <p className="text-sm text-muted-foreground line-through">{fmtPi(p.originalPrice)}</p>}
-            <p className="text-[11px] text-muted-foreground mt-0.5">via {activeOffer.merchantName}</p>
+        {/* Product name + stats */}
+        <div className="border-b border-border px-4 pt-3 pb-3 space-y-2">
+          <h1 className="text-[17px] font-black leading-snug">{p.name}</h1>
+          <div className="flex flex-wrap gap-1.5">
+            {p.viewCount > 0 && (
+              <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                <Eye className="h-3 w-3" />{fmtNum(p.viewCount)} views
+              </span>
+            )}
+            <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+              <ShoppingCart className="h-3 w-3" />{fmtNum(p.sold)} sold
+            </span>
+            <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground capitalize">
+              <Tag className="h-3 w-3" />{p.category}
+            </span>
+            {p.location?.city && (
+              <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                <Globe2 className="h-3 w-3" />{p.location.city}
+              </span>
+            )}
+            {p.dealEndsAt && (
+              <span className="flex items-center gap-1 rounded-full border border-red-400/30 bg-red-400/10 px-2.5 py-1 text-[10px] font-bold text-red-400">
+                <Clock className="h-3 w-3" />{p.dealLabel || "Deal ends"} · <DealCountdown endsAt={p.dealEndsAt} />
+              </span>
+            )}
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-0.5">
-              {[1,2,3,4,5].map(i => (
-                <Star key={i} className={`h-4 w-4 ${i <= Math.floor(p.rating) ? "fill-amber-400 text-amber-400" : "text-border"}`} />
-              ))}
-              <span className="text-sm font-bold ml-1">{p.rating}</span>
-            </div>
-            <span className="text-[11px] text-muted-foreground">{fmtNum(p.sold)} sold</span>
-          </div>
+          <p className="text-[11px] text-muted-foreground">Sold by <span className="font-semibold text-foreground">{activeOffer.merchantName}</span></p>
         </div>
 
         {/* Tabs — Compare first */}
@@ -806,7 +882,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
           {(["compare", "overview", "reviews"] as const).map(t => (
             <button key={t} onClick={() => setDetailTab(t)}
               className={`flex-1 py-2.5 text-[12px] font-bold capitalize transition-colors ${detailTab === t ? "border-b-2 border-amber-400 text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
-              {t === "compare" ? "Prices" : t === "overview" ? "Details" : "Reviews"}
+              {t === "compare" ? "Prices" : t === "overview" ? "Info" : "Reviews"}
             </button>
           ))}
         </div>
@@ -817,48 +893,84 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             <PriceGateway product={p} selectedOffer={selectedOffer} onSelect={setSelectedOffer} />
           )}
 
-          {/* DETAILS TAB */}
+          {/* INFO TAB */}
           {detailTab === "overview" && (
-            <div className="space-y-4">
-              {/* Seller card */}
-              <div className="rounded-2xl border border-border bg-card p-3">
+            <div className="space-y-3">
+              {/* Seller card with trust stats */}
+              <div className="rounded-2xl border border-border bg-card p-3.5 space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl shrink-0 ${isOfficial ? "bg-blue-500/15" : "bg-secondary"}`}>
-                    {isOfficial ? <Building className="h-5 w-5 text-blue-400" /> : <Store className="h-5 w-5 text-muted-foreground" />}
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${isOfficial ? "bg-blue-500/15" : "bg-secondary"}`}>
+                    {isOfficial ? <Building className="h-6 w-6 text-blue-400" /> : <Store className="h-6 w-6 text-muted-foreground" />}
                   </div>
-                  <div className="flex-1 min-w-0 space-y-0.5">
-                    <p className="text-sm font-bold truncate">{p.seller}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-black truncate">{p.seller}</p>
                     <AccountBadge type={p.sellerAccountType} size="sm" />
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-black text-amber-400">{p.sellerTrust}%</p>
-                    <p className="text-[9px] text-muted-foreground">Trust</p>
+                    <p className={`text-xl font-black ${trustTotal >= 90 ? "text-emerald-400" : trustTotal >= 75 ? "text-amber-400" : "text-red-400"}`}>{trustTotal}</p>
+                    <p className="text-[9px] text-muted-foreground leading-none">/ 100 Trust</p>
                   </div>
                 </div>
-              </div>
-
-              {/* Trust bar — simple, not raw JSON */}
-              <div className="rounded-2xl border border-border bg-card p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-emerald-400" />
-                    <span className="text-xs font-bold">Trust Score</span>
+                <Progress value={trustTotal} className="h-1.5" />
+                {sellerTrust && (sellerTrust.reviews_count > 0 || sellerTrust.completed_orders > 0) ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl bg-secondary/50 p-2 text-center">
+                      <p className="text-[14px] font-black text-amber-400">{sellerTrust.avg_rating}★</p>
+                      <p className="text-[9px] text-muted-foreground">Avg Rating</p>
+                    </div>
+                    <div className="rounded-xl bg-secondary/50 p-2 text-center">
+                      <p className="text-[14px] font-black text-emerald-400">{sellerTrust.completed_orders}</p>
+                      <p className="text-[9px] text-muted-foreground">Orders Done</p>
+                    </div>
+                    <div className="rounded-xl bg-secondary/50 p-2 text-center">
+                      <p className="text-[14px] font-black">{sellerTrust.reviews_count}</p>
+                      <p className="text-[9px] text-muted-foreground">Reviews</p>
+                    </div>
                   </div>
-                  <span className={`text-sm font-black ${trustTotal >= 90 ? "text-emerald-400" : trustTotal >= 75 ? "text-amber-400" : "text-red-400"}`}>
-                    {trustTotal}/100
-                  </span>
-                </div>
-                <Progress value={trustTotal} className="h-2" />
-                <p className="text-[10px] text-muted-foreground">Based on verified sales, confirmed reviews, and service reliability.</p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">New seller — trust score grows with each completed order and review.</p>
+                )}
               </div>
 
-              {/* Authentication */}
-              <div className="flex items-start gap-2.5 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-3">
+              {/* Product details table */}
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <p className="px-4 pt-3 pb-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground">Product Details</p>
+                {([
+                  { label: "Category",       value: p.category },
+                  { label: "Trend",          value: p.trend === "hot" ? "🔥 Hot right now" : p.trend === "up" ? "📈 Rising" : p.trend === "new" ? "🆕 New arrival" : "Stable" },
+                  { label: "Rating",         value: `${p.rating} / 5  (${fmtNum(p.reviewCount)} reviews)` },
+                  { label: "Units Sold",     value: fmtNum(p.sold) },
+                  p.viewCount > 0 ? { label: "Total Views", value: fmtNum(p.viewCount) } : null,
+                  p.location?.city ? { label: "Origin",    value: p.location.city } : null,
+                  p.originalPrice ? { label: "Was",        value: fmtPi(p.originalPrice) } : null,
+                  { label: "Verified",       value: p.verified ? "✓ Yes" : "Pending" },
+                  { label: "Blockchain ID",  value: p.blockchainId ? p.blockchainId.slice(0, 14) + "…" : "—" },
+                ] as ({ label: string; value: string } | null)[]).filter(Boolean).map((row, i, arr) => row && (
+                  <div key={row.label} className={`flex items-center justify-between px-4 py-2.5 ${i < arr.length - 1 ? "border-b border-border" : ""}`}>
+                    <span className="text-[12px] text-muted-foreground">{row.label}</span>
+                    <span className="text-[12px] font-semibold text-right max-w-[58%] truncate capitalize">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Escrow protection */}
+              <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-3.5">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
                 <div>
-                  <p className="text-[11px] font-bold text-emerald-400">Verified Listing</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    This seller's account has passed Dabia's verification process.
+                  <p className="text-[11px] font-bold text-emerald-400">Escrow Protection</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Your Pi is held securely in escrow and only released to the seller after you confirm receipt. Dispute? Get a full refund.
+                  </p>
+                </div>
+              </div>
+
+              {/* Verification guarantee */}
+              <div className="flex items-start gap-3 rounded-2xl border border-blue-400/20 bg-blue-400/5 p-3.5">
+                <BadgeCheck className="h-4 w-4 shrink-0 text-blue-400 mt-0.5" />
+                <div>
+                  <p className="text-[11px] font-bold text-blue-400">Authenticity Guaranteed</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Seller identity verified · Originals only · Counterfeits are structurally blocked from Dabia.
                   </p>
                 </div>
               </div>
@@ -900,7 +1012,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                     maxLength={300}
                     rows={2}
                     placeholder="Share your experience (optional)…"
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50 resize-none"
+                    className="w-full rounded-xl input-field px-3 py-2 text-[12px] resize-none"
                   />
                   <button onClick={submitReview} disabled={savingReview || myRating < 1}
                     className={`w-full rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:opacity-50 ${reviewSaved ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
@@ -942,19 +1054,24 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
 
           {/* منتجات مشابهة — نفس الفئة */}
           {similar.length > 0 && (
-            <section className="space-y-2 pt-1">
+            <section className="space-y-2.5 pt-1">
               <p className="text-xs font-bold flex items-center gap-2">
-                <LayoutGrid className="h-3.5 w-3.5 text-amber-400" />Similar products
+                <LayoutGrid className="h-3.5 w-3.5 text-amber-400" />Similar Products
               </p>
-              <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+              <div className="grid grid-cols-2 gap-2.5">
                 {similar.map(sp => (
                   <button key={`sim-${sp.id}`} onClick={() => setSimilarSelected(sp)}
-                    className="shrink-0 w-28 rounded-2xl border border-border bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
-                    <div className="h-16 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-2xl">
-                      {sp.image.startsWith("http") ? <img src={sp.image} alt="" className="h-full w-full object-cover" /> : sp.image}
+                    className="rounded-2xl border border-border bg-card overflow-hidden text-left active:scale-[0.98] transition-transform">
+                    <div className="aspect-[4/3] w-full overflow-hidden bg-secondary flex items-center justify-center text-4xl">
+                      {sp.image.startsWith("http") ? <img src={sp.image} alt={sp.name} className="h-full w-full object-cover" /> : sp.image}
                     </div>
-                    <p className="text-[10px] font-bold leading-tight line-clamp-2">{sp.name}</p>
-                    <p className="text-[11px] font-black text-amber-400">{fmtPi(sp.price)}</p>
+                    <div className="p-2.5 space-y-0.5">
+                      <p className="text-[12px] font-bold leading-tight line-clamp-2">{sp.name}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[13px] font-black text-amber-400">{fmtPi(sp.price)}</p>
+                        {sp.rating > 0 && <div className="flex items-center gap-0.5"><Star className="h-3 w-3 fill-amber-400 text-amber-400" /><span className="text-[10px] font-bold">{sp.rating}</span></div>}
+                      </div>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -966,29 +1083,45 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
       {similarSelected && <ProductDetail product={similarSelected} onClose={() => setSimilarSelected(null)} />}
 
       {/* CTA */}
-      <div className="border-t border-border p-4 pb-safe shrink-0">
+      <div className="border-t border-border bg-background/95 backdrop-blur-sm px-4 pt-3 pb-safe shrink-0 space-y-2">
         {paymentError && (
-          <div className="mb-2 flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-[11px] text-red-400">
+          <div className="flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-[11px] text-red-400">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" /><span>{paymentError}</span>
           </div>
         )}
         {done ? (
-          <button className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2">
-            <CheckCheck className="h-4 w-4" />Order Confirmed ✓
-          </button>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-1 text-[11px]">
-              <span className="text-muted-foreground">Pay with Pi Network</span>
-              <span className="font-bold text-amber-400">{fmtPi(activeOffer.price)}</span>
-            </div>
-            <button
-              disabled={paying}
-              onClick={() => { setPaymentError(""); setShowCheckout(true) }}
-              className="btn-primary w-full rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
-              <ShoppingCart className="h-4 w-4" />Buy Now
-            </button>
+          <div className="rounded-2xl bg-emerald-500/15 border border-emerald-400/30 py-3.5 flex items-center justify-center gap-2">
+            <CheckCheck className="h-5 w-5 text-emerald-400" />
+            <p className="text-sm font-bold text-emerald-400">Order Confirmed!</p>
           </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-[11px] px-0.5">
+              <span className="text-muted-foreground flex items-center gap-1"><ShieldCheck className="h-3 w-3 text-emerald-400" />Protected by escrow</span>
+              <span className="font-black text-amber-400 text-[14px]">{fmtPi(activeOffer.price)}</span>
+            </div>
+            {buyerUser && p.sellerUserId && String(p.sellerUserId) !== String(buyerUser.id) ? (
+              <div className="flex gap-2">
+                <button onClick={async () => {
+                  const tid = await openDMThread(buyerUser.id!, p.sellerUserId!)
+                  if (tid) window.location.href = `/messages/${tid}`
+                }} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border active:scale-95 transition-transform">
+                  <MessageCircle className="h-5 w-5 text-muted-foreground" />
+                </button>
+                <button disabled={paying} onClick={() => { setPaymentError(""); setShowCheckout(true) }}
+                  className="btn-primary flex-1 rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform">
+                  {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                  Buy Now with Pi
+                </button>
+              </div>
+            ) : (
+              <button disabled={paying} onClick={() => { setPaymentError(""); setShowCheckout(true) }}
+                className="btn-primary w-full rounded-2xl py-3.5 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform">
+                {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                Buy Now with Pi
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -1072,12 +1205,12 @@ function CheckoutSheet({ product, unitPrice, user, paying, error, isHighValue, o
         <div className="space-y-2">
           <p className="text-[12px] font-bold flex items-center gap-1.5"><Truck className="h-3.5 w-3.5 text-amber-400" />Shipping details</p>
           <div className="grid grid-cols-2 gap-2">
-            <input value={co.recipient_name} onChange={set("recipient_name")} placeholder="Full name *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.recipient_phone} onChange={set("recipient_phone")} placeholder="Phone *" inputMode="tel" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_country} onChange={set("ship_country")} placeholder="Country *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_city} onChange={set("ship_city")} placeholder="City *" className="rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_address} onChange={set("ship_address")} placeholder="Street address *" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
-            <input value={co.ship_postal} onChange={set("ship_postal")} placeholder="Postal code (optional)" className="col-span-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            <input value={co.recipient_name} onChange={set("recipient_name")} placeholder="Full name *" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.recipient_phone} onChange={set("recipient_phone")} placeholder="Phone *" inputMode="tel" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_country} onChange={set("ship_country")} placeholder="Country *" className="rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_city} onChange={set("ship_city")} placeholder="City *" className="rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_address} onChange={set("ship_address")} placeholder="Street address *" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
+            <input value={co.ship_postal} onChange={set("ship_postal")} placeholder="Postal code (optional)" className="col-span-2 rounded-xl input-field px-3 py-2.5 text-sm" />
           </div>
           {touched && !valid && <p className="text-[11px] text-red-400">Please fill all required (*) fields</p>}
         </div>
@@ -1140,10 +1273,26 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
   const iconMap: Record<string, React.ReactNode> = {
     account: <ShieldCheck className="h-4 w-4 text-amber-400" />,
     order:   <Truck className="h-4 w-4 text-emerald-400" />,
+    deal: <Tag className="h-4 w-4 text-emerald-400" />, follow: <UserPlus className="h-4 w-4 text-amber-400" />,
+    message: <MessageCircle className="h-4 w-4 text-blue-400" />, dispute: <AlertCircle className="h-4 w-4 text-red-400" />,
+    post: <Sparkles className="h-4 w-4 text-blue-400" />,
     price_drop: <Tag className="h-4 w-4 text-emerald-400" />, new_arrival: <Sparkles className="h-4 w-4 text-blue-400" />,
     trending: <TrendingUp className="h-4 w-4 text-amber-400" />,
     group_invite: <Users className="h-4 w-4 text-purple-400" />, auction: <Radio className="h-4 w-4 text-amber-400" />,
   }
+  const Row = ({ n }: { n: RealNotif }) => (
+    <div className={`flex items-start gap-3 border-b border-border px-4 py-3.5 ${!n.read ? "bg-secondary/30" : ""}`}>
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-card">
+        {iconMap[n.type] ?? <Bell className="h-4 w-4 text-muted-foreground" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm ${!n.read ? "font-bold" : "font-medium"}`}>{n.title}</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{n.body}</p>
+        <p className="mt-1 text-[10px] text-muted-foreground">{new Date(n.time).toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+      </div>
+      {!n.read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />}
+    </div>
+  )
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background animate-slide-up">
       <header className="flex items-center gap-3 border-b border-border px-4 py-3 pt-safe shrink-0">
@@ -1157,17 +1306,9 @@ const NotifPanel = memo(function NotifPanel({ notifs, onClose }: { notifs: RealN
             <Bell className="h-10 w-10 opacity-30" /><p className="text-sm">All caught up</p>
           </div>
         ) : notifs.map(n => (
-          <div key={n.id} className={`flex items-start gap-3 border-b border-border px-4 py-3.5 ${!n.read ? "bg-secondary/30" : ""}`}>
-            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-card">
-              {iconMap[n.type] ?? <Bell className="h-4 w-4 text-muted-foreground" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className={`text-sm ${!n.read ? "font-bold" : "font-medium"}`}>{n.title}</p>
-              <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{n.body}</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">{new Date(n.time).toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
-            </div>
-            {!n.read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-amber-400" aria-hidden />}
-          </div>
+          n.link
+            ? <Link key={n.id} href={n.link} onClick={onClose} className="block"><Row n={n} /></Link>
+            : <div key={n.id}><Row n={n} /></div>
         ))}
       </div>
     </div>
@@ -1227,6 +1368,20 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
     return data.ranked.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q))
   }, [query, data])
 
+  // بحث موحّد: أشخاص + مجتمعات (إلى جانب المنتجات) — مثل البحث الشامل عالمياً
+  const [people, setPeople] = useState<Awaited<ReturnType<typeof searchAccounts>>>([])
+  const [groups, setGroups] = useState<Awaited<ReturnType<typeof getGroups>>>([])
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 1) { setPeople([]); setGroups([]); return }
+    let active = true
+    const t = setTimeout(() => {
+      searchAccounts(q).then(r => { if (active) setPeople(r.slice(0, 6)) })
+      getGroups({ search: q, limit: 6 }).then(r => { if (active) setGroups(r) })
+    }, 250)
+    return () => { active = false; clearTimeout(t) }
+  }, [query])
+
   // أعلى المنتجات رواجاً فعلياً (المعروضة أصلاً بترتيب محرّك التراند الحقيقي)
   const trendingTerms = useMemo(() => (data?.ranked ?? []).slice(0, 4).map(p => p.name), [data])
   const categories = useMemo(() => Array.from(new Set((data?.ranked ?? []).map(p => p.category).filter(Boolean))).slice(0, 8), [data])
@@ -1238,7 +1393,7 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
       <div className="flex items-center gap-3 border-b border-border px-4 py-3 pt-safe">
         <div className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2 focus-within:border-amber-400/50 transition-colors">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input autoFocus value={query} onChange={e => { setQuery(e.target.value); setImageResults(null) }} placeholder="Search products, brands, categories…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+          <input autoFocus value={query} onChange={e => { setQuery(e.target.value); setImageResults(null) }} placeholder="Search products, people & communities…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
           {query && <button onClick={() => setQuery("")} aria-label="Clear"><X className="h-4 w-4 text-muted-foreground" /></button>}
           {speechSupported && (
             <button onClick={listening ? stopVoiceSearch : startVoiceSearch} aria-label="Voice search"
@@ -1312,18 +1467,59 @@ const SearchOverlay = memo(function SearchOverlay({ onClose }: { onClose: () => 
             )}
           </div>
         )}
-        {query && results.length === 0 && (
+        {query && results.length === 0 && people.length === 0 && groups.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
             <Search className="h-10 w-10 opacity-30" />
             <p className="text-sm">No results for "{query}"</p>
           </div>
         )}
-        {query && results.length > 0 && (
-          <div>
-            <p className="mb-3 text-[11px] text-muted-foreground">{results.length} results</p>
-            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
-              {results.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={searchUser} />)}
-            </div>
+        {query && imageResults === null && (people.length > 0 || groups.length > 0 || results.length > 0) && (
+          <div className="space-y-5">
+            {/* أشخاص */}
+            {people.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">People</p>
+                {people.map(acc => (
+                  <Link key={acc.id} href={`/u/${acc.id}`} onClick={onClose} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-[12px] font-bold overflow-hidden">
+                      {acc.avatar_url ? <img src={acc.avatar_url} alt="" className="h-full w-full object-cover" /> : (acc.username || "U")[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-bold truncate">{acc.store_name || acc.username}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">@{acc.username}{acc.role && acc.role !== "buyer" ? ` · ${acc.role}` : ""}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            )}
+            {/* مجتمعات */}
+            {groups.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Communities</p>
+                {groups.map(g => (
+                  <Link key={g.id} href={`/groups/${g.id}`} onClick={onClose} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${g.is_official ? "bg-blue-500/15" : "bg-secondary"}`}>
+                      {g.avatar_url ? <img src={g.avatar_url} alt="" className="h-full w-full object-cover rounded-xl" /> : <Users className="h-4 w-4 text-muted-foreground" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-bold truncate flex items-center gap-1">{g.name}{g.is_official && <BadgeCheck className="h-3.5 w-3.5 text-blue-400" />}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{g.member_count ?? 0} members{g.category ? ` · ${g.category}` : ""}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            )}
+            {/* منتجات */}
+            {results.length > 0 && (
+              <div>
+                <p className="mb-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Products ({results.length})</p>
+                <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+                  {results.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={searchUser} />)}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1506,7 +1702,7 @@ function ShareModal({ url, title, onClose, onShared, shareToSocial }: {
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5">
+        <div className="flex items-center gap-2 rounded-xl input-field px-3 py-2.5">
           <p className="flex-1 truncate text-[12px] text-muted-foreground">{url}</p>
           <button onClick={copyLink} className={`shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-colors ${copied ? "bg-emerald-400 text-black" : "bg-amber-400 text-black"}`}>
             {copied ? "Copied!" : "Copy"}
@@ -1608,32 +1804,10 @@ function SocialPostCard({ product, user }: { product: Product; user: DBUser | nu
         <p className="text-[13px]"><span className="font-bold">{product.seller}</span> <span className="text-muted-foreground">{product.name} — </span><span className="font-bold text-amber-400">{product.price}π</span></p>
       </div>
 
-      {/* Comments drawer */}
+      {/* Comments drawer — نظام تعليقات كامل (ردود/تفاعل/ذكر/إشراف) */}
       {showComments && (
-        <div className="border-t border-border p-3 space-y-3">
-          {commentError && <p className="text-[11px] text-red-400">{commentError}</p>}
-          {user && (
-            <div className="flex items-center gap-2">
-              <input value={commentText} onChange={e => setCommentText(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && submitComment()}
-                placeholder="Add a comment…"
-                className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
-              <button onClick={submitComment} disabled={!commentText.trim()}
-                className="rounded-xl bg-amber-400 px-3 py-2 text-[12px] font-bold text-black disabled:opacity-40">Post</button>
-            </div>
-          )}
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {comments.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground text-center py-2">No comments yet — be the first!</p>
-            ) : comments.map((c, i) => (
-              <div key={c.id ?? i} className="flex items-start gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-bold">{c.username[0]?.toUpperCase()}</div>
-                <div className="min-w-0">
-                  <p className="text-[12px]"><span className="font-bold">{c.username}</span> <span className="text-muted-foreground">{c.text}</span></p>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="border-t border-border p-3">
+          <CommentsThread threadId={productId} currentUser={user} ownerId={(product as any).sellerUserId} />
         </div>
       )}
     </div>
@@ -1678,7 +1852,11 @@ function PollCard({ post, currentUserId }: { post: DBPost; currentUserId?: strin
   )
 }
 
-function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser: DBUser | null; onRefresh: () => void }) {
+function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, isNotified, onToggleNotify }: {
+  post: DBPost; currentUser: DBUser | null; onRefresh: () => void
+  isFollowed?: boolean; onToggleFollow?: (authorId: string) => void
+  isNotified?: boolean; onToggleNotify?: (authorId: string) => void
+}) {
   const [saved, setSaved] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [reposting, setReposting] = useState(false)
@@ -1688,6 +1866,38 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
   const [commentText, setCommentText] = useState("")
   const [commentError, setCommentError] = useState("")
   const postId = String(post.id)
+
+  // تحكّم المالك: تعديل نص المنشور/الإعلان + حذفه + تثبيته
+  const isOwner = !!currentUser?.id && String(post.user_id) === String(currentUser.id)
+  const [showMenu, setShowMenu] = useState(false)
+  const [editingPost, setEditingPost] = useState(false)
+  const [editText, setEditText] = useState(post.text || "")
+  const [savingEdit, setSavingEdit] = useState(false)
+  const canEditText = post.type === "text" || post.type === "announcement"
+  // بلاغ عن منشور مسيء (لغير المالك)
+  const [showReport, setShowReport] = useState(false)
+  const [reportReason, setReportReason] = useState("Spam or scam")
+  const [reported, setReported] = useState(false)
+  const submitReport = async () => {
+    if (!currentUser?.id) return
+    await reportContent(currentUser.id, "post", postId, reportReason)
+    setReported(true); setShowReport(false)
+  }
+
+  const savePostEdit = async () => {
+    const t = editText.trim()
+    if (!t) return
+    setSavingEdit(true); await updatePost(postId, t); setSavingEdit(false); setEditingPost(false); onRefresh()
+  }
+  const handleDeletePost = async () => {
+    setShowMenu(false)
+    if (!confirm("Delete this post permanently?")) return
+    if (await deletePost(postId)) onRefresh()
+  }
+  const handlePin = async () => {
+    setShowMenu(false)
+    if (await togglePinPost(postId, !post.pinned)) onRefresh()
+  }
 
   useEffect(() => {
     if (currentUser?.id) isPostSaved(currentUser.id, postId).then(setSaved)
@@ -1699,12 +1909,22 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
     setSaved(now)
   }
 
+  const [reposted, setReposted] = useState(false)
+  useEffect(() => { if (currentUser?.id) hasReposted(postId, currentUser.id).then(setReposted) }, [currentUser?.id, postId])
+
   const handleRepost = async () => {
-    if (!currentUser?.id) return
+    if (!currentUser?.id || reposting) return
     setReposting(true)
-    const r = await repostPost(post, currentUser.id, currentUser.username)
-    setReposting(false)
-    if (r) { setRepostMsg("✓ Reposted to your profile"); onRefresh() } else setRepostMsg("Failed to repost")
+    if (reposted) {
+      // تراجع عن إعادة النشر
+      const ok = await undoRepost(postId, currentUser.id)
+      setReposting(false)
+      if (ok) { setReposted(false); setRepostMsg("↩ Repost removed"); onRefresh() }
+    } else {
+      const r = await repostPost(post, currentUser.id, currentUser.username)
+      setReposting(false)
+      if (r) { setReposted(true); setRepostMsg("✓ Reposted to your profile"); onRefresh() } else setRepostMsg("Failed to repost")
+    }
     setTimeout(() => setRepostMsg(""), 2000)
   }
 
@@ -1732,19 +1952,104 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <Link href={`/u/${post.user_id}`} className="flex items-center gap-2.5 min-w-0 flex-1">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-sm font-black text-black overflow-hidden">
           {post.avatar_url ? <img src={post.avatar_url} alt="" className="h-full w-full object-cover" /> : post.username[0]?.toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-bold truncate flex items-center gap-1">
-            {post.username}{post.is_official && <BadgeCheck className="h-3.5 w-3.5 text-amber-400" />}
+            {post.username}
+            {/* الشارة حسب نوع الحساب الحقيقي: رسمي (أزرق) / مميّز (ذهبي) */}
+            {post.account_type === "official"
+              ? <BadgeCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+              : post.account_type === "premium"
+              ? <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              : post.is_official && <BadgeCheck className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
           </p>
           {post.reposted_from_username && <p className="text-[10px] text-muted-foreground">Reposted from {post.reposted_from_username}</p>}
         </div>
+        </Link>
+        {/* المتابعة + جرس إشعارات منشورات الحساب — لغير المالك */}
+        {!isOwner && onToggleFollow && currentUser && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isFollowed && onToggleNotify && (
+              <button onClick={() => onToggleNotify(String(post.user_id))} title="Post notifications"
+                className={`flex h-7 w-7 items-center justify-center rounded-full border ${isNotified ? "border-amber-400/40 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}>
+                {isNotified ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            <button onClick={() => onToggleFollow(String(post.user_id))}
+              className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${isFollowed ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
+              {isFollowed ? "Following" : "Follow"}
+            </button>
+          </div>
+        )}
         {post.pinned && <Pin className="h-3.5 w-3.5 text-amber-400" />}
+        {isOwner && (
+          <div className="relative shrink-0">
+            <button onClick={() => setShowMenu(v => !v)} aria-label="Post options" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary">
+              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {showMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+                <div className="absolute right-0 top-9 z-20 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+                  {canEditText && (
+                    <button onClick={() => { setShowMenu(false); setEditingPost(true) }} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] hover:bg-secondary"><Edit3 className="h-3.5 w-3.5" />Edit</button>
+                  )}
+                  <button onClick={handlePin} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] hover:bg-secondary"><Pin className="h-3.5 w-3.5" />{post.pinned ? "Unpin" : "Pin"}</button>
+                  <button onClick={handleDeletePost} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] text-red-400 hover:bg-secondary"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {/* بلاغ عن منشور — لغير المالك */}
+        {!isOwner && currentUser && (
+          <div className="relative shrink-0">
+            <button onClick={() => setShowMenu(v => !v)} aria-label="Post options" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary">
+              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {showMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+                <div className="absolute right-0 top-9 z-20 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+                  <button onClick={() => { setShowMenu(false); setShowReport(true) }} className="flex w-full items-center gap-2 px-3 py-2.5 text-[12px] text-red-400 hover:bg-secondary"><AlertCircle className="h-3.5 w-3.5" />Report</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
+      {/* نافذة البلاغ */}
+      {showReport && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowReport(false)}>
+          <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8 space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-bold flex items-center gap-2"><AlertCircle className="h-4 w-4 text-red-400" />Report this post</p>
+            <div className="space-y-1.5">
+              {["Spam or scam", "Hate or harassment", "Nudity or sexual content", "Violence", "Misinformation", "Other"].map(r => (
+                <button key={r} onClick={() => setReportReason(r)}
+                  className={`w-full rounded-xl border px-3 py-2.5 text-left text-[13px] ${reportReason === r ? "border-amber-400/40 bg-amber-400/10 font-bold" : "border-border text-muted-foreground"}`}>{r}</button>
+              ))}
+            </div>
+            <button onClick={submitReport} className="w-full rounded-xl bg-red-500 py-3 text-sm font-bold text-white">Submit report</button>
+          </div>
+        </div>
+      )}
+      {reported && <p className="px-3 pb-2 text-[11px] text-emerald-400">✓ Reported — our team will review it.</p>}
+
       <div className="px-3 pb-2">
+        {editingPost && canEditText ? (
+          <div className="space-y-2">
+            <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
+              className="w-full rounded-xl input-field px-3 py-2 text-[13px] resize-none" />
+            <div className="flex gap-2">
+              <button onClick={savePostEdit} disabled={savingEdit || !editText.trim()} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black disabled:opacity-40">{savingEdit ? "Saving…" : "Save"}</button>
+              <button onClick={() => { setEditingPost(false); setEditText(post.text || "") }} className="rounded-lg border border-border px-3 py-1.5 text-[12px] font-semibold">Cancel</button>
+            </div>
+          </div>
+        ) : <>
         {post.type === "text" && <p className="text-[13px] whitespace-pre-wrap">{post.text}</p>}
         {post.type === "announcement" && <p className="text-[13px] whitespace-pre-wrap font-medium text-blue-300">{post.text}</p>}
         {post.type === "poll" && post.poll && <PollCard post={post} currentUserId={currentUser?.id} />}
@@ -1758,6 +2063,7 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
             </div>
           </div>
         )}
+        </>}
       </div>
 
       <div className="flex items-center gap-1 px-2 py-2 border-t border-border">
@@ -1765,8 +2071,9 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
           <MessageCircle className="h-4 w-4 text-muted-foreground" />
           <span className="text-[11px] font-semibold">{comments.length || ""}</span>
         </button>
-        <button onClick={handleRepost} disabled={reposting} className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 hover:bg-secondary disabled:opacity-40">
-          <Repeat2 className="h-4 w-4 text-muted-foreground" />
+        <button onClick={handleRepost} disabled={reposting} title={reposted ? "Undo repost" : "Repost"}
+          className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 hover:bg-secondary disabled:opacity-40 ${reposted ? "text-emerald-400" : ""}`}>
+          <Repeat2 className={`h-4 w-4 ${reposted ? "text-emerald-400" : "text-muted-foreground"}`} />
         </button>
         <button onClick={() => setShowShare(true)} className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 hover:bg-secondary">
           <Share2 className="h-4 w-4 text-muted-foreground" />
@@ -1778,24 +2085,8 @@ function PostCard({ post, currentUser, onRefresh }: { post: DBPost; currentUser:
       {repostMsg && <p className="px-3 pb-2 text-[11px] text-emerald-400">{repostMsg}</p>}
 
       {showComments && (
-        <div className="border-t border-border p-3 space-y-3">
-          {commentError && <p className="text-[11px] text-red-400">{commentError}</p>}
-          {currentUser && (
-            <div className="flex items-center gap-2">
-              <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === "Enter" && submitComment()}
-                placeholder="Add a comment… use @username to mention" className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
-              <button onClick={submitComment} disabled={!commentText.trim()} className="rounded-xl bg-amber-400 px-3 py-2 text-[12px] font-bold text-black disabled:opacity-40">Post</button>
-            </div>
-          )}
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {comments.length === 0 ? <p className="text-[11px] text-muted-foreground text-center py-2">No comments yet</p> :
-              comments.map((c, i) => (
-                <div key={c.id ?? i} className="flex items-start gap-2">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-bold">{c.username[0]?.toUpperCase()}</div>
-                  <p className="text-[12px]"><span className="font-bold">{c.username}</span> <span className="text-muted-foreground">{c.text}</span></p>
-                </div>
-              ))}
-          </div>
+        <div className="border-t border-border p-3">
+          <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
         </div>
       )}
 
@@ -1839,14 +2130,14 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
         </div>
         {mode === "text" ? (
           <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Share something... use @username to mention"
-            className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+            className="w-full rounded-xl input-field p-3 text-sm" />
         ) : (
           <div className="space-y-2">
             <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask a question..."
-              className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field p-3 text-sm" />
             {options.map((o, i) => (
               <input key={i} value={o} onChange={e => setOptions(opts => opts.map((x, j) => j === i ? e.target.value : x))} placeholder={`Option ${i + 1}`}
-                className="w-full rounded-xl border border-border bg-background p-2.5 text-[13px] outline-none focus:border-amber-400/50" />
+                className="w-full rounded-xl input-field p-2.5 text-[13px]" />
             ))}
             {options.length < 4 && <button onClick={() => setOptions(o => [...o, ""])} className="text-[11px] text-amber-400 font-semibold">+ Add option</button>}
           </div>
@@ -1859,97 +2150,244 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
   )
 }
 
+function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefresh, onOpenProduct }: {
+  post: DBPost
+  currentUser: DBUser | null
+  isFollowed: boolean
+  onToggleFollow: (id: string) => void
+  onRefresh: () => void
+  onOpenProduct: (productId: string) => void
+}) {
+  const [liked, setLiked] = useState(false)
+  const [likeCount, setLikeCount] = useState(0)
+  const [saved, setSaved] = useState(false)
+  const [shareCount, setShareCount] = useState(0)
+  const [showComments, setShowComments] = useState(false)
+  const postId = String(post.id)
+
+  useEffect(() => {
+    getLikeCount(postId).then(setLikeCount)
+    getShareCount(postId).then(setShareCount)
+    if (currentUser?.id) {
+      isLikedByUser(currentUser.id, postId).then(setLiked)
+      isPostSaved(currentUser.id, postId).then(setSaved)
+    }
+  }, [postId, currentUser?.id])
+
+  const handleLike = async () => {
+    if (!currentUser?.id) return
+    const { liked: nowLiked } = await toggleLike(currentUser.id, postId)
+    setLiked(nowLiked)
+    setLikeCount(c => nowLiked ? c + 1 : Math.max(0, c - 1))
+  }
+
+  const handleSave = async () => {
+    if (!currentUser?.id) return
+    const { saved: nowSaved } = await toggleSavePost(currentUser.id, postId)
+    setSaved(nowSaved)
+  }
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/?post=${post.id}`
+    try { await (navigator as any).share({ url }) } catch {
+      try { await navigator.clipboard.writeText(url) } catch {}
+    }
+    recordShare(postId, currentUser?.id)
+    setShareCount(c => c + 1)
+  }
+
+  const bg = post.product_snapshot?.image?.startsWith("http") ? post.product_snapshot.image : null
+
+  return (
+    <div className="relative flex-shrink-0 overflow-hidden bg-zinc-950" style={{ height: "100%", scrollSnapAlign: "start" }}>
+      {bg && <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />}
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-black/40" />
+
+      {/* Right side actions */}
+      <div className="absolute right-3 bottom-8 z-10 flex flex-col items-center gap-5">
+        <div className="relative mb-1">
+          <Link href={`/u/${post.user_id}`}>
+            <div className="h-11 w-11 rounded-full border-2 border-white overflow-hidden bg-zinc-800">
+              {post.avatar_url
+                ? <img src={post.avatar_url} alt="" className="h-full w-full object-cover" />
+                : <span className="flex h-full w-full items-center justify-center text-sm font-black text-white">{(post.username || "U")[0]?.toUpperCase()}</span>}
+            </div>
+          </Link>
+          {currentUser && String(post.user_id) !== String(currentUser.id) && (
+            <button onClick={() => onToggleFollow(String(post.user_id))}
+              className={`absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full ${isFollowed ? "bg-white/80 text-zinc-900" : "bg-amber-400 text-black"}`}>
+              {isFollowed ? <CheckCheck className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={handleLike} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+            <Heart className={`h-5 w-5 transition-colors ${liked ? "fill-red-500 text-red-500" : "text-white"}`} />
+          </button>
+          <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(likeCount)}</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={() => setShowComments(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+            <MessageCircle className="h-5 w-5 text-white" />
+          </button>
+          <span className="text-[11px] font-bold text-white drop-shadow">0</span>
+        </div>
+
+        <button onClick={handleSave} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+          <Bookmark className={`h-5 w-5 transition-colors ${saved ? "fill-amber-400 text-amber-400" : "text-white"}`} />
+        </button>
+
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={handleShare} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
+            <Share2 className="h-5 w-5 text-white" />
+          </button>
+          {shareCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(shareCount)}</span>}
+        </div>
+      </div>
+
+      {/* Bottom content */}
+      <div className="absolute bottom-6 left-4 right-16 z-10 space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="text-[14px] font-black text-white drop-shadow">@{post.username}</p>
+          {post.account_type === "official" && <BadgeCheck className="h-4 w-4 text-blue-400" />}
+          {post.account_type === "premium" && <Crown className="h-3.5 w-3.5 text-amber-400" />}
+        </div>
+        {post.text && <p className="text-[13px] text-white/90 leading-relaxed line-clamp-3 drop-shadow">{post.text}</p>}
+
+        {post.product_snapshot && post.product_id && (
+          <button onClick={() => onOpenProduct(String(post.product_id))}
+            className="w-full flex items-center gap-2 rounded-xl bg-white/10 backdrop-blur-md px-3 py-2 border border-white/15 active:bg-white/20 transition-colors text-left">
+            <div className="h-9 w-9 rounded-lg overflow-hidden bg-zinc-800 flex items-center justify-center text-lg shrink-0">
+              {post.product_snapshot.image?.startsWith("http")
+                ? <img src={post.product_snapshot.image} alt="" className="h-full w-full object-cover" />
+                : (post.product_snapshot.image || "📦")}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] font-bold text-white truncate">{post.product_snapshot.name}</p>
+              <p className="text-[11px] font-black text-amber-400">{post.product_snapshot.price}π</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-white/50 shrink-0" />
+          </button>
+        )}
+
+        {post.poll && <PollCard post={post} currentUserId={currentUser?.id} />}
+        {post.created_at && <p className="text-[10px] text-white/40">{new Date(post.created_at).toLocaleDateString()}</p>}
+      </div>
+
+      {showComments && (
+        <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col rounded-t-3xl border-t border-white/10 bg-zinc-950/95 backdrop-blur-md" style={{ maxHeight: "65%" }}>
+          <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-white/10">
+            <p className="text-sm font-bold text-white">Comments</p>
+            <button onClick={() => setShowComments(false)}><X className="h-4 w-4 text-white" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SocialTab() {
   const { user } = useUserAuth()
+  const [scope, setScope] = useState<"foryou" | "following">("foryou")
   const [posts, setPosts] = useState<DBPost[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [followingSet, setFollowingSet] = useState<Set<string>>(new Set())
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
-  // المنتجات الرائجة الآن تظهر تلقائياً أعلى الفيد للتفاعل (إعجاب/تعليق/طلب) —
-  // محسوبة لحظياً من إشارات حقيقية (إعجابات/تعليقات/مشاركات/طلبات) عبر محرّك
-  // التراند في القاعدة، وتتحدّث تلقائياً كل ٣٠ ثانية. لا تدخّل يدوي.
-  const { data: trendingData } = useSWR(
-    "dabia-social-trending",
-    async () => (await getTrendingProducts(4)).filter(t => t.trend_score > 0).map(dbProductToProduct),
-    { refreshInterval: 30000 }
-  )
-  const trending = trendingData ?? []
-
-  // بثوث حية الآن — تظهر كبانر أعلى الاجتماعي وتفتح غرفة البث
   const { data: liveData } = useSWR("dabia-social-live", () => getLiveStreams(), { refreshInterval: 20000 })
   const liveStreams = liveData ?? []
   const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
 
-  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
-
-
   const load = useCallback(() => {
     setLoading(true)
-    getFeedPosts().then(setPosts).finally(() => setLoading(false))
-  }, [])
+    getSocialFeed(scope, user?.id).then(setPosts).finally(() => setLoading(false))
+    if (user?.id) getFollowing(user.id, user.id).then(list => {
+      setFollowingSet(new Set(list.map(p => p.user_id)))
+    })
+  }, [scope, user?.id])
   useEffect(() => { load() }, [load])
 
-  return (
-    <div className="space-y-4 pb-6">
-      <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-2">
-          <Users2 className="h-5 w-5 text-amber-400" />
-          <div>
-            <h1 className="text-base font-black leading-none">Social</h1>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Posts, polls & shared listings</p>
-          </div>
-        </div>
-        {user && (
-          <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1.5 text-[12px] font-bold text-black active:scale-95">
-            <Plus className="h-3.5 w-3.5" />Post
-          </button>
-        )}
-      </div>
+  useEffect(() => {
+    fetch('/api/dabia/auto-post-trending', { method: 'POST' }).catch(() => {})
+  }, [])
 
-      {/* بث مباشر الآن — بانر أعلى الفيد */}
-      {liveStreams.length > 0 && (
-        <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4">
-          {liveStreams.map(ls => (
-            <button key={ls.id} onClick={() => setActiveStream(ls)}
-              className="shrink-0 flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/5 px-3 py-2 active:scale-95 transition-transform">
-              <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-red-600">
-                <Radio className="h-4 w-4 text-white" />
-                <span className="absolute -inset-0.5 rounded-full border-2 border-red-500 animate-ping opacity-60" />
-              </span>
-              <div className="text-left">
-                <p className="text-[11px] font-black text-red-500 leading-none">LIVE</p>
-                <p className="text-[11px] font-bold truncate max-w-[120px]">{ls.host_username}</p>
-              </div>
+  const toggleFollow = useCallback(async (authorId: string) => {
+    if (!user?.id) return
+    const following = followingSet.has(authorId)
+    setFollowingSet(prev => { const n = new Set(prev); following ? n.delete(authorId) : n.add(authorId); return n })
+    if (following) await unfollowUser(user.id, authorId)
+    else await followUser(user.id, authorId)
+    if (scope === "following") load()
+  }, [user?.id, followingSet, scope, load])
+
+  const handleOpenProduct = useCallback(async (productId: string) => {
+    const p = await getProductById(productId)
+    if (p) setSelectedProduct(dbProductToProduct(p))
+  }, [])
+
+  if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
+
+  return (
+    <div className="relative h-full bg-black">
+      {/* Top overlay: LIVE pill + For You/Following tabs + Create button */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-3">
+        <div className="pointer-events-auto">
+          {liveStreams.length > 0 && (
+            <button onClick={() => setActiveStream(liveStreams[0])}
+              className="flex items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 backdrop-blur-sm active:scale-95">
+              <Radio className="h-3 w-3 text-white" />
+              <span className="text-[11px] font-black text-white">LIVE</span>
+            </button>
+          )}
+        </div>
+        <div className="pointer-events-auto flex items-center gap-6">
+          {(["foryou", "following"] as const).map(s => (
+            <button key={s} onClick={() => setScope(s)}
+              className={`text-[14px] font-black drop-shadow-lg transition-colors ${scope === s ? "text-white border-b-2 border-white pb-0.5" : "text-white/50"}`}>
+              {s === "foryou" ? "For You" : "Following"}
             </button>
           ))}
         </div>
-      )}
+        <button onClick={() => user && setShowCreate(true)} className="pointer-events-auto active:scale-90 transition-transform">
+          <Plus className="h-5 w-5 text-white drop-shadow-lg" />
+        </button>
+      </div>
 
-      {/* رائج الآن — يظهر تلقائياً من محرّك التراند الحقيقي */}
-      {trending.length > 0 && (
-        <section className="space-y-3">
-          <p className="text-xs font-bold flex items-center gap-2">
-            <TrendingUp className="h-3.5 w-3.5 text-amber-400" />Trending now
-            <span className="text-[9px] font-normal text-muted-foreground">auto-ranked from real activity</span>
-          </p>
-          {trending.map(tp => <SocialPostCard key={`trend-${tp.id}`} product={tp} user={user} />)}
-        </section>
-      )}
-
-      {loading ? (
-        <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-40 rounded-2xl bg-secondary/40 animate-pulse" />)}</div>
-      ) : posts.length === 0 && trending.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
-          <Users2 className="h-10 w-10 text-muted-foreground/30" />
-          <p className="text-[12px] text-muted-foreground">No posts yet — be the first to share something</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {posts.map(post => <PostCard key={post.id} post={post} currentUser={user} onRefresh={load} />)}
-        </div>
-      )}
+      {/* Snap-scroll feed */}
+      <div className="h-full overflow-y-scroll no-scrollbar" style={{ scrollSnapType: "y mandatory" }}>
+        {loading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center px-8">
+            <Users2 className="h-12 w-12 text-white/20" />
+            <p className="text-sm text-white/50 font-medium">
+              {scope === "following" ? "Follow people to see their posts" : "No posts yet — be the first!"}
+            </p>
+            {user && (
+              <button onClick={() => setShowCreate(true)} className="rounded-2xl bg-amber-400 px-5 py-2.5 text-sm font-bold text-black active:scale-95">
+                Create Post
+              </button>
+            )}
+          </div>
+        ) : (
+          posts.map(post => (
+            <TikTokPostSlide key={post.id} post={post} currentUser={user}
+              isFollowed={followingSet.has(String(post.user_id))} onToggleFollow={toggleFollow}
+              onRefresh={load} onOpenProduct={handleOpenProduct} />
+          ))
+        )}
+      </div>
 
       {showCreate && user && <CreatePostModal onClose={() => setShowCreate(false)} onCreated={load} user={user} />}
+      {selectedProduct && <ProductDetail product={selectedProduct} onClose={() => setSelectedProduct(null)} />}
     </div>
   )
 }
@@ -1981,6 +2419,20 @@ function HomeTab() {
     async () => (await getActiveDeals(12)).map(dbProductToProduct),
     { refreshInterval: 60000 })
   const deals = dealsData ?? []
+
+  // توصيات شخصية حقيقية من محرّك الخادم (تتعلّم من إعجابات/حفظ/طلبات المستخدم)
+  const { data: recData } = useSWR<Product[]>(
+    homeUser?.id ? `dabia-recs-${homeUser.id}` : "dabia-recs-anon",
+    async () => (await getRecommendations(homeUser?.id, 12)).map(dbProductToProduct),
+    { refreshInterval: 120000 })
+  const recs = recData ?? []
+
+  // منتجات قريبة — تُصفَّى حسب بلد البائع ليرى كل مستخدم ما يقرب منه
+  const { data: nearbyData } = useSWR<Product[]>(
+    homeUser?.country ? `dabia-nearby-${homeUser.country}` : null,
+    async () => (await getProductsByCountry(homeUser!.country!, 10)).map(dbProductToProduct),
+    { refreshInterval: 300000 })
+  const nearbyProducts = nearbyData ?? []
 
   const categories  = ["All", "Electronics", "Fashion", "Accessories", "Home", "Health", "Art"]
   const sortOptions: { key: SortKey; label: string }[] = [
@@ -2043,6 +2495,54 @@ function HomeTab() {
                     <Clock className="h-2.5 w-2.5" />{d.dealLabel || "Limited"} · <DealCountdown endsAt={d.dealEndsAt} />
                   </p>
                 )}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* For You — توصيات شخصية بمحرّك خوارزمي حقيقي (محتوى + تراند) */}
+      {category === "All" && recs.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-amber-400" />For You
+            <span className="text-[9px] font-normal text-muted-foreground">{homeUser ? "picked from your activity" : "trending picks"}</span>
+          </p>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+            {recs.map(r => (
+              <button key={`rec-${r.id}`} onClick={() => setSelected(r)}
+                className="shrink-0 w-32 rounded-2xl border border-amber-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                  {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
+                  {r.sellerAccountType === "official" && <span className="absolute top-1 left-1 rounded-full bg-blue-500 px-1.5 py-0.5 text-[8px] font-black text-white">Official</span>}
+                </div>
+                <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
+                <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Near You — منتجات وخدمات من نفس بلد المستخدم */}
+      {category === "All" && nearbyProducts.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-bold flex items-center gap-2">
+            <Globe2 className="h-3.5 w-3.5 text-blue-400" />Near You
+            <span className="text-[9px] font-normal text-muted-foreground">sellers in {homeUser?.country}</span>
+          </p>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+            {nearbyProducts.map(r => (
+              <button key={`near-${r.id}`} onClick={() => setSelected(r)}
+                className="shrink-0 w-32 rounded-2xl border border-blue-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                  {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
+                </div>
+                <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
+                  {r.rating > 0 && <span className="text-[9px] text-muted-foreground">★{r.rating}</span>}
+                </div>
               </button>
             ))}
           </div>
@@ -2182,7 +2682,7 @@ function RealAuctionCard({ auction }: { auction: DBAuction }) {
           <>
             <div className="flex gap-2">
               <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)} placeholder={`Min ${minNext}π`}
-                className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-amber-400/50" />
+                className="flex-1 rounded-xl input-field px-3 py-2 text-sm" />
               <button onClick={handleBid} disabled={bidding} className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
                 {bidding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Bid"}
               </button>
@@ -2275,14 +2775,14 @@ function CreateAuctionModal({ onClose, onCreated, user }: { onClose: () => void;
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
         <div className="space-y-2.5">
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Item name" className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Item name" className="w-full rounded-xl input-field p-3 text-sm" />
           <div className="grid grid-cols-2 gap-2">
-            <input type="number" value={startPrice} onChange={e => setStartPrice(e.target.value)} placeholder="Starting price (π)" className="rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
-            <input type="number" value={increment} onChange={e => setIncrement(e.target.value)} placeholder="Min increment (π)" className="rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+            <input type="number" value={startPrice} onChange={e => setStartPrice(e.target.value)} placeholder="Starting price (π)" className="rounded-xl input-field p-3 text-sm" />
+            <input type="number" value={increment} onChange={e => setIncrement(e.target.value)} placeholder="Min increment (π)" className="rounded-xl input-field p-3 text-sm" />
           </div>
           <div className="space-y-1">
             <label className="text-[11px] text-muted-foreground">Duration (hours)</label>
-            <input type="number" value={hours} onChange={e => setHours(e.target.value)} className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+            <input type="number" value={hours} onChange={e => setHours(e.target.value)} className="w-full rounded-xl input-field p-3 text-sm" />
           </div>
         </div>
         <button onClick={submit} disabled={creating} className="mt-3 w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
@@ -2322,8 +2822,22 @@ function SpaceTab() {
     <div className="space-y-6 pb-6">
       <div>
         <h1 className="text-lg font-black">Space</h1>
-        <p className="text-[12px] text-muted-foreground mt-0.5">Live streams, auctions, group deals & announcements</p>
+        <p className="text-[12px] text-muted-foreground mt-0.5">Communities, live streams, auctions & group deals</p>
       </div>
+
+      {/* Communities — نظام مجموعات منظّم للشركات والحسابات المهمة */}
+      <Link href="/groups">
+        <div className="flex items-center gap-3 rounded-2xl border border-blue-400/20 bg-gradient-to-br from-blue-400/10 to-transparent p-3.5 active:scale-[0.99] transition-transform">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
+            <Users2 className="h-5 w-5 text-blue-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-bold">Communities</p>
+            <p className="text-[11px] text-muted-foreground">Join brands & companies, or start your own community</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
+      </Link>
 
       {/* Live streaming — بث مباشر للتجار */}
       <section className="space-y-3">
@@ -2470,16 +2984,16 @@ function CreateStreamModal({ onClose, user, onGoLive, onScheduled }:
         </div>
         {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{error}</p>}
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Stream title (e.g. New arrivals 🔥)" maxLength={80}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+          className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
         <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Description (optional)" rows={2} maxLength={200}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50 resize-none" />
+          className="w-full rounded-xl input-field px-3 py-2.5 text-sm resize-none" />
         <div className="flex gap-2">
           <button onClick={() => setMode("now")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "now" ? "bg-red-600 text-white" : "border border-border text-muted-foreground"}`}>Go live now</button>
           <button onClick={() => setMode("schedule")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "schedule" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Schedule</button>
         </div>
         {mode === "schedule" && (
           <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
         )}
         <button onClick={submit} disabled={busy}
           className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-black active:scale-[0.99] disabled:opacity-50">
@@ -2505,29 +3019,60 @@ function BusinessTab() {
   const [announcing, setAnnouncing]     = useState(false)
   const [announceMsg, setAnnounceMsg]   = useState("")
 
+  const [myAnnouncements, setMyAnnouncements] = useState<DBPost[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editVal, setEditVal] = useState("")
+
+  const loadAnnouncements = useCallback(() => {
+    if (!bizUser?.id) return
+    getPostsByUser(bizUser.id).then(ps => setMyAnnouncements(ps.filter(p => p.type === "announcement")))
+  }, [bizUser?.id])
+  useEffect(() => { loadAnnouncements() }, [loadAnnouncements])
+
   const sendAnnouncement = async () => {
     if (!bizUser?.id || !announceText.trim()) return
     setAnnouncing(true)
     const post = await createAnnouncement(bizUser.id, bizUser.store_name || bizUser.username, announceText.trim(), true)
     setAnnouncing(false)
-    if (post) { setAnnounceMsg("✓ Sent to Space feed"); setAnnounceText(""); setTimeout(() => { setAnnounceMsg(""); setShowAnnounce(false) }, 1500) }
+    if (post) { setAnnounceMsg("✓ Sent to Space feed"); setAnnounceText(""); loadAnnouncements(); setTimeout(() => { setAnnounceMsg(""); setShowAnnounce(false) }, 1500) }
     else setAnnounceMsg("Failed to send")
+  }
+
+  const saveAnnouncementEdit = async (id: string) => {
+    if (!editVal.trim()) return
+    await updatePost(id, editVal.trim())
+    setEditingId(null); loadAnnouncements()
+  }
+  const removeAnnouncement = async (id: string) => {
+    if (!confirm("Delete this announcement?")) return
+    await deletePost(id); loadAnnouncements()
   }
 
   const sub = subData?.subscription
 
   const plans = [
     {
-      tier: "pro" as const, label: "Pro", price: 49,
+      tier: "pro" as const, label: "Premium Seller", price: 49,
       color: "border-amber-400/30 bg-amber-400/5",
       icon: <Crown className="h-5 w-5 text-amber-400" />,
-      features: ["AI personal assistant", "Advanced analytics", "Priority product listing", "Early demand alerts", "Dedicated support"],
+      // مزايا فعلية تعمل تقنياً بعد التفعيل (لا واجهة فقط):
+      features: [
+        "Verified Premium badge on every product & post",
+        "Priority placement in the smart feed & search",
+        "Premium storefront styling (gold highlight)",
+        "Business analytics dashboard",
+      ],
     },
     {
       tier: "enterprise" as const, label: "Official Brand", price: 199,
       color: "border-blue-400/30 bg-blue-400/5",
       icon: <Building className="h-5 w-5 text-blue-400" />,
-      features: ["Official Brand badge (manually verified)", "Dedicated verified storefront", "Full API access", "99.9% uptime SLA", "Competitor price monitoring"],
+      features: [
+        "Official Brand badge (blue, verified) on all listings",
+        "Top priority placement across discovery & search",
+        "Distinct official storefront styling",
+        "Includes every Premium perk",
+      ],
     },
   ]
 
@@ -2548,10 +3093,10 @@ function BusinessTab() {
         },
         {
           onReadyForServerApproval: async (paymentId: string) => {
-            try { await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve", paymentId }) }) } catch {}
+            try { const { data: { session } } = await supabase.auth.getSession(); await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) }, body: JSON.stringify({ action: "approve", paymentId }) }) } catch {}
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
-            try { await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "complete", paymentId, txid }) }) } catch {}
+            try { const { data: { session } } = await supabase.auth.getSession(); await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) }, body: JSON.stringify({ action: "complete", paymentId, txid }) }) } catch {}
             // فقط بعد اكتمال دفع Pi حقيقي ومُوافَق عليه، نُفعِّل الاشتراك بمعرّف المعاملة الحقيقي
             const res = await fetch("/api/dabia/subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: bizUser.id, tier, txId: txid }) })
             const data = await res.json()
@@ -2599,6 +3144,36 @@ function BusinessTab() {
         </button>
       )}
 
+      {/* إدارة إعلاناتك — تعديل/حذف فعلي (كان ناقصاً في صفحة برو) */}
+      {bizUser && bizUser.role !== "buyer" && myAnnouncements.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5"><Megaphone className="h-3 w-3" />Your Announcements</p>
+          {myAnnouncements.map(a => (
+            <div key={a.id} className="rounded-xl border border-border bg-card p-3 space-y-2">
+              {editingId === String(a.id) ? (
+                <>
+                  <textarea value={editVal} onChange={e => setEditVal(e.target.value)} rows={3}
+                    className="w-full rounded-lg input-field p-2 text-[12px] resize-none" />
+                  <div className="flex gap-2">
+                    <button onClick={() => saveAnnouncementEdit(String(a.id))} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-black">Save</button>
+                    <button onClick={() => setEditingId(null)} className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-semibold text-muted-foreground">Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-[12px] text-foreground/90 whitespace-pre-wrap">{a.text}</p>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => { setEditingId(String(a.id)); setEditVal(a.text || "") }} className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground"><Edit3 className="h-3 w-3" />Edit</button>
+                    <button onClick={() => removeAnnouncement(String(a.id))} className="flex items-center gap-1 text-[11px] font-semibold text-red-400"><Trash2 className="h-3 w-3" />Delete</button>
+                    {a.created_at && <span className="ml-auto text-[10px] text-muted-foreground">{new Date(a.created_at).toLocaleDateString()}</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {showAnnounce && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowAnnounce(false)}>
           <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8" onClick={e => e.stopPropagation()}>
@@ -2608,7 +3183,7 @@ function BusinessTab() {
             </div>
             <textarea value={announceText} onChange={e => setAnnounceText(e.target.value)} rows={4}
               placeholder="New product launch, sale, or update..."
-              className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field p-3 text-sm" />
             {announceMsg && <p className="mt-2 text-[12px] text-amber-400">{announceMsg}</p>}
             <button onClick={sendAnnouncement} disabled={announcing} className="mt-3 w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
               {announcing ? "Sending…" : "Send to Everyone"}
@@ -2768,6 +3343,8 @@ function ProfileTab() {
   const [savedCountReal, setSavedCountReal] = useState<number | null>(null)
   const [shareMsg, setShareMsg] = useState("")
   const [hideBalancePreview, setHideBalancePreview] = useState(false)
+  const [followCounts, setFollowCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
+  const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
   useEffect(() => {
     try { setHideBalancePreview(localStorage.getItem("dabia_hide_balance") === "true") } catch {}
   }, [])
@@ -2776,6 +3353,7 @@ function ProfileTab() {
     if (!profileUser?.id) return
     getOrdersByBuyer(profileUser.id).then(orders => setOrderCount(orders.length)).catch(() => setOrderCount(0))
     getSavedProducts(profileUser.id).then(list => setSavedCountReal(list.length)).catch(() => setSavedCountReal(0))
+    getFollowCounts(profileUser.id).then(setFollowCounts).catch(() => {})
   }, [profileUser?.id])
 
   const handleShareApp = useCallback(async () => {
@@ -2828,225 +3406,200 @@ function ProfileTab() {
   ]
 
   return (
-    <div className="space-y-4 pb-6">
-      {/* ── Identity card — يُميّز فعلياً بين مستخدم مسجَّل وزائر مستكشف ── */}
+    <div className="space-y-3 pb-6">
+
+      {/* ── BENTO HERO ───────────────────────────────────────────────────────── */}
       {profileUser ? (
-        <div className="rounded-2xl border-2 border-amber-400/30 bg-gradient-to-br from-amber-400/10 to-transparent p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-2xl font-black text-black select-none overflow-hidden">
-              {profileUser.avatar_url
-                ? <img src={profileUser.avatar_url} alt="" className="h-full w-full object-cover" />
-                : (profileUser.username || "U")[0].toUpperCase()
-              }
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <p className="font-black text-base truncate">{profileUser.username}</p>
-                <span className="flex items-center gap-1 shrink-0 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[9px] font-bold text-emerald-400 border border-emerald-400/20">
-                  <CheckCircle2 className="h-2.5 w-2.5" />Signed In
+        <>
+          {/* Hero card */}
+          <div className="relative rounded-3xl overflow-hidden border border-amber-400/20 bg-gradient-to-br from-amber-400/8 via-background to-background">
+            {/* Subtle accent glow */}
+            <div className="absolute -top-8 -right-8 h-32 w-32 rounded-full bg-amber-400/8 blur-2xl pointer-events-none" />
+
+            <div className="relative p-4 flex items-start gap-3">
+              {/* Avatar */}
+              <div className="relative shrink-0">
+                <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-3xl font-black text-black overflow-hidden select-none">
+                  {profileUser.avatar_url
+                    ? <img src={profileUser.avatar_url} alt="" className="h-full w-full object-cover" />
+                    : (profileUser.username || "U")[0].toUpperCase()
+                  }
+                </div>
+                <span className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background ${profileUser.status === "pending" ? "bg-amber-400" : "bg-emerald-400"}`}>
+                  {profileUser.status === "pending"
+                    ? <Clock className="h-2.5 w-2.5 text-black" />
+                    : <CheckCircle2 className="h-2.5 w-2.5 text-black" />
+                  }
                 </span>
               </div>
-              {profileUser.pi_uid && (
-                <p className="text-[11px] text-amber-400 font-mono truncate mt-0.5">Pi UID: {profileUser.pi_uid}</p>
-              )}
-              {(profileUser.social_links?.email_public?.enabled) && (
-                <p className="text-[11px] text-muted-foreground truncate mt-0.5">{profileUser.emall}</p>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5 shrink-0">
-              <Link href="/edit-profile">
-                <button className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-400/10 active:scale-95 transition-transform" title="Edit profile">
-                  <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+
+              {/* Identity */}
+              <div className="flex-1 min-w-0 pt-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-lg font-black leading-none truncate">{profileUser.username}</p>
+                  {sub && (
+                    <span className="flex items-center gap-0.5 rounded-full bg-amber-400/15 border border-amber-400/25 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+                      <Crown className="h-2 w-2" />{sub.tier.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground capitalize mt-0.5">{profileUser.role?.replace("_", " ")} · {profileUser.status === "pending" ? "Under Review" : "Active"}</p>
+                {profileUser.bio && (
+                  <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">{profileUser.bio}</p>
+                )}
+                {profileUser.website_url && /^https?:\/\//i.test(profileUser.website_url) && (
+                  <a href={profileUser.website_url} target="_blank" rel="noopener noreferrer"
+                    className="mt-1 flex items-center gap-1 text-[10px] text-amber-400 truncate">
+                    <Globe2 className="h-2.5 w-2.5 shrink-0" />{profileUser.website_url}
+                  </a>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <Link href="/edit-profile">
+                  <button className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-400/10 active:scale-95" title="Edit">
+                    <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+                  </button>
+                </Link>
+                <button onClick={async () => {
+                  const url = `https://dabiaacdfb2093.pinet.com/u/${profileUser.id}`
+                  const text = `Check out ${profileUser.username} on Dabia${profileUser.store_name ? ` — ${profileUser.store_name}` : ""}`
+                  try {
+                    if (navigator.share) { await navigator.share({ title: profileUser.username, text, url }) }
+                    else { await navigator.clipboard?.writeText(`${text} ${url}`); setShareMsg("✓ Copied"); setTimeout(() => setShareMsg(""), 2500) }
+                  } catch {}
+                }} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border active:scale-95" title="Share">
+                  <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
-              </Link>
-              <button onClick={async () => {
-                const url = `https://dabiaacdfb2093.pinet.com/u/${profileUser.id}`
-                const text = `Check out ${profileUser.username} on Dabia${profileUser.store_name ? ` — ${profileUser.store_name}` : ""}`
-                try {
-                  if (navigator.share) {
-                    await navigator.share({ title: profileUser.username, text, url })
-                  } else {
-                    await navigator.clipboard?.writeText(`${text} ${url}`)
-                    setShareMsg("✓ Profile link copied to clipboard")
-                    setTimeout(() => setShareMsg(""), 2500)
-                  }
-                } catch {
-                  // المستخدم أغلق نافذة المشاركة — لا حاجة لرسالة خطأ
-                }
-              }} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border active:scale-95 transition-transform" title="Share profile">
-                <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </div>
-          </div>
-
-          {profileUser.bio && (
-            <p className="mt-3 text-[12px] text-muted-foreground leading-relaxed">{profileUser.bio}</p>
-          )}
-
-          {profileUser.website_url && (
-            <a href={profileUser.website_url} target="_blank" rel="noopener noreferrer"
-              className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-400 truncate">
-              <Globe2 className="h-3 w-3 shrink-0" />{profileUser.website_url}
-            </a>
-          )}
-
-          {/* روابط السوشيال — تظهر فقط ما فعّله المستخدم بنفسه */}
-          {(profileUser.social_links?.telegram?.enabled || profileUser.social_links?.instagram?.enabled || profileUser.social_links?.x?.enabled) && (
-            <div className="mt-2 flex items-center gap-2">
-              {profileUser.social_links?.telegram?.enabled && profileUser.social_links.telegram.url && (
-                <a href={profileUser.social_links.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Send className="h-3.5 w-3.5" /></a>
-              )}
-              {profileUser.social_links?.instagram?.enabled && profileUser.social_links.instagram.url && (
-                <a href={profileUser.social_links.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Instagram className="h-3.5 w-3.5" /></a>
-              )}
-              {profileUser.social_links?.x?.enabled && profileUser.social_links.x.url && (
-                <a href={profileUser.social_links.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Twitter className="h-3.5 w-3.5" /></a>
-              )}
-              <Link href="/social-links" className="ml-auto text-[10px] text-amber-400 font-semibold">Manage links</Link>
-            </div>
-          )}
-          {!(profileUser.social_links?.telegram?.enabled || profileUser.social_links?.instagram?.enabled || profileUser.social_links?.x?.enabled) && (
-            <Link href="/social-links" className="mt-2 inline-block text-[11px] text-amber-400 font-semibold">+ Add social links</Link>
-          )}
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-background/60 border border-border px-3 py-2">
-              <p className="text-[9px] text-muted-foreground uppercase tracking-wider">Account Type</p>
-              <p className="text-[12px] font-bold capitalize mt-0.5">{profileUser.role?.replace("_", " ")}</p>
-            </div>
-            <div className="rounded-xl bg-background/60 border border-border px-3 py-2">
-              <p className="text-[9px] text-muted-foreground uppercase tracking-wider">Status</p>
-              <p className={`text-[12px] font-bold mt-0.5 ${profileUser.status === "pending" ? "text-amber-400" : "text-emerald-400"}`}>
-                {profileUser.status === "pending" ? "⏳ Under Review" : "✓ Active"}
-              </p>
-            </div>
-          </div>
-
-          {sub ? (
-            <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-400/20">
-              <Crown className="h-2.5 w-2.5" />{sub.tier.toUpperCase()}
-            </span>
-          ) : (
-            <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Standard Account</span>
-          )}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-4 flex items-center gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-secondary text-2xl font-black text-muted-foreground select-none">?</div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="font-black text-base text-muted-foreground">Guest</p>
-              <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[9px] font-bold text-muted-foreground border border-border">
-                Exploring
-              </span>
-            </div>
-            <p className="text-[11px] text-muted-foreground">Not signed in · Browsing only</p>
-            <div className="mt-2 flex gap-2">
-              <Link href="/login">
-                <button className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] font-bold active:scale-95">
-                  <LogIn className="h-3 w-3" />Sign In
-                </button>
-              </Link>
-              <Link href="/register">
-                <button className="flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-bold text-amber-400 active:scale-95">
-                  <UserPlus className="h-3 w-3" />Create Account
-                </button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Wallet — Real balance from Supabase */}
-      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="flex items-center gap-2 text-xs font-bold"><Wallet className="h-4 w-4 text-amber-400" />Dabia Balance</p>
-          <button onClick={(e) => {
-            e.preventDefault()
-            setHideBalancePreview(v => {
-              try { localStorage.setItem("dabia_hide_balance", String(!v)) } catch {}
-              return !v
-            })
-          }} className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground active:scale-95">
-            {hideBalancePreview ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-            {hideBalancePreview ? "Show" : "Hide"}
-          </button>
-        </div>
-        <Link href="/wallet" className="block active:scale-[0.98] transition-transform cursor-pointer">
-          <p className="text-3xl font-black text-amber-400">
-            {!profileUser ? "—π" : hideBalancePreview ? "★★★★" : `${(profileUser.wallet_balance ?? 0).toLocaleString()}π`}
-          </p>
-          <div className="flex gap-4 text-[11px] text-muted-foreground mt-1">
-            <span>User: <strong className="text-foreground">{profileUser?.username ?? "..."}</strong></span>
-            <span>Role: <strong className="text-foreground capitalize">{profileUser?.role ?? "..."}</strong></span>
-          </div>
-          <Progress value={96} className="h-1.5 mt-2" />
-        </Link>
-      </div>
-
-      {/* Active plan features */}
-      {sub && (
-        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 space-y-2">
-          <p className="flex items-center gap-2 text-xs font-bold"><Crown className="h-4 w-4 text-amber-400" />Your Plan</p>
-          <p className="text-sm font-black capitalize">{sub.tier}</p>
-          <ul className="space-y-1">
-            {sub.features.map(f => (
-              <li key={f} className="flex items-center gap-2 text-[11px]">
-                <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400" />
-                <span className="text-muted-foreground">{f}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="text-[10px] text-muted-foreground">Expires {sub.expiresAt.slice(0, 10)}</p>
-        </div>
-      )}
-
-      {/* Quick actions */}
-      {shareMsg && (
-        <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-400 text-center">{shareMsg}</div>
-      )}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        {actions.map((item, i) => (
-          item.href ? (
-            <Link key={item.label} href={item.href}>
-              <button className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
-                <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
-                {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
-                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              </button>
-            </Link>
-          ) : (
-            <button key={item.label} onClick={(item as any).onAction ?? undefined}
-              className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
-              <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
-              {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
-              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-            </button>
-          )
-        ))}
-      </div>
-
-      {/* Account types */}
-      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
-        <p className="text-xs font-bold">Account Types</p>
-        <div className="space-y-2">
-          {[
-            { type: "standard" as AccountType, title: "Standard",      desc: "Core shopping and discovery",                        icon: <User className="h-4 w-4 text-muted-foreground" />, color: "border-border bg-secondary/30"      },
-            { type: "premium"  as AccountType, title: "Premium Seller", desc: "Analytics, priority placement, and advanced tools",  icon: <Crown className="h-4 w-4 text-amber-400" />,      color: "border-amber-400/20 bg-amber-400/5" },
-            { type: "official" as AccountType, title: "Official Brand", desc: "Manufacturer storefront with verified badge",      icon: <Building className="h-4 w-4 text-blue-400" />,    color: "border-blue-400/20 bg-blue-400/5"   },
-          ].map(tier => (
-            <div key={tier.type} className={`flex items-start gap-3 rounded-xl border p-3 ${tier.color}`}>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-card">{tier.icon}</div>
-              <div>
-                <p className="text-[12px] font-bold">{tier.title}</p>
-                <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{tier.desc}</p>
               </div>
             </div>
-          ))}
+
+            {/* Social links row */}
+            <div className="px-4 pb-3 flex items-center gap-2">
+              {profileUser.social_links?.telegram?.enabled && profileUser.social_links.telegram.url && /^https?:\/\//i.test(profileUser.social_links.telegram.url) && (
+                <a href={profileUser.social_links.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Send className="h-3 w-3" /></a>
+              )}
+              {profileUser.social_links?.instagram?.enabled && profileUser.social_links.instagram.url && /^https?:\/\//i.test(profileUser.social_links.instagram.url) && (
+                <a href={profileUser.social_links.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Instagram className="h-3 w-3" /></a>
+              )}
+              {profileUser.social_links?.x?.enabled && profileUser.social_links.x.url && /^https?:\/\//i.test(profileUser.social_links.x.url) && (
+                <a href={profileUser.social_links.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary border border-border"><Twitter className="h-3 w-3" /></a>
+              )}
+              <Link href="/social-links" className="ml-auto text-[10px] text-amber-400 font-semibold">
+                {(profileUser.social_links?.telegram?.enabled || profileUser.social_links?.instagram?.enabled || profileUser.social_links?.x?.enabled) ? "Manage" : "+ Add links"}
+              </Link>
+            </div>
+          </div>
+
+          {/* ── BENTO STATS GRID ─────────────────────────────────────────────── */}
+          <div className="grid grid-cols-4 gap-2">
+            <button onClick={() => setConnTab("followers")}
+              className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{followCounts.followers}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Followers</span>
+            </button>
+            <button onClick={() => setConnTab("following")}
+              className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{followCounts.following}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Following</span>
+            </button>
+            <Link href="/orders" className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{orderCount === null ? "…" : orderCount}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Orders</span>
+            </Link>
+            <Link href="/saved" className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-3 px-2 active:scale-95 transition-transform">
+              <span className="text-lg font-black leading-none">{savedCountReal === null ? "…" : savedCount}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">Saved</span>
+            </Link>
+          </div>
+
+          {/* ── WALLET BENTO ─────────────────────────────────────────────────── */}
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                <Wallet className="h-3.5 w-3.5 text-amber-400" />Balance
+              </p>
+              <button onClick={() => setHideBalancePreview(v => { try { localStorage.setItem("dabia_hide_balance", String(!v)) } catch {} return !v })}
+                className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground active:scale-95">
+                {hideBalancePreview ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {hideBalancePreview ? "Show" : "Hide"}
+              </button>
+            </div>
+            <Link href="/wallet" className="block active:scale-[0.98] transition-transform">
+              <p className="text-3xl font-black text-amber-400 tracking-tight">
+                {hideBalancePreview ? "•••π" : `${(profileUser.wallet_balance ?? 0).toLocaleString()}π`}
+              </p>
+              <Progress value={96} className="h-1 mt-2.5 mb-1" />
+              <p className="text-[10px] text-muted-foreground">96% profile strength · <span className="text-amber-400 font-semibold">View wallet →</span></p>
+            </Link>
+          </div>
+
+          {/* ── PLAN CARD (if subscribed) ─────────────────────────────────────── */}
+          {sub && (
+            <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400/15">
+                <Crown className="h-5 w-5 text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-black capitalize">{sub.tier} Plan</p>
+                <p className="text-[10px] text-muted-foreground">Expires {sub.expiresAt.slice(0, 10)} · {sub.features.length} features</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-amber-400 shrink-0" />
+            </div>
+          )}
+
+          {/* ── QUICK ACTIONS BENTO ──────────────────────────────────────────── */}
+          {shareMsg && (
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-400 text-center">{shareMsg}</div>
+          )}
+          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            {actions.map((item, i) => (
+              item.href ? (
+                <Link key={item.label} href={item.href}>
+                  <button className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
+                    <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
+                    {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </button>
+                </Link>
+              ) : (
+                <button key={item.label} onClick={(item as any).onAction ?? undefined}
+                  className={`flex w-full items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors ${i < actions.length - 1 ? "border-b border-border" : ""}`}>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary text-muted-foreground shrink-0">{item.icon}</div>
+                  <span className="flex-1 text-sm font-medium text-left">{item.label}</span>
+                  {item.badge && <span className="text-[11px] text-muted-foreground">{item.badge}</span>}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </button>
+              )
+            ))}
+          </div>
+        </>
+      ) : (
+        /* ── GUEST STATE ──────────────────────────────────────────────────────── */
+        <div className="rounded-2xl border border-dashed border-border bg-card p-5 flex flex-col items-center gap-4 text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-secondary text-3xl font-black text-muted-foreground select-none">?</div>
+          <div>
+            <p className="font-black text-base">You're browsing as a guest</p>
+            <p className="text-[12px] text-muted-foreground mt-1">Sign in to unlock orders, saved items, and your wallet</p>
+          </div>
+          <div className="flex w-full gap-2">
+            <Link href="/login" className="flex-1">
+              <button className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-border py-2.5 text-[12px] font-bold active:scale-95">
+                <LogIn className="h-3.5 w-3.5" />Sign In
+              </button>
+            </Link>
+            <Link href="/register" className="flex-1">
+              <button className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 py-2.5 text-[12px] font-bold text-amber-400 active:scale-95">
+                <UserPlus className="h-3.5 w-3.5" />Create Account
+              </button>
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
+
+      {profileUser && connTab && <ConnectionsModal userId={profileUser.id!} viewerId={profileUser.id} initialTab={connTab} onClose={() => setConnTab(null)} />}
     </div>
   )
 }
@@ -3055,7 +3608,14 @@ function ProfileTab() {
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function DabiaApp() {
-  const { user: dbUser, loading: userLoading } = useUserAuth()
+  const { user: dbUser, loading: userLoading, loginWithPi } = useUserAuth()
+  const { piUser } = usePiNetworkAuthentication()
+
+  // تسجيل دخول تلقائي بمعرف Pi Network عند فتح التطبيق من Pi Browser
+  useEffect(() => {
+    if (!piUser || dbUser || userLoading) return
+    loginWithPi().catch(() => {})
+  }, [piUser, dbUser, userLoading])
   const { lang, setLang, translating } = useTranslation()
   const [tab, setTabState] = useState<Tab>(() => {
     if (typeof window === "undefined") return "home"
@@ -3091,9 +3651,36 @@ export default function DabiaApp() {
     })
   }, [])
 
-  const { data: alertsData   } = useAlerts(dbUser?.id)
+  const { data: alertsData, mutate: refreshNotifs } = useAlerts(dbUser?.id)
   const notifs   = alertsData?.notifications ?? []
-  const unread   = notifs.filter(n => !n.read).length
+
+  // شارة إشعارات غير مقروءة — Realtime بدلاً من polling
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    if (!dbUser?.id) { setUnread(0); return }
+    getNotificationsUnread(dbUser.id!).then(setUnread)
+    const channel = supabase
+      .channel(`notifs-${dbUser.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'notifications',
+        filter: `user_id=eq.${dbUser.id}`,
+      }, () => { setUnread(c => c + 1); refreshNotifs() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [dbUser?.id, refreshNotifs])
+  // فتح لوحة الإشعارات → تعليم الكل كمقروء
+  const openNotifs = useCallback(() => {
+    setShowNotifs(true)
+    if (dbUser?.id) { markNotificationsRead(dbUser.id).then(() => { setUnread(0); refreshNotifs() }) }
+  }, [dbUser?.id, refreshNotifs])
+
+  // شارة رسائل غير مقروءة — polling بفترة أطول (30 ثانية)
+  const [dmUnread, setDmUnread] = useState(0)
+  useEffect(() => {
+    if (!dbUser?.id) { setDmUnread(0); return }
+    const load = () => getDMUnreadCount(dbUser.id!).then(setDmUnread)
+    load(); const t = setInterval(load, 30000); return () => clearInterval(t)
+  }, [dbUser?.id])
 
   // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
   // مصدران: (1) معامل الاستعلام على الجذر /?p=ID (الرابط الجديد الأكثر متانة)،
@@ -3114,14 +3701,20 @@ export default function DabiaApp() {
     } catch {}
   }, [])
 
+  // تبويب "Pro" (لوحة الأعمال) مخصّص للحسابات التجارية فقط — كما في التطبيقات
+  // العالمية التي تُظهر "لوحة احترافية" للحسابات التجارية/الشركات دون المشترين.
+  // المشتري/الزائر يحصل على شريط تنقّل أنظف من 5 تبويبات.
+  const isBusinessAccount = !!dbUser && dbUser.role !== "buyer"
   const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "home",     label: "Home",     icon: <Home      className="h-5 w-5" /> },
     { key: "discover", label: "Discover", icon: <Compass   className="h-5 w-5" /> },
     { key: "social",   label: "Social",   icon: <Users2    className="h-5 w-5" /> },
     { key: "space",    label: "Space",    icon: <Layers    className="h-5 w-5" /> },
-    { key: "business", label: "Pro",      icon: <BarChart3 className="h-5 w-5" /> },
+    ...(isBusinessAccount ? [{ key: "business" as Tab, label: "Pro", icon: <BarChart3 className="h-5 w-5" /> }] : []),
     { key: "profile",  label: "Profile",  icon: <User      className="h-5 w-5" /> },
   ]
+  // لو كان التبويب المحفوظ "business" لحساب غير تجاري، نعيده للرئيسية
+  const effectiveTab: Tab = tab === "business" && !isBusinessAccount ? "home" : tab
 
   return (
     <div id="dabia-app-root" className="flex min-h-dvh flex-col bg-background text-foreground font-sans sm:max-w-xl sm:mx-auto sm:border-x sm:border-border">
@@ -3160,10 +3753,21 @@ export default function DabiaApp() {
               </button>
             </Link>
           )}
+          <Link href="/reels" className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label="Reels">
+            <Video className="h-4 w-4" />
+          </Link>
           <button onClick={() => setShowSearch(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label="Search">
             <Search className="h-4 w-4" />
           </button>
-          <button onClick={() => setShowNotifs(true)} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
+          {dbUser && (
+            <Link href="/messages" className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Messages${dmUnread ? `, ${dmUnread} unread` : ""}`}>
+              <MessageCircle className="h-4 w-4" />
+              {dmUnread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-black">{dmUnread}</span>
+              )}
+            </Link>
+          )}
+          <button onClick={openNotifs} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
             <Bell className="h-4 w-4" />
             {unread > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{unread}</span>
@@ -3173,28 +3777,40 @@ export default function DabiaApp() {
       </header>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto px-4 pt-4">
-        {tab === "home"     && <HomeTab />}
-        {tab === "discover" && <DiscoverTab />}
-        {tab === "social"   && <SocialTab />}
-        {tab === "space"    && <SpaceTab />}
-        {tab === "business" && <BusinessTab />}
-        {tab === "profile"  && <ProfileTab />}
+      <main className={`flex-1 ${effectiveTab === "social" ? "overflow-hidden p-0" : "overflow-y-auto px-4 pt-4"}`}>
+        {effectiveTab === "home"     && <HomeTab />}
+        {effectiveTab === "discover" && <DiscoverTab />}
+        {effectiveTab === "social"   && <SocialTab />}
+        {effectiveTab === "space"    && <SpaceTab />}
+        {effectiveTab === "business" && <BusinessTab />}
+        {effectiveTab === "profile"  && <ProfileTab />}
       </main>
 
       {/* Bottom nav */}
       <nav className="sticky bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-md pb-safe shrink-0" aria-label="Main navigation">
         <div className="flex items-stretch">
-          {navItems.map(item => (
-            <button key={item.key} onClick={() => setTab(item.key)}
-              aria-current={tab === item.key ? "page" : undefined}
-              aria-label={item.label}
-              className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${tab === item.key ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
-              {item.icon}
-              <span className="text-[10px] font-medium">{item.label}</span>
-              {tab === item.key && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
-            </button>
-          ))}
+          {navItems.map(item => {
+            if (item.key === "social") return (
+              <button key="social" onClick={() => setTab("social")}
+                aria-current={effectiveTab === "social" ? "page" : undefined}
+                aria-label="Social"
+                className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${effectiveTab === "social" ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
+                {item.icon}
+                <span className="text-[10px] font-medium">{item.label}</span>
+                {effectiveTab === "social" && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
+              </button>
+            )
+            return (
+              <button key={item.key} onClick={() => setTab(item.key)}
+                aria-current={effectiveTab === item.key ? "page" : undefined}
+                aria-label={item.label}
+                className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-h-[52px] py-2.5 transition-colors relative ${effectiveTab === item.key ? "text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
+                {item.icon}
+                <span className="text-[10px] font-medium">{item.label}</span>
+                {effectiveTab === item.key && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-amber-400" aria-hidden />}
+              </button>
+            )
+          })}
         </div>
       </nav>
 
@@ -3206,6 +3822,7 @@ export default function DabiaApp() {
       {showSearch  && <SearchOverlay onClose={() => setShowSearch(false)} />}
       {showLang    && <LanguageModal onClose={() => setShowLang(false)} lang={lang} setLang={setLang} translating={translating} />}
       {deepLinkProduct && <ProductDetail product={deepLinkProduct} onClose={() => setDeepLinkProduct(null)} />}
+      <PiBrowserGate />
     </div>
   )
 }

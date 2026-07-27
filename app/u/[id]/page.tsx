@@ -1,12 +1,14 @@
 "use client"
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { getUserById, getProductsBySeller, getPostsByUser, togglePinPost, type DBUser, type DBProduct, type DBPost } from "@/lib/dabia/db"
+import { getUserById, getProductsBySeller, getPostsByUser, togglePinPost, followUser, unfollowUser, isFollowing, getFollowCounts, getFollowNotify, setFollowNotify, openDMThread, type DBUser, type DBProduct, type DBPost } from "@/lib/dabia/db"
+import { ConnectionsModal } from "@/components/connections-modal"
 import { getIdentityFields } from "@/lib/dabia/identity-fields"
 import { useUserAuth } from "@/hooks/use-user-auth"
+import { PiBrowserGate } from "@/components/pi-browser-gate"
 import {
   X, Globe2, Send, Instagram, Twitter, Loader2, Store, ShieldCheck, CheckCircle2, Calendar, Info,
-  Factory, Building2, Briefcase, Handshake, UserCircle2, ShoppingBag, MessageSquare, Pin, BadgeCheck,
+  Factory, Building2, Briefcase, Handshake, UserCircle2, ShoppingBag, MessageSquare, Pin, BadgeCheck, Crown, Bell, BellOff,
 } from "lucide-react"
 
 // لمسة تصميم مميزة لكل نوع حساب — أيقونة ولون تمييز فقط (لا يغيّر هوية
@@ -33,15 +35,53 @@ export default function PublicProfilePage() {
   const [posts, setPosts] = useState<DBPost[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<"products" | "about" | "posts">("products")
+  const [followed, setFollowed] = useState(false)
+  const [counts, setCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
+  const [followBusy, setFollowBusy] = useState(false)
+  const [notify, setNotify] = useState(false)
+  const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
 
   useEffect(() => {
     if (!id) return
-    Promise.all([getUserById(id), getProductsBySeller(id), getPostsByUser(id)])
-      .then(([u, p, ps]) => { setProfile(u); setProducts(p); setPosts(ps) })
+    Promise.all([getUserById(id), getProductsBySeller(id), getPostsByUser(id), getFollowCounts(id)])
+      .then(([u, p, ps, c]) => { setProfile(u); setProducts(p); setPosts(ps); setCounts(c) })
       .finally(() => setLoading(false))
   }, [id])
 
+  useEffect(() => {
+    if (viewer?.id && id && viewer.id !== id) {
+      isFollowing(viewer.id, id).then(setFollowed)
+      getFollowNotify(viewer.id, id).then(setNotify)
+    }
+  }, [viewer?.id, id])
+
   const isOwner = viewer?.id === id
+
+  const toggleFollow = async () => {
+    if (!viewer?.id || followBusy) return
+    setFollowBusy(true)
+    const next = !followed
+    setFollowed(next)
+    setCounts(c => ({ ...c, followers: c.followers + (next ? 1 : -1) }))
+    if (next) await followUser(viewer.id, id); else { await unfollowUser(viewer.id, id); setNotify(false) }
+    setFollowBusy(false)
+  }
+
+  const toggleNotify = async () => {
+    if (!viewer?.id || !followed) return
+    const next = !notify
+    setNotify(next)
+    await setFollowNotify(viewer.id, id, next)
+  }
+
+  const [msgBusy, setMsgBusy] = useState(false)
+  const startMessage = async () => {
+    if (!viewer?.id) { router.push("/register"); return }
+    setMsgBusy(true)
+    const tid = await openDMThread(viewer.id, id)
+    setMsgBusy(false)
+    if (tid) router.push(`/messages/${tid}`)
+  }
   const handlePin = async (postId: string, current: boolean) => {
     const ok = await togglePinPost(postId, !current)
     if (ok) setPosts(prev => prev.map(p => p.id === postId ? { ...p, pinned: !current } : p))
@@ -76,6 +116,7 @@ export default function PublicProfilePage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
+      <PiBrowserGate always />
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 pt-safe backdrop-blur">
         <button onClick={() => router.push("/")} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border active:scale-95"><X className="h-4 w-4" /></button>
         <p className="text-sm font-black">{isBusiness ? theme.label + " Space" : "Public Profile"}</p>
@@ -92,7 +133,12 @@ export default function PublicProfilePage() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <p className="font-black text-base truncate">{profile.store_name || profile.username}</p>
-                {profile.status === "active" && <ShieldCheck className="h-4 w-4 text-amber-400 shrink-0" />}
+                {/* الشارة حسب نوع الحساب الحقيقي */}
+                {profile.account_type === "official"
+                  ? <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0" />
+                  : profile.account_type === "premium"
+                  ? <Crown className="h-4 w-4 text-amber-400 shrink-0" />
+                  : profile.status === "active" && <ShieldCheck className="h-4 w-4 text-amber-400 shrink-0" />}
               </div>
               <p className="flex items-center gap-1 text-[11px] text-muted-foreground capitalize">
                 <RoleIcon className="h-3 w-3" />@{profile.username} · {theme.label}
@@ -113,9 +159,33 @@ export default function PublicProfilePage() {
             )}
           </div>
 
+          {/* المتابعون / يتابع (قابلة للنقر) + متابعة + جرس إشعارات + رسالة */}
+          <div className="flex items-center gap-4">
+            <button onClick={() => setConnTab("followers")} className="text-[12px]"><span className="font-black">{counts.followers}</span> <span className="text-muted-foreground">Followers</span></button>
+            <button onClick={() => setConnTab("following")} className="text-[12px]"><span className="font-black">{counts.following}</span> <span className="text-muted-foreground">Following</span></button>
+            {!isOwner && viewer && (
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={toggleFollow} disabled={followBusy}
+                  className={`rounded-xl px-4 py-1.5 text-[12px] font-bold transition-colors disabled:opacity-50 ${followed ? "border border-border text-muted-foreground" : "bg-amber-400 text-black"}`}>
+                  {followed ? "Following" : "Follow"}
+                </button>
+                {followed && (
+                  <button onClick={toggleNotify} title="Post notifications"
+                    className={`flex h-8 w-8 items-center justify-center rounded-xl border ${notify ? "border-amber-400/40 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}>
+                    {notify ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+                <button onClick={startMessage} disabled={msgBusy}
+                  className="flex items-center gap-1 rounded-xl border border-border px-3 py-1.5 text-[12px] font-bold disabled:opacity-50">
+                  <MessageSquare className="h-3.5 w-3.5" />Message
+                </button>
+              </div>
+            )}
+          </div>
+
           {profile.bio && <p className="text-[12px] text-muted-foreground leading-relaxed">{profile.bio}</p>}
 
-          {profile.website_url && (
+          {profile.website_url && /^https?:\/\//i.test(profile.website_url) && (
             <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[11px] text-amber-400 truncate">
               <Globe2 className="h-3 w-3 shrink-0" />{profile.website_url}
             </a>
@@ -123,9 +193,9 @@ export default function PublicProfilePage() {
 
           {(social?.telegram?.enabled || social?.instagram?.enabled || social?.x?.enabled) && (
             <div className="flex items-center gap-2">
-              {social?.telegram?.enabled && social.telegram.url && <a href={social.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Send className="h-3.5 w-3.5" /></a>}
-              {social?.instagram?.enabled && social.instagram.url && <a href={social.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Instagram className="h-3.5 w-3.5" /></a>}
-              {social?.x?.enabled && social.x.url && <a href={social.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Twitter className="h-3.5 w-3.5" /></a>}
+              {social?.telegram?.enabled && social.telegram.url && /^https?:\/\//i.test(social.telegram.url) && <a href={social.telegram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Send className="h-3.5 w-3.5" /></a>}
+              {social?.instagram?.enabled && social.instagram.url && /^https?:\/\//i.test(social.instagram.url) && <a href={social.instagram.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Instagram className="h-3.5 w-3.5" /></a>}
+              {social?.x?.enabled && social.x.url && /^https?:\/\//i.test(social.x.url) && <a href={social.x.url} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Twitter className="h-3.5 w-3.5" /></a>}
             </div>
           )}
         </div>
@@ -247,6 +317,8 @@ export default function PublicProfilePage() {
           )}
         </div>
       </div>
+
+      {connTab && <ConnectionsModal userId={id} viewerId={viewer?.id} initialTab={connTab} onClose={() => setConnTab(null)} />}
     </div>
   )
 }

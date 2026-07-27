@@ -28,8 +28,21 @@ const TYPES = [
 export default function RegisterPage() {
   useDabiaTranslation() // يُفعِّل ترجمة هذه الصفحة الفرعية عند فتحها بأي لغة مختارة
   const router = useRouter()
-  const { register } = useUserAuth()
+  const { register, loginWithPi } = useUserAuth()
   const { piUser }   = usePiNetworkAuthentication()
+
+  const [piLoading, setPiLoading] = useState(false)
+  const handlePiQuickJoin = async () => {
+    setPiLoading(true); setError("")
+    try {
+      await loginWithPi()
+      router.replace("/")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Pi sign-in failed")
+    } finally {
+      setPiLoading(false)
+    }
+  }
 
   const [step,         setStep]         = useState<"type"|"details"|"verify"|"terms"|"done">("type")
   const [selected,     setSelected]     = useState<AT | null>(null)
@@ -154,6 +167,22 @@ export default function RegisterPage() {
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-4 space-y-2.5 pb-20">
+        {error && (
+          <div className="flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-[12px] text-red-400">
+            <AlertCircle className="h-4 w-4 shrink-0" /><span>{error}</span>
+          </div>
+        )}
+        {/* أسرع طريق للتسوّق: انضمام بنقرة واحدة عبر Pi (حساب مشترٍ فوري بلا نموذج) */}
+        <button onClick={handlePiQuickJoin} disabled={piLoading}
+          className="w-full rounded-2xl bg-[#7d3cff] py-3.5 text-sm font-bold text-white disabled:opacity-40 flex items-center justify-center gap-2 active:scale-95 shadow-[0_4px_14px_rgba(125,60,255,0.35)]">
+          {piLoading ? <><Loader2 className="h-4 w-4 animate-spin" />Connecting to Pi…</> : <>Continue with Pi — start shopping<ChevronRight className="h-4 w-4" /></>}
+        </button>
+        <p className="text-center text-[10px] text-muted-foreground">One tap inside Pi Browser · buy, save & comment right away · become a seller anytime</p>
+        <div className="flex items-center gap-2 py-1">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-[11px] text-muted-foreground">or pick an account type</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
         <p className="text-[12px] text-muted-foreground text-center pb-1">Choose your account type — upgrade anytime</p>
         <div className="flex items-center justify-center gap-1.5 pb-2 text-[12px]">
           <span className="text-muted-foreground">Already have an account?</span>
@@ -201,7 +230,7 @@ export default function RegisterPage() {
             <div className="relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2">{f.icon}</div>
               <input type={f.k === "password" ? (showPassword ? "text" : "password") : f.type} value={(form as any)[f.k]} onChange={set(f.k)} placeholder={f.ph}
-                className={`w-full rounded-xl border border-border bg-background pl-9 py-2.5 text-sm outline-none focus:border-amber-400/50 transition-colors ${f.k === "password" ? "pr-10" : "pr-3"}`} />
+                className={`w-full rounded-xl input-field pl-9 py-2.5 text-sm transition-colors ${f.k === "password" ? "pr-10" : "pr-3"}`} />
               {f.k === "password" && (
                 <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -222,7 +251,7 @@ export default function RegisterPage() {
               onChange={e => { setForm(f => ({ ...f, country: e.target.value })); setCountryOpen(true) }}
               onFocus={() => setCountryOpen(true)}
               placeholder="Type to search your country…"
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-400/50 transition-colors"
+              className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm transition-colors"
             />
           </div>
           {countryOpen && countryMatches.length > 0 && (
@@ -247,19 +276,19 @@ export default function RegisterPage() {
               {selected==="merchant"?"Store Name *":selected==="company"?"Company Name *":selected==="factory"?"Factory Name *":"Business Name *"}
             </label>
             <input type="text" value={form.storeName} onChange={set("storeName")} placeholder="Your business name"
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+              className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
           </div>
         )}
         <div className="space-y-1">
           <label className="text-[12px] font-semibold text-muted-foreground">Website (optional)</label>
           <input type="url" value={form.website} onChange={set("website")} placeholder="https://yoursite.com"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
         </div>
         <div className="rounded-xl border border-border bg-card p-3 space-y-2">
           <p className="text-[11px] font-bold text-muted-foreground">Social Links (optional)</p>
           {[{k:"linkedin",ph:"LinkedIn"},{k:"instagram",ph:"Instagram"},{k:"twitter",ph:"X/Twitter"},{k:"telegram",ph:"Telegram"}].map(s => (
             <input key={s.k} type="text" value={(form as any)[s.k]} onChange={set(s.k)} placeholder={s.ph}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-amber-400/50" />
+              className="w-full rounded-lg input-field px-3 py-2 text-[12px]" />
           ))}
         </div>
         {error && (
@@ -320,7 +349,7 @@ export default function RegisterPage() {
             value={otpCode}
             onChange={e => setOtpCode(e.target.value.replace(/[^0-9]/g, ""))}
             placeholder="• • • • • •"
-            className="w-full rounded-xl border border-border bg-background px-4 py-4 text-center text-2xl font-black tracking-[0.3em] outline-none focus:border-amber-400/50"
+            className="w-full rounded-xl input-field px-4 py-4 text-center text-2xl font-black tracking-[0.3em]"
           />
         </div>
 

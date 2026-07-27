@@ -34,12 +34,23 @@ export default function SocialLinksPage() {
     </div>
   )
 
+  const safeUrl = (u: string): string => {
+    const t = u.trim()
+    if (!t) return ""
+    try {
+      const parsed = new URL(t.startsWith("http") ? t : `https://${t}`)
+      return (parsed.protocol === "https:" || parsed.protocol === "http:") ? parsed.href : ""
+    } catch { return "" }
+  }
+
   const handleSave = async () => {
     setSaving(true); setError("")
     try {
       await updateProfile({
         social_links: {
-          telegram, instagram, x,
+          telegram:  { ...telegram,  url: safeUrl(telegram.url)  },
+          instagram: { ...instagram, url: safeUrl(instagram.url) },
+          x:         { ...x,         url: safeUrl(x.url)         },
           email_public: { enabled: emailPublic },
         },
       })
@@ -96,7 +107,7 @@ export default function SocialLinksPage() {
               value={state.url}
               onChange={e => setState((s: any) => ({ ...s, url: e.target.value }))}
               placeholder={placeholder}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50"
+              className="input-field w-full rounded-xl px-3 py-2.5 text-sm"
             />
             <p className="text-[10px] text-muted-foreground">
               {state.enabled ? "✓ Visible on your public profile" : "Hidden — toggle on to show this link"}

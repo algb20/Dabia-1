@@ -18,8 +18,8 @@ export default function ProductDeepLinkPage() {
     if (!id) return
     getProductById(id).then(p => {
       if (p) {
-        try { sessionStorage.setItem("dabia_open_product_id", id) } catch {}
-        router.replace("/")
+        // نوحّد على رابط الجذر مع المعامل ?p= حتى تعمل بوّابة "افتح في Pi Browser"
+        router.replace(`/?p=${encodeURIComponent(id)}`)
       } else {
         setNotFound(true)
       }

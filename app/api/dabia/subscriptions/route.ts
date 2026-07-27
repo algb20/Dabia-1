@@ -5,7 +5,7 @@
 // Network's own servers as actually paid for the exact required amount.
 
 import { NextRequest, NextResponse } from "next/server"
-import { getAdminClient, upsertSubscriptionAdmin, getSubscriptionAdmin } from "@/lib/dabia/db/admin"
+import { getAdminClient, upsertSubscriptionAdmin, getSubscriptionAdmin, setUserAccountTypeAdmin, TIER_TO_ACCOUNT_TYPE } from "@/lib/dabia/db/admin"
 
 const PI_API_BASE = "https://api.minepi.com/v2"
 // المفتاح السرّي يُقرأ حصراً من متغيّر البيئة — لا يُكتب داخل الكود إطلاقاً.
@@ -14,11 +14,11 @@ const PI_API_KEY = process.env.PI_API_KEY
 const SUBSCRIPTION_PLANS: Record<string, { features: string[]; pricePi: number }> = {
   pro: {
     pricePi:  49,
-    features: ["AI personal assistant", "Advanced analytics", "Priority listing", "Bulk import", "Dedicated scanner agent", "Early demand alerts"],
+    features: ["Verified Premium badge", "Priority placement in smart feed & search", "Premium storefront styling", "Business analytics dashboard"],
   },
   enterprise: {
     pricePi:  199,
-    features: ["All Pro features", "White-label dashboard", "Custom dedicated agent", "Full API access", "SLA 99.9% uptime", "Custom trust badge"],
+    features: ["Official Brand badge (verified)", "Top priority placement", "Official storefront styling", "Includes every Premium perk"],
   },
 }
 
@@ -27,6 +27,23 @@ export async function GET(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 })
   const admin = getAdminClient()
   if (!admin) return NextResponse.json({ error: "Server is not configured (missing service role key)" }, { status: 503 })
+
+  // Only the owner may read their own subscription data
+  const authHeader = req.headers.get("Authorization") ?? ""
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+  if (token) {
+    const { data: { user: authUser } } = await admin.auth.getUser(token)
+    if (authUser) {
+      const { data: appUser } = await admin.from("users").select("id").eq("auth_id", authUser.id).maybeSingle()
+      if (!appUser || String(appUser.id) !== String(userId)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
+    }
+  }
+  // If no token is present we still serve the data (backward compat for
+  // in-app SWR fetches that haven't yet been updated to send auth headers).
+  // A future hardening pass can flip this to require auth unconditionally.
+
   const subscription = await getSubscriptionAdmin(admin, userId)
   return NextResponse.json({ subscription })
 }
@@ -85,5 +102,12 @@ export async function POST(req: NextRequest) {
   })
 
   if (!subscription) return NextResponse.json({ error: "Failed to save subscription" }, { status: 500 })
-  return NextResponse.json({ success: true, subscription })
+
+  // منح شارة نوع الحساب فعلياً بعد نجاح الدفع والتحقّق: enterprise → علامة رسمية
+  // (official)، pro → بائع مميّز (premium). هذه هي "تفعيل العلامة الرسمية" حقيقةً
+  // على مستوى القاعدة، فتظهر الشارة على منتجات ومنشورات صاحب الحساب.
+  const badge = TIER_TO_ACCOUNT_TYPE[body.tier]
+  if (badge) await setUserAccountTypeAdmin(admin, body.userId, badge)
+
+  return NextResponse.json({ success: true, subscription, accountType: badge ?? "standard" })
 }

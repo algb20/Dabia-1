@@ -115,14 +115,14 @@ export default function AccountVerificationPage() {
                   <div className="space-y-1">
                     <label className="text-[12px] font-semibold flex items-center gap-1.5"><Building className="h-3.5 w-3.5 text-amber-400" />Business / Store Name</label>
                     <input type="text" value={storeName} onChange={e => setStoreName(e.target.value)} placeholder="Your business name"
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+                      className="input-field w-full rounded-xl px-3 py-2.5 text-sm" />
                   </div>
                 )}
                 {needsCountry && (
                   <div className="space-y-1">
                     <label className="text-[12px] font-semibold flex items-center gap-1.5"><Globe2 className="h-3.5 w-3.5 text-amber-400" />Country</label>
                     <input type="text" value={country} onChange={e => setCountry(e.target.value)} placeholder="Your country"
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+                      className="input-field w-full rounded-xl px-3 py-2.5 text-sm" />
                   </div>
                 )}
                 <button onClick={handleComplete} disabled={saving}

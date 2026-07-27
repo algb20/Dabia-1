@@ -111,7 +111,7 @@ export default function SettingsPage() {
             <div className="px-4 py-3 border-b border-border">
               <input type="text" value={search} onChange={e => setSearch(e.target.value)} autoFocus
                 placeholder="Search language..."
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-amber-400/50" />
+                className="w-full rounded-xl input-field px-3 py-2.5 text-sm" />
             </div>
             <div className="flex-1 overflow-y-auto">
               {filtered.map(l => (

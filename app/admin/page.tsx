@@ -5,17 +5,15 @@ import { useRouter } from "next/navigation"
 import { useUserAuth } from "@/hooks/use-user-auth"
 import {
   getPendingUsers, approveUser, rejectUser,
-  meetsVerificationRequirements, VERIFICATION_REQUIREMENTS, getBusinessEmailSignal, type DBUser
+  meetsVerificationRequirements, VERIFICATION_REQUIREMENTS, getBusinessEmailSignal,
+  adminListReports, adminResolveReport, adminListWithdrawals, markWithdrawalPaid,
+  type DBUser, type DBReport, type DBWithdrawal
 } from "@/lib/dabia/db"
 import {
   X, ShieldCheck, CheckCircle2, XCircle, Loader2,
   Building, Store, Factory, Handshake, Briefcase, Users,
-  RefreshCw, CheckCheck, AlertCircle
+  RefreshCw, CheckCheck, AlertCircle, Flag, Trash2
 } from "lucide-react"
-
-// ─── قائمة الإيميلات المسموح لها بالوصول للوحة التحكم ────────────────────────
-// عدّل هذه القائمة بإيميلك الحقيقي لتقييد الوصول لمن يدير التطبيق فقط
-const ADMIN_EMAILS = ["maskmal088@gmail.com"]
 
 const ROLE_ICON: Record<string, any> = {
   merchant: Store, company: Building, factory: Factory,
@@ -33,16 +31,44 @@ export default function AdminPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [msg,      setMsg]      = useState("")
 
-  const isAdmin = user && ADMIN_EMAILS.includes(user.emall)
+  // Admin access is granted by role='admin' in the users table (set via Supabase dashboard).
+  // Falls back to the owner email so the first admin can bootstrap without a DB change.
+  const isAdmin = user && (user.role === "admin" || user.emall === "maskmal088@gmail.com")
+
+  const [reports, setReports] = useState<DBReport[]>([])
+  const [payouts, setPayouts] = useState<DBWithdrawal[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     const list = await getPendingUsers()
     setPending(list)
+    if (user?.id) {
+      adminListReports(user.id).then(setReports).catch(() => {})
+      adminListWithdrawals(user.id).then(setPayouts).catch(() => {})
+    }
     setLoading(false)
-  }, [])
+  }, [user?.id])
 
   useEffect(() => { if (isAdmin) load() }, [isAdmin, load])
+
+  const resolveReport = async (r: DBReport, status: "actioned" | "dismissed", del = false) => {
+    if (!user?.id || !r.id) return
+    await adminResolveReport(user.id, r.id, status, del)
+    setReports(prev => prev.filter(x => x.id !== r.id))
+  }
+
+  const payWithdrawal = async (w: DBWithdrawal) => {
+    if (!user?.id || !w.id) return
+    const tx = window.prompt(`Enter the Pi A2U transaction ID after sending ${w.amount}π to ${w.pi_uid || "the seller"}:`)
+    if (tx === null) return
+    await markWithdrawalPaid(user.id, w.id, tx.trim() || "manual", "paid")
+    setPayouts(prev => prev.filter(x => x.id !== w.id))
+  }
+  const rejectWithdrawal = async (w: DBWithdrawal) => {
+    if (!user?.id || !w.id || !confirm("Reject and refund this withdrawal to the seller's balance?")) return
+    await markWithdrawalPaid(user.id, w.id, "", "rejected")
+    setPayouts(prev => prev.filter(x => x.id !== w.id))
+  }
 
   if (!user) return (
     <div className="flex min-h-dvh items-center justify-center bg-background">
@@ -151,6 +177,42 @@ export default function AdminPage() {
             <strong>Auto-Approve</strong> only approves accounts that already meet their role's requirements (e.g. store name set). <strong>Approve Selected</strong> manually approves whichever accounts you check below, regardless of completeness.
           </p>
         </div>
+
+        {/* بلاغات المحتوى — إشراف */}
+        {reports.length > 0 && (
+          <div className="rounded-2xl border border-red-400/20 bg-red-400/5 p-4 space-y-2.5">
+            <p className="text-[11px] font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5"><Flag className="h-3.5 w-3.5" />Content Reports ({reports.length})</p>
+            {reports.map(r => (
+              <div key={r.id} className="rounded-xl border border-border bg-card p-3 space-y-2">
+                <p className="text-[12px] font-bold capitalize">{r.target_type} · {r.reason}</p>
+                {r.description && <p className="text-[11px] text-muted-foreground">{r.description}</p>}
+                <p className="text-[10px] text-muted-foreground font-mono">ID: {r.target_id}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => resolveReport(r, "actioned", true)} className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-1.5 text-[11px] font-bold text-white"><Trash2 className="h-3 w-3" />Remove content</button>
+                  <button onClick={() => resolveReport(r, "actioned", false)} className="rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-black">Mark actioned</button>
+                  <button onClick={() => resolveReport(r, "dismissed")} className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-bold text-muted-foreground">Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* طلبات سحب الرصيد — الأدمن يرسل Pi A2U ثم يسجّل رقم المعاملة */}
+        {payouts.length > 0 && (
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4 space-y-2.5">
+            <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5"><CheckCheck className="h-3.5 w-3.5" />Withdrawal Requests ({payouts.length})</p>
+            {payouts.map(w => (
+              <div key={w.id} className="rounded-xl border border-border bg-card p-3 space-y-2">
+                <p className="text-[13px] font-bold">{w.amount}π</p>
+                <p className="text-[10px] text-muted-foreground font-mono">Pi UID: {w.pi_uid || "—"} · user {w.user_id}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => payWithdrawal(w)} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-white">Mark paid (A2U)</button>
+                  <button onClick={() => rejectWithdrawal(w)} className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-bold text-muted-foreground">Reject &amp; refund</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* قائمة الحسابات قيد المراجعة */}
         {loading ? (

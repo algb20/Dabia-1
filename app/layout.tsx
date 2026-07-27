@@ -10,8 +10,12 @@ const appDescription = APP_CONFIG.DESCRIPTION;
 export const metadata: Metadata = {
   title: "Dabia — Smart Commerce on Pi Network",
   description: appDescription,
-  alternates: {
-    canonical: "/",
+  alternates: { canonical: "/" },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: appName,
   },
   openGraph: {
     type: "website",
@@ -23,7 +27,6 @@ export const metadata: Metadata = {
     title: appName,
     description: appDescription,
   },
-    generator: 'v0.app'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -40,6 +43,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   var dark = t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
                   document.documentElement.classList.toggle("dark", dark);
                 } catch (e) {}
+              })();
+            `,
+          }}
+        />
+        {/* Pi Network SDK — ضروري ليتوفّر window.Pi داخل Pi Browser. بدونه لا يعمل
+            تسجيل الدخول بمعرّف Pi ولا مدفوعات Pi إطلاقاً. يُحمَّل مبكراً ثم يُهيّأ. */}
+        <script src="https://sdk.minepi.com/pi-sdk.js" async />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                function initPi(){ try { if (window.Pi) { window.Pi.init({ version: "2.0", sandbox: false }); } } catch (e) {} }
+                if (window.Pi) { initPi(); }
+                else { window.addEventListener("load", function(){ setTimeout(initPi, 300); }); }
               })();
             `,
           }}

@@ -65,6 +65,13 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// Explicit column list for reading users WITHOUT the password hash. Every public
+// user read uses this so the hash is never returned to the browser via select('*').
+// (The hash lives only in the guarded `user_secrets` vault / legacy `password`
+// column, read exclusively by the server-side auth path.)
+const USER_PUBLIC_COLS =
+  "id, username, emall, role, status, created_at, country, phone, pi_uid, store_name, wallet_balance, profile, auth_id, avatar_url, bio, website_url, social_links, account_type"
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface DBUser {
   id?:             string
@@ -75,6 +82,7 @@ export interface DBUser {
   country?:        string
   role?:           string
   status?:         string
+  account_type?:   'standard' | 'premium' | 'official'  // الشارة — يُمنح من الخادم بعد اشتراك مدفوع
   pi_uid?:         string
   store_name?:     string
   wallet_balance?: number
@@ -102,12 +110,15 @@ export interface DBProduct {
   category?:       string
   image?:          string
   images?:         string[] // صور متعددة للمنتج
+  video_url?:      string | null // فيديو قصير للمنتج (Reels)
   seller_user_id?: string
   seller_name?:    string
+  seller_account_type?: 'standard' | 'premium' | 'official' // شارة البائع — تُرفق عند الجلب لعرض العلامة الرسمية/المميّزة
   stock?:          number
   rating?:         number
   review_count?:   number
   active?:         boolean  // إيقاف/تفعيل المنتج دون حذفه
+  view_count?:     number   // عدّاد مشاهدات حقيقي (تحليلات البائع)
   deal_ends_at?:   string | null // عرض محدود بوقت — يضبطه التاجر من إدارة متجره
   deal_label?:     string | null
   created_at?:     string
@@ -191,45 +202,58 @@ export async function registerUser(d: {
     wallet_balance: 0, profile: {},
     auth_id: authData?.user?.id || null,
   }
-  if (d.password)     row.password     = await hashPassword(d.password)
+  // NOTE: the password is NOT stored on the users row. It goes into the locked
+  // user_secrets vault via a SECURITY DEFINER RPC below, so the hash is never
+  // world-readable.
   if (d.phone)        row.phone        = d.phone
   if (d.country)      row.country      = d.country
   if (d.pi_uid)       row.pi_uid       = d.pi_uid
   if (d.store_name)   row.store_name   = d.store_name
   if (d.website_url)  row.website_url  = d.website_url
 
-  const { data, error } = await supabase.from('users').insert(row).select().single()
-  if (!error && data) return data as DBUser
+  // stores the password in the vault for the freshly-created account (guarded:
+  // first-time only, so it can't hijack an existing/Pi account)
+  const setSecret = async (userId?: string) => {
+    if (userId && d.password) {
+      try { await supabase.rpc('dabia_set_initial_secret', { p_user_id: Number(userId), p_password: d.password }) } catch {}
+    }
+  }
+
+  const { data, error } = await supabase.from('users').insert(row).select(USER_PUBLIC_COLS).single()
+  if (!error && data) { await setSecret((data as DBUser).id); return data as DBUser }
 
   if (error?.message.includes('column')) {
     const { data: d2, error: e2 } = await supabase
       .from('users')
       .insert({ username: d.username, emall: d.emall, role, status })
-      .select().single()
+      .select(USER_PUBLIC_COLS).single()
     if (e2) throw new Error(e2.message)
+    await setSecret((d2 as DBUser).id)
     return d2 as DBUser
   }
   throw new Error(error?.message || 'Registration failed')
 }
 
 export async function getUserByEmail(emall: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('emall', emall).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('emall', emall).maybeSingle(); return data as DBUser | null } catch { return null }
 }
 
 // تسجيل الدخول لحساب موجود فعلاً بالإيميل وكلمة السر — هذا ما كان مفقوداً تماماً
 export async function loginWithEmailPassword(email: string, password: string): Promise<{ ok: boolean; user?: DBUser; error?: string }> {
   try {
-    const user = await getUserByEmail(email)
-    if (!user) return { ok: false, error: "No account found with this email" }
-    if (!user.password) return { ok: false, error: "This account has no password set. Use 'Forgot Password' to set one." }
-    const valid = await verifyPassword(password, user.password)
-    if (!valid) return { ok: false, error: "Incorrect password" }
-
-    // ترقية تلقائية شفّافة: أي كلمة سر بصيغة قديمة (نص عادي أو SHA-256) تُعاد
-    // تجزئتها إلى PBKDF2 الآن في الخلفية دون إزعاج المستخدم.
-    if (needsRehash(user.password) && user.id) {
-      hashPassword(password).then(upgraded => updateUser(user.id!, { password: upgraded }))
+    // Credentials are verified inside the locked vault (SECURITY DEFINER RPC);
+    // the password hash never reaches the browser. Legacy formats are upgraded
+    // to pbkdf2 server-side on success.
+    const { data, error } = await supabase.rpc('dabia_login', { p_email: email, p_password: password })
+    if (error) return { ok: false, error: error.message }
+    const res = (data ?? {}) as { ok?: boolean; reason?: string; user?: DBUser }
+    if (!res.ok || !res.user) {
+      const msg = res.reason === 'no_account' ? 'No account found with this email'
+        : res.reason === 'no_password' ? "This account has no password set. Use 'Forgot Password' to set one."
+        : 'Incorrect password'
+      return { ok: false, error: msg }
     }
+    const user = res.user
 
     // إنشاء جلسة Supabase Auth حقيقية — أساس عمل كل سياسات RLS والحمايات
     // (auth.uid() يعتمد على جلسة فعلية). مع التأكيد التلقائي للبريد تُنشأ الجلسة
@@ -254,14 +278,34 @@ export async function loginWithEmailPassword(email: string, password: string): P
   }
 }
 export async function getUserById(id: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('id', id).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('id', id).maybeSingle(); return data as DBUser | null } catch { return null }
+}
+
+// تسجيل/دخول بمعرّف Pi فقط — أبسط طريقة: نقرة واحدة داخل Pi Browser بلا بريد/كلمة سر.
+// إن كان معرّف Pi مسجّلاً سابقاً نُرجع حسابه، وإلا نُنشئ حساب مشترٍ فعّالاً فوراً
+// (كامل الصلاحيات: شراء، حفظ، تعليق…). نُولّد بريداً اصطناعياً ثابتاً مرتبطاً
+// بمعرّف Pi لإبقاء ربط جلسة Supabase/RLS سليماً دون أن يُدخل المستخدم أي بريد.
+export async function loginOrRegisterWithPi(piUid: string, piUsername: string): Promise<{ ok: boolean; user?: DBUser; error?: string }> {
+  try {
+    if (!piUid) return { ok: false, error: "Pi identity is required" }
+    const existing = await getUserByPiUid(piUid)
+    if (existing) return { ok: true, user: existing }
+
+    const uname = (piUsername || `pi_${piUid.slice(0, 8)}`).trim()
+    const synthEmail = `pi.${piUid.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}@pi.dabia.app`
+    let u = await registerUser({ username: uname, emall: synthEmail, role: "buyer", pi_uid: piUid })
+    u = await tryAutoVerify(u)
+    return { ok: true, user: u }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Pi sign-in failed" }
+  }
 }
 export async function getUserByAuthId(auth_id: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('auth_id', auth_id).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('auth_id', auth_id).maybeSingle(); return data as DBUser | null } catch { return null }
 }
 
 export async function getUserByPiUid(pi_uid: string): Promise<DBUser | null> {
-  try { const { data } = await supabase.from('users').select('*').eq('pi_uid', pi_uid).maybeSingle(); return data as DBUser | null } catch { return null }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('pi_uid', pi_uid).maybeSingle(); return data as DBUser | null } catch { return null }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -282,13 +326,25 @@ function maskEmail(email: string): string {
 export async function searchAccounts(query: string): Promise<AccountSearchResult[]> {
   const q = query.trim()
   if (!q) return []
+  // strip PostgREST filter-special chars to prevent .or() filter injection
+  const safe = q.replace(/[(),]/g, '').slice(0, 100)
+  if (!safe) return []
   try {
     const byPiUid = await getUserByPiUid(q)
     if (byPiUid) {
       return [{ id: byPiUid.id!, username: byPiUid.username, role: byPiUid.role || 'buyer', pi_uid: byPiUid.pi_uid, avatar_url: byPiUid.avatar_url, store_name: byPiUid.store_name, emallMasked: maskEmail(byPiUid.emall) }]
     }
-    const { data } = await supabase.from('users').select('*').or(`username.ilike.%${q}%,store_name.ilike.%${q}%`).limit(10)
-    return ((data ?? []) as DBUser[]).map(u => ({ id: u.id!, username: u.username, role: u.role || 'buyer', pi_uid: u.pi_uid, avatar_url: u.avatar_url, store_name: u.store_name, emallMasked: maskEmail(u.emall) }))
+    // Use separate .ilike() calls (fully parameterised) rather than .or() string interpolation
+    const [r1, r2] = await Promise.all([
+      supabase.from('users').select(USER_PUBLIC_COLS).ilike('username',   `%${safe}%`).limit(10),
+      supabase.from('users').select(USER_PUBLIC_COLS).ilike('store_name', `%${safe}%`).limit(10),
+    ])
+    const seen = new Set<string>()
+    const rows: DBUser[] = []
+    for (const u of [...(r1.data ?? []), ...(r2.data ?? [])] as DBUser[]) {
+      if (u.id && !seen.has(u.id)) { seen.add(u.id); rows.push(u) }
+    }
+    return rows.map(u => ({ id: u.id!, username: u.username, role: u.role || 'buyer', pi_uid: u.pi_uid, avatar_url: u.avatar_url, store_name: u.store_name, emallMasked: maskEmail(u.emall) }))
   } catch { return [] }
 }
 // ── روابط التواصل الرسمية للتطبيق (وليست الشخصية) ──────────────────
@@ -357,7 +413,7 @@ export async function updateUser(id: string, u: Partial<DBUser>): Promise<DBUser
     const { data: session } = await supabase.auth.getSession()
     const payload: any = { ...u }
     if (session?.session?.user?.id) payload.auth_id = session.session.user.id
-    const { data, error } = await supabase.from('users').update(payload).eq('id', id).select().single()
+    const { data, error } = await supabase.from('users').update(payload).eq('id', id).select(USER_PUBLIC_COLS).single()
     if (error) {
       // مهم: لا نُخفي الخطأ — الواجهة (handleSave وغيرها) تحتاج معرفة الفشل
       // الحقيقي بدل افتراض النجاح. هذا كان يجعل الحفظ "يبدو ناجحاً" دائماً
@@ -377,19 +433,17 @@ export async function updateUser(id: string, u: Partial<DBUser>): Promise<DBUser
 // ═══════════════════════════════════════════════════════════════════════════════
 export async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const { data: user, error: fetchErr } = await supabase.from('users').select('password, emall').eq('id', userId).single()
-    if (fetchErr || !user) return { ok: false, error: 'Account not found' }
-    if (!user.password) return { ok: false, error: 'No password set on this account yet' }
-
-    const valid = await verifyPassword(currentPassword, user.password)
-    if (!valid) return { ok: false, error: 'Current password is incorrect' }
     if (newPassword.length < 6) return { ok: false, error: 'New password must be at least 6 characters' }
 
-    const hashed = await hashPassword(newPassword)
-    const { error: updateErr } = await supabase.from('users').update({ password: hashed }).eq('id', userId)
-    if (updateErr) return { ok: false, error: updateErr.message }
+    // Verify current + store new entirely inside the locked vault (server-side,
+    // SECURITY DEFINER). The password hash never touches the browser.
+    const { data, error } = await supabase.rpc('dabia_change_password', {
+      p_user_id: Number(userId), p_current: currentPassword, p_new: newPassword,
+    })
+    if (error) return { ok: false, error: error.message }
+    if (data !== true) return { ok: false, error: 'Current password is incorrect' }
 
-    // مزامنة كلمة السر مع Supabase Auth الحقيقي إن وُجدت جلسة (يبقيها متوافقة لتسجيل الدخول لاحقاً)
+    // Keep the Supabase Auth credential in sync if a session exists (optional).
     try { await supabase.auth.updateUser({ password: newPassword }) } catch {}
 
     return { ok: true }
@@ -453,14 +507,39 @@ export async function getShareCount(productId: string): Promise<number> {
 }
 
 // التعليقات الحقيقية على المنتجات
-export interface DBComment { id?: string; product_id: string; user_id: string; username: string; avatar_url?: string; text: string; created_at?: string }
+export interface DBComment {
+  id?: string; product_id: string; user_id: string; username: string
+  avatar_url?: string; text: string; parent_id?: string | null
+  like_count?: number; created_at?: string
+  liked?: boolean       // محسوب للمستخدم الحالي (واجهة)
+  replies?: DBComment[] // مبنية شجرياً في الواجهة
+}
 
 export async function addComment(c: DBComment): Promise<{ comment: DBComment | null; error?: string }> {
   try {
-    const { data, error } = await supabase.from('product_comments').insert(c).select().single()
+    const row: any = { product_id: c.product_id, user_id: c.user_id, username: c.username, avatar_url: c.avatar_url, text: c.text }
+    if (c.parent_id) row.parent_id = Number(c.parent_id)
+    const { data, error } = await supabase.from('product_comments').insert(row).select().single()
     if (error) { console.error('[addComment]', error.message); return { comment: null, error: error.message } }
     return { comment: data as DBComment }
   } catch (e) { return { comment: null, error: e instanceof Error ? e.message : 'Failed to comment' } }
+}
+
+// إعجاب/إلغاء إعجاب على تعليق (العدّاد يُحدَّث بـ trigger في القاعدة)
+export async function toggleCommentLike(commentId: string, userId: string): Promise<{ liked: boolean }> {
+  try {
+    const { data: existing } = await supabase.from('comment_likes').select('id').eq('comment_id', commentId).eq('user_id', userId).maybeSingle()
+    if (existing) { await supabase.from('comment_likes').delete().eq('id', existing.id); return { liked: false } }
+    await supabase.from('comment_likes').insert({ comment_id: Number(commentId), user_id: Number(userId) })
+    return { liked: true }
+  } catch { return { liked: false } }
+}
+export async function getCommentLikes(userId: string, commentIds: string[]): Promise<Set<string>> {
+  try {
+    if (commentIds.length === 0) return new Set()
+    const { data } = await supabase.from('comment_likes').select('comment_id').eq('user_id', userId).in('comment_id', commentIds)
+    return new Set((data ?? []).map((r: any) => String(r.comment_id)))
+  } catch { return new Set() }
 }
 
 export async function getComments(productId: string): Promise<DBComment[]> {
@@ -468,6 +547,15 @@ export async function getComments(productId: string): Promise<DBComment[]> {
     const { data } = await supabase.from('product_comments').select('*').eq('product_id', productId).order('created_at', { ascending: false }).limit(50)
     return (data ?? []) as DBComment[]
   } catch { return [] }
+}
+
+// تعديل تعليق (لصاحبه فقط — يُتحقق في الواجهة بإظهار الزر لصاحب التعليق)
+export async function updateComment(commentId: string, text: string): Promise<boolean> {
+  try { const { error } = await supabase.from('product_comments').update({ text }).eq('id', commentId); return !error } catch { return false }
+}
+// حذف تعليق
+export async function deleteComment(commentId: string): Promise<boolean> {
+  try { const { error } = await supabase.from('product_comments').delete().eq('id', commentId); return !error } catch { return false }
 }
 
 // ─── نظام التحقق حسب نوع الحساب ──────────────────────────────────────────────
@@ -511,9 +599,14 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
     const emailSignal = getBusinessEmailSignal(user)
     if (emailSignal.domainVerified) {
       try {
+        const { data: { session } } = await supabase.auth.getSession()
         const res = await fetch('/api/dabia/verify-business', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url, userId: user.id }),
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({ storeName: user.store_name, websiteUrl: user.website_url }),
         })
         const verify = await res.json()
         if (verify.activated) {
@@ -528,7 +621,7 @@ export async function tryAutoVerify(user: DBUser): Promise<DBUser> {
 }
 
 export async function getPendingUsers(): Promise<DBUser[]> {
-  try { const { data } = await supabase.from('users').select('*').eq('status','pending').order('created_at',{ascending:false}); return (data??[]) as DBUser[] } catch { return [] }
+  try { const { data } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('status','pending').order('created_at',{ascending:false}); return (data??[]) as DBUser[] } catch { return [] }
 }
 // موافقة/رفض الأدمن — عبر دالة موثوقة تتحقق أن المُنفِّذ حسابه admin فعلاً
 export async function approveUser(id: string): Promise<DBUser | null> {
@@ -541,12 +634,25 @@ export async function rejectUser(id: string): Promise<DBUser | null> {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRODUCTS
 // ═══════════════════════════════════════════════════════════════════════════════
+// يرفق شارة البائع (نوع الحساب) بكل منتج بجلب دفعة واحدة لأنواع حسابات البائعين
+// المميّزين. المصدر الوحيد للحقيقة هو عمود users.account_type الذي يضبطه الخادم بعد
+// الاشتراك المدفوع — فتظهر العلامة الرسمية/المميّزة على البطاقات فعلياً لا كواجهة.
+export async function attachSellerAccountTypes(list: DBProduct[]): Promise<DBProduct[]> {
+  const ids = Array.from(new Set(list.map(p => p.seller_user_id).filter(Boolean))) as string[]
+  if (ids.length === 0) return list
+  try {
+    const { data } = await supabase.from('users').select('id, account_type').in('id', ids)
+    const byId = new Map((data ?? []).map((u: any) => [String(u.id), u.account_type as DBProduct['seller_account_type']]))
+    return list.map(p => ({ ...p, seller_account_type: byId.get(String(p.seller_user_id)) || 'standard' }))
+  } catch { return list }
+}
+
 export async function getProducts(o: { category?: string; limit?: number; search?: string } = {}): Promise<DBProduct[]> {
   try {
     let q = supabase.from('products').select('*').eq('active', true).order('created_at', { ascending: false }).limit(o.limit ?? 50)
     if (o.category) q = q.eq('category', o.category)
     if (o.search)   q = q.ilike('name', `%${o.search}%`)
-    const { data } = await q; return (data ?? []) as DBProduct[]
+    const { data } = await q; return await attachSellerAccountTypes((data ?? []) as DBProduct[])
   } catch { return [] }
 }
 export async function addProduct(d: DBProduct): Promise<DBProduct> {
@@ -566,7 +672,16 @@ export async function toggleProductActive(id: string, active: boolean): Promise<
   try { const { error } = await supabase.from('products').update({ active }).eq('id', id); return !error } catch { return false }
 }
 export async function getProductById(id: string): Promise<DBProduct | null> {
-  try { const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle(); return data as DBProduct | null } catch { return null }
+  try {
+    const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle()
+    if (!data) return null
+    return (await attachSellerAccountTypes([data as DBProduct]))[0]
+  } catch { return null }
+}
+
+// تسجيل مشاهدة منتج (تحليلات) — يُستدعى عند فتح صفحة المنتج
+export async function recordProductView(id: string): Promise<void> {
+  try { await supabase.rpc('increment_product_view', { p_id: Number(id) }) } catch {}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -633,12 +748,13 @@ export async function getActiveDeals(limit = 12): Promise<DBProduct[]> {
       .or(`deal_ends_at.gt.${nowIso},and(original_price.not.is.null,original_price.gt.0)`)
       .order('created_at', { ascending: false })
       .limit(limit * 2) // نجلب أكثر ثم نصفّي بدقة (شرط الخصم الحقيقي يحتاج مقارنة عمودين)
-    return ((data ?? []) as DBProduct[])
+    const deals = ((data ?? []) as DBProduct[])
       .filter(p =>
         (p.deal_ends_at && new Date(p.deal_ends_at).getTime() > Date.now()) ||
         (p.original_price != null && p.original_price > p.price)
       )
       .slice(0, limit)
+    return await attachSellerAccountTypes(deals)
   } catch { return [] }
 }
 
@@ -651,13 +767,223 @@ export async function getTrendingProducts(limit = 5): Promise<Array<DBProduct & 
     if (ids.length === 0) return []
     const { data: products } = await supabase.from('products').select('*').in('id', ids)
     const byId = new Map((products ?? []).map((p: any) => [String(p.id), p]))
-    return (scores ?? [])
+    const ranked = (scores ?? [])
       .map((s: any) => { const p = byId.get(String(s.product_id)); return p ? { ...p, trend_score: Number(s.trend_score) } : null })
       .filter(Boolean) as Array<DBProduct & { trend_score: number }>
+    return await attachSellerAccountTypes(ranked) as Array<DBProduct & { trend_score: number }>
   } catch { return [] }
 }
 export async function getProductsBySeller(sid: string): Promise<DBProduct[]> {
-  try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return (data??[]) as DBProduct[] } catch { return [] }
+  try { const { data } = await supabase.from('products').select('*').eq('seller_user_id', sid).order('created_at',{ascending:false}); return await attachSellerAccountTypes((data??[]) as DBProduct[]) } catch { return [] }
+}
+
+// توصيات شخصية حقيقية عبر محرّك الخادم get_recommendations (هجين محتوى + تراند).
+// userId فارغ/غير مسجّل → توصيات عامة رائجة (cold start) بنفس الدالة.
+export async function getRecommendations(userId?: string, limit = 20): Promise<DBProduct[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_recommendations', {
+      p_user_id: userId ? Number(userId) : null,
+      p_limit: limit,
+    })
+    if (error || !data) return []
+    return await attachSellerAccountTypes(data as DBProduct[])
+  } catch { return [] }
+}
+
+// ── منتجات قريبة: تُصفَّح حسب بلد البائع (ملف المستخدم → users.country) ────
+export async function getProductsByCountry(country: string, limit = 12): Promise<DBProduct[]> {
+  if (!country) return []
+  try {
+    const { data: sellers } = await supabase.from('users').select('id').ilike('country', country.trim()).limit(100)
+    if (!sellers?.length) return []
+    const ids = sellers.map((s: any) => s.id)
+    const { data } = await supabase.from('products').select('*').eq('active', true)
+      .in('seller_user_id', ids).order('created_at', { ascending: false }).limit(limit)
+    return await attachSellerAccountTypes((data ?? []) as DBProduct[])
+  } catch { return [] }
+}
+
+// ── Reels: فيديوهات منتجات قصيرة عمودية (اكتشاف بأسلوب TikTok) ─────────────
+export async function getReels(limit = 30): Promise<DBProduct[]> {
+  try {
+    const { data } = await supabase.from('products').select('*')
+      .eq('active', true).not('video_url', 'is', null)
+      .order('created_at', { ascending: false }).limit(limit)
+    return await attachSellerAccountTypes((data ?? []) as DBProduct[])
+  } catch { return [] }
+}
+
+// ── مركز النزاعات/الاسترداد ────────────────────────────────────────────────
+export interface DBDispute {
+  id?: string; order_id: string; buyer_id: string; seller_id?: string
+  reason: string; description?: string | null
+  status: 'open' | 'resolved' | 'rejected' | 'refunded'
+  resolution_note?: string | null; created_at?: string; resolved_at?: string | null
+}
+export async function openDispute(orderId: string, buyerId: string, reason: string, description?: string): Promise<DBDispute | null> {
+  try {
+    const { data, error } = await supabase.rpc('open_dispute', { p_order: Number(orderId), p_buyer: Number(buyerId), p_reason: reason, p_desc: description ?? null })
+    if (error || !data) return null
+    return data as DBDispute
+  } catch { return null }
+}
+export async function resolveDispute(disputeId: string, actorId: string, resolution: 'resolved' | 'rejected' | 'refunded', note?: string): Promise<DBDispute | null> {
+  try {
+    const { data, error } = await supabase.rpc('resolve_dispute', { p_dispute: Number(disputeId), p_actor: Number(actorId), p_resolution: resolution, p_note: note ?? null })
+    if (error || !data) return null
+    return data as DBDispute
+  } catch { return null }
+}
+export async function getDisputeForOrder(orderId: string): Promise<DBDispute | null> {
+  try { const { data } = await supabase.from('order_disputes').select('*').eq('order_id', orderId).maybeSingle(); return (data as DBDispute) ?? null } catch { return null }
+}
+export async function getDisputesForSeller(sellerId: string): Promise<DBDispute[]> {
+  try { const { data } = await supabase.from('order_disputes').select('*').eq('seller_id', sellerId).order('created_at', { ascending: false }); return (data ?? []) as DBDispute[] } catch { return [] }
+}
+
+// ── درجة الثقة الحقيقية للبائع (محسوبة من تقييمات/طلبات/نزاعات فعلية) ────────
+export interface SellerTrust { score: number; avg_rating: number; reviews_count: number; completed_orders: number; disputes: number }
+export async function getSellerTrust(sellerId: string): Promise<SellerTrust | null> {
+  try {
+    const { data, error } = await supabase.rpc('seller_trust_score', { p_seller: Number(sellerId) })
+    if (error || !data || !data[0]) return null
+    const r = data[0]
+    return { score: Number(r.score), avg_rating: Number(r.avg_rating), reviews_count: Number(r.reviews_count), completed_orders: Number(r.completed_orders), disputes: Number(r.disputes) }
+  } catch { return null }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUPS / COMMUNITIES — نظام مجموعات منظّم (خاصة للشركات والحسابات المهمة)
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface DBGroup {
+  id?:            string
+  name:           string
+  description?:   string | null
+  category?:      string | null
+  avatar_url?:    string | null
+  cover_url?:     string | null
+  owner_user_id:  string
+  privacy:        'public' | 'private'
+  is_official?:   boolean
+  member_count?:  number
+  created_at?:    string
+}
+export interface DBGroupMember {
+  id?: string; group_id: string; user_id: string
+  role: 'owner' | 'admin' | 'member'; status: 'active' | 'pending'
+  joined_at?: string
+  username?: string; avatar_url?: string // مُدمج عند الجلب
+}
+export interface DBGroupPost {
+  id?: string; group_id: string; user_id: string; username: string
+  avatar_url?: string | null; text?: string | null
+  product_snapshot?: { id: string; name: string; price: number; image?: string } | null
+  created_at?: string
+}
+
+export async function getGroups(opts: { search?: string; category?: string; limit?: number } = {}): Promise<DBGroup[]> {
+  try {
+    let q = supabase.from('groups').select('*').order('member_count', { ascending: false }).limit(opts.limit ?? 50)
+    if (opts.category && opts.category !== 'All') q = q.eq('category', opts.category)
+    if (opts.search) q = q.ilike('name', `%${opts.search}%`)
+    const { data } = await q
+    return (data ?? []) as DBGroup[]
+  } catch { return [] }
+}
+
+export async function getGroupById(id: string): Promise<DBGroup | null> {
+  try { const { data } = await supabase.from('groups').select('*').eq('id', id).maybeSingle(); return (data as DBGroup) ?? null } catch { return null }
+}
+
+// المجموعات التي ينتمي إليها المستخدم (نشط أو طلب معلّق)
+export async function getMyGroups(userId: string): Promise<Array<DBGroup & { my_status: string; my_role: string }>> {
+  try {
+    const { data: mem } = await supabase.from('group_members').select('group_id, role, status').eq('user_id', userId)
+    const rows = (mem ?? []) as { group_id: string; role: string; status: string }[]
+    if (rows.length === 0) return []
+    const ids = rows.map(r => r.group_id)
+    const { data: gs } = await supabase.from('groups').select('*').in('id', ids)
+    const byId = new Map(rows.map(r => [String(r.group_id), r]))
+    return ((gs ?? []) as DBGroup[]).map(g => {
+      const m = byId.get(String(g.id))
+      return { ...g, my_status: m?.status ?? 'active', my_role: m?.role ?? 'member' }
+    })
+  } catch { return [] }
+}
+
+export async function createGroup(input: {
+  owner_user_id: string; name: string; description?: string; category?: string
+  privacy: 'public' | 'private'; avatar_url?: string; cover_url?: string
+}): Promise<DBGroup | null> {
+  try {
+    const { data, error } = await supabase.rpc('create_group', {
+      p_owner: Number(input.owner_user_id), p_name: input.name,
+      p_description: input.description ?? null, p_category: input.category ?? null,
+      p_privacy: input.privacy, p_avatar: input.avatar_url ?? null, p_cover: input.cover_url ?? null,
+    })
+    if (error || !data) return null
+    return data as DBGroup
+  } catch { return null }
+}
+
+// يعيد حالة العضوية: 'active' | 'pending' | null
+export async function getMembership(groupId: string, userId: string): Promise<{ status: string; role: string } | null> {
+  try {
+    const { data } = await supabase.from('group_members').select('status, role').eq('group_id', groupId).eq('user_id', userId).maybeSingle()
+    return data ? { status: (data as any).status, role: (data as any).role } : null
+  } catch { return null }
+}
+
+export async function joinGroup(groupId: string, userId: string): Promise<'active' | 'pending' | null> {
+  try {
+    const { data, error } = await supabase.rpc('join_group', { p_group: Number(groupId), p_user: Number(userId) })
+    if (error) return null
+    return data as 'active' | 'pending'
+  } catch { return null }
+}
+
+export async function leaveGroup(groupId: string, userId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('leave_group', { p_group: Number(groupId), p_user: Number(userId) }); return !error } catch { return false }
+}
+
+export async function getGroupMembers(groupId: string): Promise<DBGroupMember[]> {
+  try {
+    const { data } = await supabase.from('group_members').select('*').eq('group_id', groupId).order('joined_at', { ascending: true })
+    const rows = (data ?? []) as DBGroupMember[]
+    const ids = Array.from(new Set(rows.map(r => r.user_id)))
+    if (ids.length) {
+      const { data: users } = await supabase.from('users').select('id, username, avatar_url').in('id', ids)
+      const byId = new Map((users ?? []).map((u: any) => [String(u.id), u]))
+      return rows.map(r => ({ ...r, username: byId.get(String(r.user_id))?.username, avatar_url: byId.get(String(r.user_id))?.avatar_url }))
+    }
+    return rows
+  } catch { return [] }
+}
+
+export async function moderateGroupMember(groupId: string, actorId: string, targetId: string, action: 'approve' | 'remove' | 'promote' | 'demote'): Promise<boolean> {
+  try { const { error } = await supabase.rpc('group_moderate', { p_group: Number(groupId), p_actor: Number(actorId), p_target: Number(targetId), p_action: action }); return !error } catch { return false }
+}
+
+export async function getGroupPosts(groupId: string, limit = 50): Promise<DBGroupPost[]> {
+  try { const { data } = await supabase.from('group_posts').select('*').eq('group_id', groupId).order('created_at', { ascending: false }).limit(limit); return (data ?? []) as DBGroupPost[] } catch { return [] }
+}
+
+export async function postToGroup(input: {
+  group_id: string; user_id: string; username: string; avatar_url?: string
+  text?: string; product_snapshot?: DBGroupPost['product_snapshot']
+}): Promise<DBGroupPost | null> {
+  try {
+    const { data, error } = await supabase.rpc('post_to_group', {
+      p_group: Number(input.group_id), p_user: Number(input.user_id), p_username: input.username,
+      p_avatar: input.avatar_url ?? null, p_text: input.text ?? null, p_snapshot: input.product_snapshot ?? null,
+    })
+    if (error || !data) return null
+    return data as DBGroupPost
+  } catch { return null }
+}
+
+export async function deleteGroupPost(postId: string, actorId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('delete_group_post', { p_post: Number(postId), p_actor: Number(actorId) }); return !error } catch { return false }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -694,8 +1020,16 @@ export async function createStream(s: Omit<DBLiveStream, 'id' | 'created_at' | '
   try {
     const { data, error } = await supabase.from('live_streams').insert(s).select().single()
     if (error) return null
-    return data as DBLiveStream
+    const stream = data as DBLiveStream
+    // نشر تلقائي على صفحة الاجتماعي عند بدء بث مباشر فوراً (كل ما في الفضاء يظهر بالاجتماعي)
+    if (stream.status === 'live') { crossPostToSocial(stream.host_user_id, stream.host_username, `🔴 Live now: "${stream.title}" — join on Space`) }
+    return stream
   } catch { return null }
+}
+
+// نشر تلقائي موحّد من الفضاء إلى الاجتماعي (بث/مزاد/إعلان…) — منشور رسمي في الفيد
+async function crossPostToSocial(userId: string, username: string, text: string): Promise<void> {
+  try { await supabase.from('posts').insert({ user_id: userId, username, type: 'announcement', text, is_official: true }) } catch {}
 }
 export async function updateStream(id: string, updates: Partial<DBLiveStream>): Promise<DBLiveStream | null> {
   try {
@@ -705,7 +1039,10 @@ export async function updateStream(id: string, updates: Partial<DBLiveStream>): 
   } catch { return null }
 }
 export async function startStream(id: string): Promise<DBLiveStream | null> {
-  return updateStream(id, { status: 'live', started_at: new Date().toISOString() })
+  const s = await updateStream(id, { status: 'live', started_at: new Date().toISOString() })
+  // بثّ مجدول انطلق الآن → نشر تلقائي على الاجتماعي
+  if (s) crossPostToSocial(s.host_user_id, s.host_username, `🔴 Live now: "${s.title}" — join on Space`)
+  return s
 }
 export async function endStream(id: string): Promise<DBLiveStream | null> {
   return updateStream(id, { status: 'ended', ended_at: new Date().toISOString() })
@@ -843,11 +1180,14 @@ export async function resetPasswordWithCode(email: string, code: string, newPass
     if (error) return { ok: false, error: error.message }
     if (!data.session && !data.user) return { ok: false, error: 'Invalid or expired code' }
 
-    // تحديث كلمة السر في جدول users (المصدر الذي يستخدمه التطبيق فعلياً للتحقق)
-    const user = await getUserByEmail(email)
-    if (!user?.id) return { ok: false, error: 'Account not found' }
-    const updated = await updateUser(user.id, { password: await hashPassword(newPassword) })
-    if (!updated) return { ok: false, error: 'Failed to update password' }
+    // Store the new password in the locked vault, authorized by the OTP-verified
+    // session (the RPC uses auth.email(), not a client-supplied id).
+    const { data: done, error: rpcErr } = await supabase.rpc('dabia_reset_password', { p_new: newPassword })
+    if (rpcErr) return { ok: false, error: rpcErr.message }
+    if (done !== true) return { ok: false, error: 'Failed to update password. Please retry the reset.' }
+
+    // keep the Supabase Auth credential in sync when possible
+    try { await supabase.auth.updateUser({ password: newPassword }) } catch {}
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Reset failed' }
@@ -865,11 +1205,8 @@ export const ORDER_STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'shipped'
 export async function createOrder(d: DBOrder): Promise<DBOrder> {
   const { data, error } = await supabase.from('orders').insert({ ...d, status: d.status || 'confirmed' }).select().single()
   if (error) throw new Error(error.message)
-  // خفض المخزون فعلياً عند الطلب
-  if (d.product_id && d.quantity) {
-    const product = await getProductById(d.product_id)
-    if (product?.stock != null) await updateProduct(d.product_id, { stock: Math.max(0, product.stock - d.quantity) })
-  }
+  // خصم المخزون يتم تلقائياً في القاعدة عبر trigger عند إدراج الطلب
+  // (لم يعد العميل يكتب عمود stock مباشرة — جدول المنتجات مقفل على المالك).
   return data as DBOrder
 }
 
@@ -945,39 +1282,47 @@ export async function requestOrderCancellation(orderId: string, reason: string):
 // NOTIFICATIONS — إشعارات حقيقية مبنية على أحداث فعلية للمستخدم (لا بيانات ثابتة)
 // ═══════════════════════════════════════════════════════════════════════════════
 export interface RealNotif {
-  id: string; type: string; title: string; body: string; time: string; read: boolean
+  id: string; type: string; title: string; body: string; time: string; read: boolean; link?: string
 }
 
 export async function getRealNotifications(userId: string): Promise<RealNotif[]> {
   try {
     const notifs: RealNotif[] = []
 
-    // 1) إشعار من حالة الحساب (تحت المراجعة / مقبول)
+    // 1) الإشعارات المحفوظة (أحداث فعلية: متابعة/رسالة/نزاع/طلب/منشور) — المصدر
+    // الأساسي، بحالة "مقروء" حقيقية محفوظة في القاعدة.
+    try {
+      const { data: persisted } = await supabase.rpc('get_notifications', { p_me: Number(userId), p_limit: 60 })
+      ;(persisted as any[] ?? []).forEach(n => notifs.push({
+        id: `db-${n.id}`, type: n.type, title: n.title, body: n.body || "",
+        time: n.created_at, read: n.read, link: n.link || undefined,
+      }))
+    } catch {}
+
+    // 2) تنبيه حالة الحساب (تحت المراجعة) — حالة قائمة، إعلامية (لا تُحتسب كغير مقروءة)
     const user = await getUserById(userId)
     if (user?.status === "pending") {
       notifs.push({
         id: "account-pending", type: "account",
         title: "Account Under Review",
         body: `Your ${user.role} account is being verified. We'll notify you once approved.`,
-        time: user.created_at || new Date().toISOString(), read: false,
-      })
-    } else if (user?.status === "active" && user.role !== "buyer") {
-      notifs.push({
-        id: "account-approved", type: "account",
-        title: "Account Approved ✓",
-        body: `Your ${user.role} account is now active. You can start adding products.`,
-        time: user.created_at || new Date().toISOString(), read: true,
+        time: user.created_at || new Date().toISOString(), read: true, link: "/account",
       })
     }
 
-    // 2) إشعارات حقيقية من آخر طلبات المستخدم الفعلية
-    const orders = await getOrdersByBuyer(userId)
-    orders.slice(0, 5).forEach(o => {
+    // 3) تنبيهات انخفاض السعر — منتج حفظته أصبح الآن ضمن تخفيض/عرض محدود (إعلامية)
+    const now = Date.now()
+    const saved = await getSavedProducts(userId)
+    saved.forEach(p => {
+      const dealActive = !!p.deal_ends_at && new Date(p.deal_ends_at).getTime() > now
+      const discounted = p.original_price != null && p.original_price > p.price
+      if (!dealActive && !discounted) return
+      const pct = discounted ? Math.round((1 - p.price / (p.original_price as number)) * 100) : null
       notifs.push({
-        id: `order-${o.id}`, type: "order",
-        title: o.status === "confirmed" ? "Order Confirmed" : `Order ${o.status}`,
-        body: `Your order of ${o.total_price}π has been ${o.status}.`,
-        time: o.created_at || new Date().toISOString(), read: true,
+        id: `deal-${p.id}`, type: "deal",
+        title: pct ? `Price drop · ${pct}% off` : "Limited-time offer",
+        body: `"${p.name}" you saved is now ${p.price}π${discounted ? ` (was ${p.original_price}π)` : ""}.`,
+        time: p.updated_at || p.deal_ends_at || new Date().toISOString(), read: true,
       })
     })
 
@@ -985,6 +1330,30 @@ export async function getRealNotifications(userId: string): Promise<RealNotif[]>
     notifs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
     return notifs
   } catch { return [] }
+}
+
+// ── بلاغات المحتوى (إساءة/كراهية/احتيال) ──────────────────────────────────
+export interface DBReport {
+  id?: string; reporter_id: string; target_type: 'post' | 'user' | 'product'; target_id: string
+  reason: string; description?: string | null; status?: string; created_at?: string
+}
+export async function reportContent(reporterId: string, targetType: 'post' | 'user' | 'product', targetId: string, reason: string, description?: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('report_content', { p_reporter: Number(reporterId), p_type: targetType, p_target: String(targetId), p_reason: reason, p_desc: description ?? null }); return !error } catch { return false }
+}
+export async function adminListReports(adminId: string): Promise<DBReport[]> {
+  try { const { data, error } = await supabase.rpc('admin_list_reports', { p_admin: Number(adminId) }); if (error || !data) return []; return data as DBReport[] } catch { return [] }
+}
+export async function adminResolveReport(adminId: string, reportId: string, status: 'reviewed' | 'actioned' | 'dismissed', deleteTarget = false): Promise<boolean> {
+  try { const { error } = await supabase.rpc('admin_resolve_report', { p_admin: Number(adminId), p_report: Number(reportId), p_status: status, p_delete_target: deleteTarget }); return !error } catch { return false }
+}
+
+// عدد الإشعارات غير المقروءة (المحفوظة فقط) — لشارة الجرس
+export async function getNotificationsUnread(userId: string): Promise<number> {
+  try { const { data } = await supabase.rpc('notifications_unread', { p_me: Number(userId) }); return Number(data) || 0 } catch { return 0 }
+}
+// تعليم كل الإشعارات كمقروءة عند فتح اللوحة
+export async function markNotificationsRead(userId: string): Promise<void> {
+  try { await supabase.rpc('mark_notifications_read', { p_me: Number(userId) }) } catch {}
 }
 // ملاحظة: تعريف updateOrderStatus القديم (id, status, pi_tx_id) حُذف — استُبدل
 // بالنسخة الأحدث أعلاه (orderId, status, note) التي تدعم كامل تتبع الطلبات
@@ -1021,6 +1390,28 @@ export async function getWalletTransactions(userId: string): Promise<DBWalletTra
       .eq('user_id', userId).order('created_at', { ascending: false }).limit(30)
     return (data ?? []) as DBWalletTransaction[]
   } catch { return [] }
+}
+
+// ── سحب الرصيد (طلب سحب فعلي يخصم الرصيد ويُنشئ طلباً للأدمن/A2U) ───────────
+export interface DBWithdrawal {
+  id?: string; user_id: string; amount: number; pi_uid?: string | null
+  status: 'pending' | 'paid' | 'rejected'; pi_tx_id?: string | null; created_at?: string; processed_at?: string | null
+}
+export async function requestWithdrawal(userId: string, amount: number): Promise<{ ok: boolean; error?: string; withdrawal?: DBWithdrawal }> {
+  try {
+    const { data, error } = await supabase.rpc('request_withdrawal', { p_user: Number(userId), p_amount: amount })
+    if (error) return { ok: false, error: error.message.includes('insufficient') ? 'Insufficient balance' : error.message }
+    return { ok: true, withdrawal: data as DBWithdrawal }
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'Failed' } }
+}
+export async function listWithdrawals(userId: string): Promise<DBWithdrawal[]> {
+  try { const { data } = await supabase.rpc('list_withdrawals', { p_user: Number(userId) }); return (data ?? []) as DBWithdrawal[] } catch { return [] }
+}
+export async function adminListWithdrawals(adminId: string): Promise<DBWithdrawal[]> {
+  try { const { data, error } = await supabase.rpc('admin_list_withdrawals', { p_admin: Number(adminId) }); if (error || !data) return []; return data as DBWithdrawal[] } catch { return [] }
+}
+export async function markWithdrawalPaid(adminId: string, reqId: string, txId: string, status: 'paid' | 'rejected' = 'paid'): Promise<boolean> {
+  try { const { error } = await supabase.rpc('mark_withdrawal_paid', { p_admin: Number(adminId), p_req: Number(reqId), p_txid: txId, p_status: status }); return !error } catch { return false }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1093,9 +1484,21 @@ export interface DBPost {
   poll?:         DBPoll
   pinned?:       boolean
   is_official?:  boolean
+  account_type?: 'standard' | 'premium' | 'official' // شارة الكاتب — تُرفق عند الجلب
   reposted_from?: string
   reposted_from_username?: string
   created_at?:   string
+}
+
+// يرفق شارة الكاتب (نوع الحساب) بكل منشور — نفس منطق المنتجات، مصدر واحد للحقيقة
+async function attachAuthorAccountTypes(posts: DBPost[]): Promise<DBPost[]> {
+  const ids = Array.from(new Set(posts.map(p => p.user_id).filter(Boolean)))
+  if (ids.length === 0) return posts
+  try {
+    const { data } = await supabase.from('users').select('id, account_type').in('id', ids)
+    const byId = new Map((data ?? []).map((u: any) => [String(u.id), u.account_type as DBPost['account_type']]))
+    return posts.map(p => ({ ...p, account_type: byId.get(String(p.user_id)) || 'standard' }))
+  } catch { return posts }
 }
 
 // إعلان رسمي من متجر/شركة — يصل كإشعار حقيقي لكل متابعي هذا الحساب
@@ -1145,29 +1548,25 @@ export async function createPoll(userId: string, username: string, question: str
   } catch { return null }
 }
 
+// التصويت عبر دالة موثوقة (المصوّت ليس صاحب المنشور، والجدول مقفل على المالك)
 export async function votePoll(postId: string, optionIndex: number): Promise<boolean> {
   try {
-    const { data: post } = await supabase.from('posts').select('poll').eq('id', postId).single()
-    if (!post?.poll) return false
-    const poll = post.poll as DBPoll
-    if (!poll.options[optionIndex]) return false
-    poll.options[optionIndex].votes += 1
-    const { error } = await supabase.from('posts').update({ poll }).eq('id', postId)
-    return !error
+    const { data, error } = await supabase.rpc('vote_poll', { p_post_id: Number(postId), p_option: optionIndex })
+    return !error && data === true
   } catch { return false }
 }
 
 export async function getFeedPosts(limit = 50): Promise<DBPost[]> {
   try {
     const { data } = await supabase.from('posts').select('*').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(limit)
-    return (data ?? []) as DBPost[]
+    return await attachAuthorAccountTypes((data ?? []) as DBPost[])
   } catch { return [] }
 }
 
 export async function getPostsByUser(userId: string): Promise<DBPost[]> {
   try {
     const { data } = await supabase.from('posts').select('*').eq('user_id', userId).order('created_at', { ascending: false })
-    return (data ?? []) as DBPost[]
+    return await attachAuthorAccountTypes((data ?? []) as DBPost[])
   } catch { return [] }
 }
 
@@ -1175,8 +1574,122 @@ export async function togglePinPost(postId: string, pinned: boolean): Promise<bo
   try { const { error } = await supabase.from('posts').update({ pinned }).eq('id', postId); return !error } catch { return false }
 }
 
+// ── نظام المتابعة (Follow) ────────────────────────────────────────────────
+export async function followUser(followerId: string, followingId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('follow_user', { p_follower: Number(followerId), p_following: Number(followingId) }); return !error } catch { return false }
+}
+export async function unfollowUser(followerId: string, followingId: string): Promise<boolean> {
+  try { const { error } = await supabase.rpc('unfollow_user', { p_follower: Number(followerId), p_following: Number(followingId) }); return !error } catch { return false }
+}
+export async function isFollowing(followerId: string, followingId: string): Promise<boolean> {
+  try { const { data } = await supabase.from('follows').select('id').eq('follower_id', followerId).eq('following_id', followingId).maybeSingle(); return !!data } catch { return false }
+}
+export async function getFollowCounts(userId: string): Promise<{ followers: number; following: number }> {
+  try {
+    const [{ count: followers }, { count: following }] = await Promise.all([
+      supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', userId),
+      supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', userId),
+    ])
+    return { followers: followers ?? 0, following: following ?? 0 }
+  } catch { return { followers: 0, following: 0 } }
+}
+// مجموعة معرّفات مَن يتابعهم المستخدم — لعرض حالة "متابَع" على البطاقات دفعة واحدة
+export async function getFollowingSet(followerId: string): Promise<Set<string>> {
+  try {
+    const { data } = await supabase.from('follows').select('following_id').eq('follower_id', followerId)
+    return new Set((data ?? []).map((r: any) => String(r.following_id)))
+  } catch { return new Set() }
+}
+
+export interface FollowPerson {
+  user_id: string; username: string; avatar_url?: string | null; account_type?: string | null
+  store_name?: string | null; viewer_follows: boolean; notify?: boolean; created_at?: string
+}
+export async function getFollowers(userId: string, viewerId?: string): Promise<FollowPerson[]> {
+  try {
+    const { data, error } = await supabase.rpc('list_followers', { p_user: Number(userId), p_viewer: viewerId ? Number(viewerId) : null })
+    if (error || !data) return []
+    return (data as any[]).map(r => ({ ...r, user_id: String(r.user_id) }))
+  } catch { return [] }
+}
+export async function getFollowing(userId: string, viewerId?: string): Promise<FollowPerson[]> {
+  try {
+    const { data, error } = await supabase.rpc('list_following', { p_user: Number(userId), p_viewer: viewerId ? Number(viewerId) : null })
+    if (error || !data) return []
+    return (data as any[]).map(r => ({ ...r, user_id: String(r.user_id) }))
+  } catch { return [] }
+}
+export async function setFollowNotify(followerId: string, followingId: string, notify: boolean): Promise<boolean> {
+  try { const { error } = await supabase.rpc('set_follow_notify', { p_follower: Number(followerId), p_following: Number(followingId), p_notify: notify }); return !error } catch { return false }
+}
+export async function getFollowNotify(followerId: string, followingId: string): Promise<boolean> {
+  try { const { data } = await supabase.from('follows').select('notify').eq('follower_id', followerId).eq('following_id', followingId).maybeSingle(); return !!(data as any)?.notify } catch { return false }
+}
+
+// ── محادثة مباشرة (DM) — خاصّة عبر دوال تتحقّق من طرفَي المحادثة ────────────
+export interface DBDMMessage { id?: string; thread_id: string; sender_id: string; text: string; created_at?: string }
+export interface DBDMThread {
+  thread_id: string; other_id: string; other_username: string; other_avatar?: string | null
+  other_account_type?: string | null; last_text?: string | null; last_at?: string | null
+  last_sender?: string | null; unread?: boolean
+}
+
+export async function openDMThread(meId: string, otherId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc('dm_open_thread', { p_me: Number(meId), p_other: Number(otherId) })
+    if (error || data == null) return null
+    return String(data)
+  } catch { return null }
+}
+export async function sendDM(threadId: string, senderId: string, text: string): Promise<DBDMMessage | null> {
+  try {
+    const { data, error } = await supabase.rpc('dm_send', { p_thread: Number(threadId), p_sender: Number(senderId), p_text: text })
+    if (error || !data) return null
+    return data as DBDMMessage
+  } catch { return null }
+}
+export async function getDMMessages(threadId: string, meId: string, after?: string): Promise<DBDMMessage[]> {
+  try {
+    const { data, error } = await supabase.rpc('dm_get_messages', { p_thread: Number(threadId), p_me: Number(meId), p_after: after ?? null })
+    if (error || !data) return []
+    return data as DBDMMessage[]
+  } catch { return [] }
+}
+export async function listDMThreads(meId: string): Promise<DBDMThread[]> {
+  try {
+    const { data, error } = await supabase.rpc('dm_list_threads', { p_me: Number(meId) })
+    if (error || !data) return []
+    return (data as any[]).map(r => ({
+      thread_id: String(r.thread_id), other_id: String(r.other_id), other_username: r.other_username,
+      other_avatar: r.other_avatar, other_account_type: r.other_account_type, last_text: r.last_text,
+      last_at: r.last_at, last_sender: r.last_sender != null ? String(r.last_sender) : null, unread: r.unread,
+    }))
+  } catch { return [] }
+}
+export async function markDMRead(threadId: string, meId: string): Promise<void> {
+  try { await supabase.rpc('dm_mark_read', { p_thread: Number(threadId), p_me: Number(meId) }) } catch {}
+}
+export async function getDMUnreadCount(meId: string): Promise<number> {
+  try { const { data } = await supabase.rpc('dm_unread_count', { p_me: Number(meId) }); return Number(data) || 0 } catch { return 0 }
+}
+
+// خلاصة اجتماعية بأسلوب TikTok: 'foryou' (خوارزمية) أو 'following' (من تتابعهم)
+export async function getSocialFeed(scope: 'foryou' | 'following', userId?: string, limit = 60): Promise<DBPost[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_social_feed', {
+      p_user: userId ? Number(userId) : null, p_scope: scope, p_limit: limit,
+    })
+    if (error || !data) return []
+    return await attachAuthorAccountTypes(data as DBPost[])
+  } catch { return [] }
+}
+
 export async function deletePost(postId: string): Promise<boolean> {
   try { const { error } = await supabase.from('posts').delete().eq('id', postId); return !error } catch { return false }
+}
+// تعديل نص منشور/إعلان (لصاحبه — يُتحقق في الواجهة)
+export async function updatePost(postId: string, text: string): Promise<boolean> {
+  try { const { error } = await supabase.from('posts').update({ text }).eq('id', postId); return !error } catch { return false }
 }
 
 // حفظ منشور/إعلان — نفس منطق حفظ المنتجات لكن للمنشورات
@@ -1214,6 +1727,23 @@ export async function repostPost(originalPost: DBPost, repostUserId: string, rep
     if (error) return null
     return data as DBPost
   } catch { return null }
+}
+
+// هل أعاد هذا المستخدم نشر هذا المنشور؟ (لعرض حالة الزر: نشر/تراجع)
+export async function hasReposted(originalPostId: string, userId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase.from('posts').select('id')
+      .eq('user_id', userId).eq('reposted_from', Number(originalPostId)).limit(1).maybeSingle()
+    return !!data
+  } catch { return false }
+}
+// التراجع عن إعادة النشر — يحذف منشور إعادة النشر الخاص بالمستخدم
+export async function undoRepost(originalPostId: string, userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('posts').delete()
+      .eq('user_id', userId).eq('reposted_from', Number(originalPostId))
+    return !error
+  } catch { return false }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1321,7 +1851,10 @@ export async function createAuction(a: Omit<DBAuction, 'id' | 'current_bid' | 's
     const row = { ...a, current_bid: a.starting_price, status: 'live' as const }
     const { data, error } = await supabase.from('auctions').insert(row).select().single()
     if (error) return null
-    return data as DBAuction
+    const auction = data as DBAuction
+    // نشر تلقائي على الاجتماعي: مزاد جديد بدأ
+    crossPostToSocial(auction.seller_user_id, auction.seller_name, `🔨 New auction: "${auction.product_name}" starting at ${auction.starting_price}π — bid on Space`)
+    return auction
   } catch { return null }
 }
 
@@ -1406,7 +1939,12 @@ export async function createGroupDeal(g: Omit<DBGroupDeal, 'id' | 'members_joine
     const row = { ...g, members_joined: 1, status: 'open' as const }
     const { data, error } = await supabase.from('group_deals').insert(row).select().single()
     if (error) return null
-    return data as DBGroupDeal
+    const deal = data as DBGroupDeal
+    // نشر تلقائي على الاجتماعي: صفقة جماعية جديدة
+    const seller = await getUserById(deal.seller_user_id)
+    crossPostToSocial(deal.seller_user_id, seller?.store_name || seller?.username || 'Store',
+      `👥 Group deal: "${deal.product_name}" at ${deal.group_price}π when ${deal.members_needed} join — join on Space`)
+    return deal
   } catch { return null }
 }
 

@@ -67,6 +67,30 @@ export async function getSubscriptionAdmin(
     .maybeSingle()
   const sub = data as DBSubscription | null
   // اشتراك منتهي فعلياً يُعامل كغير موجود (نفس سلوك الدالة السابقة).
-  if (sub && new Date(sub.expires_at).getTime() < Date.now()) return null
+  if (sub && new Date(sub.expires_at).getTime() < Date.now()) {
+    // انتهى الاشتراك → نزع الشارة تلقائياً حتى تختفي عن منتجاته ومنشوراته.
+    await setUserAccountTypeAdmin(admin, userId, "standard")
+    return null
+  }
   return sub ?? null
+}
+
+// منح/نزع شارة نوع الحساب — سلطة الخادم وحده (يتجاوز حارس العميل عبر service_role).
+// تُستدعى بعد التحقّق الحقيقي من دفعة Pi، فتصبح الشارة فعلية على المستوى التقني
+// لا مجرّد واجهة: enterprise → official، pro → premium، وعند الانتهاء → standard.
+export async function setUserAccountTypeAdmin(
+  admin: SupabaseClient,
+  userId: string,
+  type: "standard" | "premium" | "official",
+): Promise<boolean> {
+  const { error } = await admin
+    .from("users")
+    .update({ account_type: type })
+    .eq("id", userId)
+  return !error
+}
+
+export const TIER_TO_ACCOUNT_TYPE: Record<string, "premium" | "official"> = {
+  pro: "premium",
+  enterprise: "official",
 }

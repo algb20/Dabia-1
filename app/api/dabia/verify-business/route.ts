@@ -16,14 +16,34 @@ interface SerperResult {
 
 export async function POST(req: NextRequest) {
   try {
-    const { storeName, websiteUrl, userId } = await req.json()
+    // ── Auth gate: resolve userId from the verified JWT, never trust the body ──
+    const admin = getAdminClient()
+    if (!admin) {
+      return NextResponse.json({ verified: false, confidence: "unavailable", detail: "Server not configured" }, { status: 503 })
+    }
+    const authHeader = req.headers.get("Authorization") ?? ""
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+    if (!token) {
+      return NextResponse.json({ verified: false, confidence: "unavailable", detail: "Authentication required" }, { status: 401 })
+    }
+    const { data: { user: authUser }, error: authErr } = await admin.auth.getUser(token)
+    if (authErr || !authUser) {
+      return NextResponse.json({ verified: false, confidence: "unavailable", detail: "Invalid or expired session" }, { status: 401 })
+    }
+    // Map auth_id → app users.id (bigint)
+    const { data: appUser } = await admin.from("users").select("id").eq("auth_id", authUser.id).maybeSingle()
+    if (!appUser?.id) {
+      return NextResponse.json({ verified: false, confidence: "unavailable", detail: "Account not found" }, { status: 404 })
+    }
+    const userId = appUser.id  // authoritative — not from request body
+
+    const { storeName, websiteUrl } = await req.json()
     if (!storeName || typeof storeName !== "string") {
       return NextResponse.json({ verified: false, confidence: "unavailable", detail: "Missing store name" }, { status: 400 })
     }
 
     const apiKey = process.env.SERPER_API_KEY
     if (!apiKey) {
-      // صراحة كاملة: الميزة غير مفعَّلة فعلياً لعدم وجود مفتاح — وليس نجاحاً وهمياً
       return NextResponse.json({ verified: false, confidence: "unavailable", detail: "SERPER_API_KEY not configured" })
     }
 
@@ -60,16 +80,9 @@ export async function POST(req: NextRequest) {
     )
 
     if (domainMatch) {
-      // القرار والتفعيل يتمّان على الخادم فقط (service_role) — لا يثق التطبيق
-      // بادعاء العميل. عند ثقة عالية نفعّل الحساب مباشرة في القاعدة.
       let activated = false
-      if (userId) {
-        const admin = getAdminClient()
-        if (admin) {
-          const { error } = await admin.rpc("activate_verified_business", { p_user_id: Number(userId) })
-          activated = !error
-        }
-      }
+      const { error } = await admin.rpc("activate_verified_business", { p_user_id: Number(userId) })
+      activated = !error
       return NextResponse.json({ verified: true, confidence: "high", activated, detail: "Website found in search results for this business name" })
     }
     if (nameAppearsOnline) {
