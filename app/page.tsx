@@ -198,7 +198,7 @@ function useAlerts(userId?: string) {
       const notifications = await getRealNotifications(userId)
       return { notifications }
     },
-    { refreshInterval: 20000 }
+    { refreshInterval: 60000, revalidateOnFocus: false }
   )
 }
 function useSubscription(userId: string) { return useSWR<{ subscription: Subscription | null }>(`/api/dabia/subscriptions?userId=${userId}`, fetcher) }
@@ -2124,9 +2124,9 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, is
   )
 }
 
-function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; onCreated: () => void; user: DBUser }) {
+function CreatePostModal({ onClose, onCreated, user, defaultMode }: { onClose: () => void; onCreated: () => void; user: DBUser; defaultMode?: "text" | "announce" | "poll" }) {
   useCloseOnBack(onClose)
-  const [mode, setMode] = useState<"text" | "poll">("text")
+  const [mode, setMode] = useState<"text" | "announce" | "poll">(defaultMode || "text")
   const [text, setText] = useState("")
   const [question, setQuestion] = useState("")
   const [options, setOptions] = useState(["", ""])
@@ -2139,6 +2139,8 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
       if (mode === "text" && text.trim()) {
         const post = await createTextPost(user.id!, user.username, text.trim(), user.avatar_url, isOfficial)
         if (post?.id) await processMentions(text, user.id!, user.username, post.id)
+      } else if (mode === "announce" && text.trim()) {
+        await createAnnouncement(user.id!, user.store_name || user.username, text.trim(), false)
       } else if (mode === "poll" && question.trim() && options.filter(o => o.trim()).length >= 2) {
         await createPoll(user.id!, user.username, question.trim(), options.filter(o => o.trim()))
       }
@@ -2150,20 +2152,28 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8" onClick={e => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-bold">Create Post</p>
+          <p className="text-sm font-bold flex items-center gap-2">
+            {mode === "announce" ? <><Megaphone className="h-4 w-4 text-blue-400" />Announcement</> : <>Create Post</>}
+          </p>
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
-        <div className="mb-3 flex gap-2">
-          <button onClick={() => setMode("text")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "text" ? "bg-amber-400 text-black" : "border border-border"}`}>Post</button>
-          <button onClick={() => setMode("poll")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "poll" ? "bg-amber-400 text-black" : "border border-border"}`}>Poll</button>
+        <div className="mb-3 flex gap-1.5">
+          <button onClick={() => setMode("text")} className={`flex-1 rounded-xl py-2 text-[11px] font-bold ${mode === "text" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Post</button>
+          <button onClick={() => setMode("announce")} className={`flex-1 rounded-xl py-2 text-[11px] font-bold ${mode === "announce" ? "bg-blue-500 text-white" : "border border-border text-muted-foreground"}`}>Announce</button>
+          <button onClick={() => setMode("poll")} className={`flex-1 rounded-xl py-2 text-[11px] font-bold ${mode === "poll" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Poll</button>
         </div>
-        {mode === "text" ? (
+        {mode === "text" && (
           <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Share something... use @username to mention"
-            className="w-full rounded-xl input-field p-3 text-sm" />
-        ) : (
+            className="w-full rounded-xl input-field p-3 text-sm" autoFocus />
+        )}
+        {mode === "announce" && (
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Write your announcement..."
+            className="w-full rounded-xl input-field p-3 text-sm border-blue-400/30 focus:border-blue-400" autoFocus />
+        )}
+        {mode === "poll" && (
           <div className="space-y-2">
             <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask a question..."
-              className="w-full rounded-xl input-field p-3 text-sm" />
+              className="w-full rounded-xl input-field p-3 text-sm" autoFocus />
             {options.map((o, i) => (
               <input key={i} value={o} onChange={e => setOptions(opts => opts.map((x, j) => j === i ? e.target.value : x))} placeholder={`Option ${i + 1}`}
                 className="w-full rounded-xl input-field p-2.5 text-[13px]" />
@@ -2171,8 +2181,9 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
             {options.length < 4 && <button onClick={() => setOptions(o => [...o, ""])} className="text-[11px] text-amber-400 font-semibold">+ Add option</button>}
           </div>
         )}
-        <button onClick={submit} disabled={posting} className="mt-3 w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
-          {posting ? "Posting…" : "Post"}
+        <button onClick={submit} disabled={posting || (mode !== "poll" && !text.trim()) || (mode === "poll" && (!question.trim() || options.filter(o => o.trim()).length < 2))}
+          className={`mt-3 w-full rounded-2xl py-3 text-sm font-bold disabled:opacity-40 ${mode === "announce" ? "bg-blue-500 text-white" : "bg-amber-400 text-black"}`}>
+          {posting ? "Posting…" : mode === "announce" ? "Post Announcement" : "Post"}
         </button>
       </div>
     </div>
@@ -2423,47 +2434,7 @@ function SocialTab() {
   )
 }
 
-// ─── بانر إذن الموقع الجغرافي — يظهر مرة واحدة عند أول دخول ──────────────────
-function GeoPermissionBanner({ userId, onDone }: { userId: string; onDone: (country: string, city: string) => void }) {
-  const [visible, setVisible] = useState(false)
-  const [loading, setLoading] = useState(false)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      if (!localStorage.getItem('dabia_geo_v1')) setVisible(true)
-    } catch {}
-  }, [])
-  if (!visible) return null
-  const dismiss = () => { setVisible(false); try { localStorage.setItem('dabia_geo_v1', 'asked') } catch {} }
-  const allow = async () => {
-    setLoading(true)
-    await requestBrowserGeo(userId, (c, ci) => { onDone(c, ci); dismiss() })
-    setLoading(false)
-    dismiss()
-  }
-  return (
-    <div className="fixed bottom-[72px] left-0 right-0 z-40 px-4">
-      <div className="rounded-2xl border border-blue-400/25 bg-card shadow-xl p-4 flex gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-400/10">
-          <MapPin className="h-5 w-5 text-blue-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-bold">Better products near you</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Allow location to see listings from sellers in your area</p>
-          <div className="flex gap-2 mt-2.5">
-            <button onClick={allow} disabled={loading}
-              className="flex-1 rounded-xl bg-blue-500 py-2 text-[12px] font-bold text-white disabled:opacity-50 flex items-center justify-center gap-1 active:scale-95">
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Navigation className="h-3.5 w-3.5" />}
-              Allow
-            </button>
-            <button onClick={dismiss} className="rounded-xl border border-border px-3 py-2 text-[12px] font-semibold text-muted-foreground active:scale-95">Not now</button>
-          </div>
-        </div>
-        <button onClick={dismiss} className="shrink-0 self-start"><X className="h-4 w-4 text-muted-foreground" /></button>
-      </div>
-    </div>
-  )
-}
+// GeoPermissionBanner أُزيل — تُفعَّل صلاحية GPS تلقائياً من DabiaApp عند أول دخول
 
 // ─── منتقي الموقع لـ "Near You" — مثل Facebook Marketplace ──────────────────
 function NearLocationModal({ current, userId, onSelect, onClose }: {
@@ -2563,7 +2534,6 @@ function HomeTab() {
   const [cols, setCols]         = useState<2 | 3>(3)
   const [selected, setSelected] = useState<Product | null>(null)
   const [showNearPicker, setShowNearPicker] = useState(false)
-  const [showGeoBanner, setShowGeoBanner]   = useState(false)
   const { data, isLoading }     = useTrends(category, sort)
   const { user: homeUser }      = useUserAuth()
 
@@ -2579,25 +2549,21 @@ function HomeTab() {
     try { localStorage.setItem('dabia_near_loc', loc) } catch {}
   }
 
-  // إظهار بانر GPS إذا لم يُسأل المستخدم من قبل ولديه حساب
-  useEffect(() => {
-    if (homeUser?.id && !geoAlreadyAsked()) {
-      const t = setTimeout(() => setShowGeoBanner(true), 2000)
-      return () => clearTimeout(t)
-    }
-  }, [homeUser?.id])
-
-  // العروض النشطة (تخفيض أو عرض محدود بوقت) — يضبطها التجار من إدارة متاجرهم
-  const { data: dealsData } = useSWR<Product[]>("dabia-active-deals",
+  // العروض النشطة — مؤجّلة ثانيتان لتسريع أول عرض للمنتجات
+  const [dealsReady, setDealsReady] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setDealsReady(true), 2000); return () => clearTimeout(t) }, [])
+  const { data: dealsData } = useSWR<Product[]>(dealsReady ? "dabia-active-deals" : null,
     async () => (await getActiveDeals(12)).map(dbProductToProduct),
-    { refreshInterval: 60000 })
+    { refreshInterval: 120000 })
   const deals = dealsData ?? []
 
-  // توصيات شخصية حقيقية من محرّك الخادم (تتعلّم من إعجابات/حفظ/طلبات المستخدم)
+  // توصيات شخصية — مؤجّلة ثلاث ثوانٍ
+  const [recsReady, setRecsReady] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setRecsReady(true), 3000); return () => clearTimeout(t) }, [])
   const { data: recData } = useSWR<Product[]>(
-    homeUser?.id ? `dabia-recs-${homeUser.id}` : "dabia-recs-anon",
+    recsReady ? (homeUser?.id ? `dabia-recs-${homeUser.id}` : "dabia-recs-anon") : null,
     async () => (await getRecommendations(homeUser?.id, 12)).map(dbProductToProduct),
-    { refreshInterval: 120000 })
+    { refreshInterval: 180000 })
   const recs = recData ?? []
 
   // منتجات قريبة — تُصفَّى حسب بلد البائع (موقع المستخدم أو اختياره اليدوي)
@@ -2783,15 +2749,6 @@ function HomeTab() {
           userId={homeUser?.id}
           onSelect={saveNearLocation}
           onClose={() => setShowNearPicker(false)}
-        />
-      )}
-      {showGeoBanner && homeUser?.id && (
-        <GeoPermissionBanner
-          userId={homeUser.id}
-          onDone={(country) => {
-            if (country) saveNearLocation(country)
-            setShowGeoBanner(false)
-          }}
         />
       )}
     </div>
@@ -3014,6 +2971,7 @@ function SpaceTab() {
   const [loading, setLoading] = useState(true)
   const [showCreateAuction, setShowCreateAuction] = useState(false)
   const [showCreateStream, setShowCreateStream] = useState(false)
+  const [showCreatePost, setShowCreatePost] = useState(false)
   const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
   const isMerchant = user && ["merchant", "company", "factory", "agent", "service_provider", "partner"].includes(user.role || "")
 
@@ -3102,21 +3060,31 @@ function SpaceTab() {
         )}
       </section>
 
-      {/* Announcements — إعلانات رسمية حقيقية من المتاجر/الشركات */}
-      {announcements.length > 0 && (
-        <section className="space-y-2">
-          <p className="text-xs font-bold flex items-center gap-2"><Megaphone className="h-3.5 w-3.5 text-blue-400" />Announcements</p>
-          {announcements.slice(0, 5).map(a => (
-            <div key={a.id} className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 flex items-start gap-2">
-              <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-[12px] font-bold">{a.username}</p>
-                <p className="text-[12px] text-muted-foreground">{a.text}</p>
-              </div>
+      {/* Announcements + Create Post for all users */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-bold flex items-center gap-2 flex-1">
+            <Megaphone className="h-3.5 w-3.5 text-blue-400" />Announcements
+          </p>
+          {user && (
+            <button onClick={() => setShowCreatePost(true)}
+              className="flex items-center gap-1 rounded-lg bg-blue-500 px-2.5 py-1 text-[11px] font-bold text-white active:scale-95">
+              <Plus className="h-3 w-3" />Post
+            </button>
+          )}
+        </div>
+        {announcements.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground text-center py-3">No announcements yet</p>
+        ) : announcements.slice(0, 5).map(a => (
+          <div key={a.id} className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 flex items-start gap-2">
+            <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[12px] font-bold">{a.username}</p>
+              <p className="text-[12px] text-muted-foreground">{a.text}</p>
             </div>
-          ))}
-        </section>
-      )}
+          </div>
+        ))}
+      </section>
 
       {/* Live auctions — مزايدات حقيقية مع تحديث لحظي عبر Supabase Realtime */}
       <section className="space-y-3">
@@ -3152,6 +3120,9 @@ function SpaceTab() {
         <CreateStreamModal onClose={() => setShowCreateStream(false)} user={user}
           onGoLive={(s) => { setShowCreateStream(false); setActiveStream(s) }}
           onScheduled={() => { setShowCreateStream(false); load() }} />
+      )}
+      {showCreatePost && user && (
+        <CreatePostModal onClose={() => setShowCreatePost(false)} onCreated={load} user={user} defaultMode="announce" />
       )}
     </div>
   )
@@ -3547,7 +3518,7 @@ function BusinessTab() {
 // ─── PROFILE TAB ──────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 function ProfileTab() {
-  const { user: profileUser, loading: profileLoading } = useUserAuth()
+  const { user: profileUser, loading: profileLoading, updateProfile } = useUserAuth()
   const { data: subData } = useSubscription(profileUser?.id || "")
   const sub = subData?.subscription
   const [orderCount, setOrderCount] = useState<number | null>(null)
@@ -3556,9 +3527,16 @@ function ProfileTab() {
   const [hideBalancePreview, setHideBalancePreview] = useState(false)
   const [followCounts, setFollowCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
   const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
+  const [togglingLoc, setTogglingLoc] = useState(false)
   useEffect(() => {
     try { setHideBalancePreview(localStorage.getItem("dabia_hide_balance") === "true") } catch {}
   }, [])
+
+  const toggleHideLocation = useCallback(async () => {
+    if (!profileUser || togglingLoc) return
+    setTogglingLoc(true)
+    try { await updateProfile({ hide_location: !profileUser.hide_location }) } finally { setTogglingLoc(false) }
+  }, [profileUser, togglingLoc, updateProfile])
 
   useEffect(() => {
     if (!profileUser?.id) return
@@ -3601,6 +3579,7 @@ function ProfileTab() {
     { label: "Order History",  icon: <Receipt className="h-4 w-4" />,     badge: orderCount === null ? "…" : `${orderCount} order${orderCount === 1 ? "" : "s"}`,  href: "/orders", onAction: null },
     { label: "Saved Products", icon: <BookmarkPlus className="h-4 w-4" />, badge: savedCountReal === null ? "…" : `${savedCount} item${savedCount === 1 ? "" : "s"}`,     href: "/saved", onAction: null },
     { label: "Invite & Earn",  icon: <UserPlus className="h-4 w-4" />,     badge: "Share App", href: null, onAction: handleShareApp },
+    { label: profileUser?.hide_location ? "Show My Location" : "Hide My Location", icon: profileUser?.hide_location ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />, badge: profileUser?.hide_location ? "Hidden" : "Visible", href: null, onAction: toggleHideLocation },
     { label: "Security",       icon: <ShieldCheck className="h-4 w-4" />,  badge: "",             href: "/security", onAction: null },
     ...(isPending ? [
       { label: "Account Verification", icon: <Clock className="h-4 w-4" />, badge: "⏳ Pending", href: "/account" },
@@ -3893,6 +3872,12 @@ export default function DabiaApp() {
     load(); const t = setInterval(load, 30000); return () => clearInterval(t)
   }, [dbUser?.id])
 
+  // طلب إذن GPS مرة واحدة عند أول دخول للمستخدم المسجّل (الحوار الأصلي للمتصفح فقط)
+  useEffect(() => {
+    if (!dbUser?.id || geoAlreadyAsked()) return
+    requestBrowserGeo(dbUser.id, () => {})
+  }, [dbUser?.id])
+
   // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
   // مصدران: (1) معامل الاستعلام على الجذر /?p=ID (الرابط الجديد الأكثر متانة)،
   // (2) sessionStorage الذي يضعه مسار /p/[id] القديم (توافق خلفي للروابط القديمة).
@@ -3977,6 +3962,15 @@ export default function DabiaApp() {
                 <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-black">{dmUnread}</span>
               )}
             </Link>
+          )}
+          {dbUser && (
+            <button
+              onClick={() => requestBrowserGeo(dbUser.id!, () => {})}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors"
+              title={dbUser.country ? `Location: ${dbUser.country}` : "Set location"}
+              aria-label="Location">
+              <MapPin className={`h-4 w-4 ${dbUser.country ? "text-blue-400" : "text-muted-foreground"}`} />
+            </button>
           )}
           <button onClick={openNotifs} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
             <Bell className="h-4 w-4" />
