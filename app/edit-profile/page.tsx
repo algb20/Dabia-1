@@ -37,7 +37,7 @@ async function compressImage(file: File, maxSize = 800): Promise<File> {
 }
 import {
   X, Loader2, AlertCircle, CheckCircle2,
-  Globe, AlignLeft, Save, ImageIcon, Pin, ExternalLink, Sparkles
+  Globe, AlignLeft, Save, ImageIcon, Pin, ExternalLink, Sparkles, MapPin
 } from "lucide-react"
 import { getIdentityFields } from "@/lib/dabia/identity-fields"
 
@@ -50,6 +50,7 @@ export default function EditProfilePage() {
   const [avatarUrl,  setAvatarUrl]  = useState(user?.avatar_url || "")
   const [bio,        setBio]        = useState(user?.bio || "")
   const [websiteUrl, setWebsiteUrl] = useState(user?.website_url || "")
+  const [country,    setCountry]    = useState(user?.country || "")
   const identityFields = getIdentityFields(user?.role)
   const [identityCard, setIdentityCard] = useState<Record<string, string>>({})
 
@@ -59,6 +60,7 @@ export default function EditProfilePage() {
     setAvatarUrl(user.avatar_url || "")
     setBio(user.bio || "")
     setWebsiteUrl(user.website_url || "")
+    setCountry(user.country || "")
     const saved = (user.profile?.identity_card || {}) as Record<string, string | string[]>
     const flat: Record<string, string> = {}
     for (const f of getIdentityFields(user.role)) {
@@ -66,7 +68,7 @@ export default function EditProfilePage() {
       flat[f.key] = Array.isArray(v) ? v.join(", ") : (v || "")
     }
     setIdentityCard(flat)
-  }, [user?.id, user?.avatar_url, user?.bio, user?.website_url, user?.role])
+  }, [user?.id, user?.avatar_url, user?.bio, user?.website_url, user?.role, user?.country])
   const [uploading,  setUploading]  = useState(false)
   const [saving,     setSaving]     = useState(false)
   const [saved,      setSaved]      = useState(false)
@@ -113,9 +115,10 @@ export default function EditProfilePage() {
         identity_card[f.key] = f.isList ? raw.split(",").map(s => s.trim()).filter(Boolean) : raw
       }
       await updateProfile({
-        avatar_url:  avatarUrl  || undefined,
-        bio:         bio.trim() || undefined,
+        avatar_url:  avatarUrl       || undefined,
+        bio:         bio.trim()      || undefined,
         website_url: safeUrl(websiteUrl),
+        country:     country.trim()  || undefined,
         profile:     { ...(user.profile || {}), identity_card },
       })
       setSaved(true)
@@ -186,6 +189,21 @@ export default function EditProfilePage() {
           <p className="text-[10px] text-muted-foreground text-right">{bio.length}/160</p>
         </div>
 
+        {/* البلد — يُستخدم لعرض منتجات قريبة في صفحة الرئيسية */}
+        <div className="space-y-1">
+          <label className="text-[12px] font-semibold text-muted-foreground flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5" />Country
+          </label>
+          <input
+            type="text"
+            value={country}
+            onChange={e => setCountry(e.target.value)}
+            placeholder="e.g. Saudi Arabia"
+            className="w-full rounded-xl input-field px-3 py-2.5 text-sm"
+          />
+          <p className="text-[10px] text-muted-foreground">Used to show nearby products and services in your area</p>
+        </div>
+
         {/* رابط الموقع — اختياري لكل أنواع الحسابات */}
         <div className="space-y-1">
           <label className="text-[12px] font-semibold text-muted-foreground flex items-center gap-1.5">
@@ -237,6 +255,7 @@ export default function EditProfilePage() {
             </div>
           </div>
           {bio && <p className="text-[12px] text-muted-foreground">{bio}</p>}
+          {country && <p className="text-[11px] text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />{country}</p>}
           {websiteUrl && <p className="text-[11px] text-amber-400 truncate">{websiteUrl}</p>}
         </div>
       </div>
