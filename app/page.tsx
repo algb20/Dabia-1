@@ -806,40 +806,75 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
 
       <div className="flex-1 overflow-y-auto">
         {/* Hero image */}
-        <div className="relative aspect-[4/3] w-full bg-secondary/30">
+        <div className="relative aspect-[4/3] w-full bg-secondary/30 overflow-hidden">
           <img src={p.image} alt={p.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-          {isOfficial && (
-            <div className="absolute bottom-3 left-3">
-              <span className="flex items-center gap-1.5 rounded-full bg-blue-600/90 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
-                <Building className="h-3 w-3" />Official Brand Store
-              </span>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+          {/* Top badges */}
+          <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+            {p.trend === "hot" && <span className="flex items-center gap-1 rounded-full bg-red-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm"><Flame className="h-2.5 w-2.5" />Hot</span>}
+            {p.trend === "up"  && <span className="flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm"><TrendingUp className="h-2.5 w-2.5" />Rising</span>}
+            {p.trend === "new" && <span className="flex items-center gap-1 rounded-full bg-blue-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm"><Zap className="h-2.5 w-2.5" />New</span>}
+            {p.badge === "bestseller" && <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[10px] font-black text-black backdrop-blur-sm">Bestseller</span>}
+            {p.badge === "exclusive" && <span className="rounded-full bg-purple-500/90 px-2.5 py-1 text-[10px] font-black text-white backdrop-blur-sm">Exclusive</span>}
+            {p.badge === "premium"   && <span className="rounded-full bg-zinc-800/90 border border-amber-400/40 px-2.5 py-1 text-[10px] font-black text-amber-400 backdrop-blur-sm">Premium</span>}
+          </div>
+          {/* Official / high-value badges */}
+          <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
+            {isOfficial && <span className="flex items-center gap-1.5 rounded-full bg-blue-600/90 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur-sm"><Building className="h-2.5 w-2.5" />Official</span>}
+            {isHighValue && <span className="flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-bold text-amber-400 backdrop-blur-sm"><Lock className="h-2.5 w-2.5" />Escrow</span>}
+          </div>
+          {/* Bottom: price overlay */}
+          <div className="absolute bottom-0 inset-x-0 px-4 pb-3 pt-6">
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-[22px] font-black text-amber-400 drop-shadow-lg leading-none">{fmtPi(activeOffer.price)}</p>
+                {p.originalPrice && (
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[12px] text-white/60 line-through">{fmtPi(p.originalPrice)}</span>
+                    <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-black text-white">
+                      -{Math.round((1 - p.price / p.originalPrice) * 100)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-0.5">
+                  {[1,2,3,4,5].map(i => <Star key={i} className={`h-3.5 w-3.5 ${i <= Math.floor(p.rating) ? "fill-amber-400 text-amber-400" : "fill-white/20 text-white/20"}`} />)}
+                  <span className="text-[12px] font-black text-white ml-1">{p.rating}</span>
+                </div>
+                <span className="text-[10px] text-white/60">{fmtNum(p.reviewCount)} reviews</span>
+              </div>
             </div>
-          )}
-          {isHighValue && (
-            <div className="absolute bottom-3 right-3">
-              <span className="flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1 text-[11px] font-bold text-amber-400 backdrop-blur-sm">
-                <Lock className="h-3 w-3" />Verified checkout
-              </span>
-            </div>
-          )}
+          </div>
         </div>
 
-        {/* Price summary */}
-        <div className="flex items-center gap-4 border-b border-border px-4 py-4">
-          <div className="flex-1 min-w-0">
-            <p className="text-2xl font-black text-amber-400">{fmtPi(activeOffer.price)}</p>
-            {p.originalPrice && <p className="text-sm text-muted-foreground line-through">{fmtPi(p.originalPrice)}</p>}
-            <p className="text-[11px] text-muted-foreground mt-0.5">via {activeOffer.merchantName}</p>
+        {/* Product name + stats */}
+        <div className="border-b border-border px-4 pt-3 pb-3 space-y-2">
+          <h1 className="text-[17px] font-black leading-snug">{p.name}</h1>
+          <div className="flex flex-wrap gap-1.5">
+            {p.viewCount > 0 && (
+              <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                <Eye className="h-3 w-3" />{fmtNum(p.viewCount)} views
+              </span>
+            )}
+            <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+              <ShoppingCart className="h-3 w-3" />{fmtNum(p.sold)} sold
+            </span>
+            <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground capitalize">
+              <Tag className="h-3 w-3" />{p.category}
+            </span>
+            {p.location?.city && (
+              <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                <Globe2 className="h-3 w-3" />{p.location.city}
+              </span>
+            )}
+            {p.dealEndsAt && (
+              <span className="flex items-center gap-1 rounded-full border border-red-400/30 bg-red-400/10 px-2.5 py-1 text-[10px] font-bold text-red-400">
+                <Clock className="h-3 w-3" />{p.dealLabel || "Deal ends"} · <DealCountdown endsAt={p.dealEndsAt} />
+              </span>
+            )}
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-0.5">
-              {[1,2,3,4,5].map(i => (
-                <Star key={i} className={`h-4 w-4 ${i <= Math.floor(p.rating) ? "fill-amber-400 text-amber-400" : "text-border"}`} />
-              ))}
-              <span className="text-sm font-bold ml-1">{p.rating}</span>
-            </div>
-            <span className="text-[11px] text-muted-foreground">{fmtNum(p.sold)} sold</span>
-          </div>
+          <p className="text-[11px] text-muted-foreground">Sold by <span className="font-semibold text-foreground">{activeOffer.merchantName}</span></p>
         </div>
 
         {/* Tabs — Compare first */}
@@ -847,7 +882,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
           {(["compare", "overview", "reviews"] as const).map(t => (
             <button key={t} onClick={() => setDetailTab(t)}
               className={`flex-1 py-2.5 text-[12px] font-bold capitalize transition-colors ${detailTab === t ? "border-b-2 border-amber-400 text-amber-400" : "text-muted-foreground hover:text-foreground"}`}>
-              {t === "compare" ? "Prices" : t === "overview" ? "Details" : "Reviews"}
+              {t === "compare" ? "Prices" : t === "overview" ? "Info" : "Reviews"}
             </button>
           ))}
         </div>
@@ -858,54 +893,84 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             <PriceGateway product={p} selectedOffer={selectedOffer} onSelect={setSelectedOffer} />
           )}
 
-          {/* DETAILS TAB */}
+          {/* INFO TAB */}
           {detailTab === "overview" && (
-            <div className="space-y-4">
-              {/* Seller card */}
-              <div className="rounded-2xl border border-border bg-card p-3">
+            <div className="space-y-3">
+              {/* Seller card with trust stats */}
+              <div className="rounded-2xl border border-border bg-card p-3.5 space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl shrink-0 ${isOfficial ? "bg-blue-500/15" : "bg-secondary"}`}>
-                    {isOfficial ? <Building className="h-5 w-5 text-blue-400" /> : <Store className="h-5 w-5 text-muted-foreground" />}
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${isOfficial ? "bg-blue-500/15" : "bg-secondary"}`}>
+                    {isOfficial ? <Building className="h-6 w-6 text-blue-400" /> : <Store className="h-6 w-6 text-muted-foreground" />}
                   </div>
-                  <div className="flex-1 min-w-0 space-y-0.5">
-                    <p className="text-sm font-bold truncate">{p.seller}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-black truncate">{p.seller}</p>
                     <AccountBadge type={p.sellerAccountType} size="sm" />
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-black text-amber-400">{trustTotal}%</p>
-                    <p className="text-[9px] text-muted-foreground">Trust</p>
+                    <p className={`text-xl font-black ${trustTotal >= 90 ? "text-emerald-400" : trustTotal >= 75 ? "text-amber-400" : "text-red-400"}`}>{trustTotal}</p>
+                    <p className="text-[9px] text-muted-foreground leading-none">/ 100 Trust</p>
                   </div>
                 </div>
-              </div>
-
-              {/* Trust bar — simple, not raw JSON */}
-              <div className="rounded-2xl border border-border bg-card p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-emerald-400" />
-                    <span className="text-xs font-bold">Trust Score</span>
-                  </div>
-                  <span className={`text-sm font-black ${trustTotal >= 90 ? "text-emerald-400" : trustTotal >= 75 ? "text-amber-400" : "text-red-400"}`}>
-                    {trustTotal}/100
-                  </span>
-                </div>
-                <Progress value={trustTotal} className="h-2" />
+                <Progress value={trustTotal} className="h-1.5" />
                 {sellerTrust && (sellerTrust.reviews_count > 0 || sellerTrust.completed_orders > 0) ? (
-                  <p className="text-[10px] text-muted-foreground">
-                    Real score · {sellerTrust.avg_rating}★ from {sellerTrust.reviews_count} review{sellerTrust.reviews_count === 1 ? "" : "s"} · {sellerTrust.completed_orders} completed order{sellerTrust.completed_orders === 1 ? "" : "s"}{sellerTrust.disputes > 0 ? ` · ${sellerTrust.disputes} dispute${sellerTrust.disputes === 1 ? "" : "s"}` : ""}.
-                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl bg-secondary/50 p-2 text-center">
+                      <p className="text-[14px] font-black text-amber-400">{sellerTrust.avg_rating}★</p>
+                      <p className="text-[9px] text-muted-foreground">Avg Rating</p>
+                    </div>
+                    <div className="rounded-xl bg-secondary/50 p-2 text-center">
+                      <p className="text-[14px] font-black text-emerald-400">{sellerTrust.completed_orders}</p>
+                      <p className="text-[9px] text-muted-foreground">Orders Done</p>
+                    </div>
+                    <div className="rounded-xl bg-secondary/50 p-2 text-center">
+                      <p className="text-[14px] font-black">{sellerTrust.reviews_count}</p>
+                      <p className="text-[9px] text-muted-foreground">Reviews</p>
+                    </div>
+                  </div>
                 ) : (
-                  <p className="text-[10px] text-muted-foreground">New seller — score builds from confirmed reviews and completed orders.</p>
+                  <p className="text-[10px] text-muted-foreground">New seller — trust score grows with each completed order and review.</p>
                 )}
               </div>
 
-              {/* Authentication */}
-              <div className="flex items-start gap-2.5 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-3">
+              {/* Product details table */}
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <p className="px-4 pt-3 pb-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground">Product Details</p>
+                {([
+                  { label: "Category",       value: p.category },
+                  { label: "Trend",          value: p.trend === "hot" ? "🔥 Hot right now" : p.trend === "up" ? "📈 Rising" : p.trend === "new" ? "🆕 New arrival" : "Stable" },
+                  { label: "Rating",         value: `${p.rating} / 5  (${fmtNum(p.reviewCount)} reviews)` },
+                  { label: "Units Sold",     value: fmtNum(p.sold) },
+                  p.viewCount > 0 ? { label: "Total Views", value: fmtNum(p.viewCount) } : null,
+                  p.location?.city ? { label: "Origin",    value: p.location.city } : null,
+                  p.originalPrice ? { label: "Was",        value: fmtPi(p.originalPrice) } : null,
+                  { label: "Verified",       value: p.verified ? "✓ Yes" : "Pending" },
+                  { label: "Blockchain ID",  value: p.blockchainId ? p.blockchainId.slice(0, 14) + "…" : "—" },
+                ] as ({ label: string; value: string } | null)[]).filter(Boolean).map((row, i, arr) => row && (
+                  <div key={row.label} className={`flex items-center justify-between px-4 py-2.5 ${i < arr.length - 1 ? "border-b border-border" : ""}`}>
+                    <span className="text-[12px] text-muted-foreground">{row.label}</span>
+                    <span className="text-[12px] font-semibold text-right max-w-[58%] truncate capitalize">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Escrow protection */}
+              <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-3.5">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
                 <div>
-                  <p className="text-[11px] font-bold text-emerald-400">Verified Listing</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    This seller's account has passed Dabia's verification process.
+                  <p className="text-[11px] font-bold text-emerald-400">Escrow Protection</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Your Pi is held securely in escrow and only released to the seller after you confirm receipt. Dispute? Get a full refund.
+                  </p>
+                </div>
+              </div>
+
+              {/* Verification guarantee */}
+              <div className="flex items-start gap-3 rounded-2xl border border-blue-400/20 bg-blue-400/5 p-3.5">
+                <BadgeCheck className="h-4 w-4 shrink-0 text-blue-400 mt-0.5" />
+                <div>
+                  <p className="text-[11px] font-bold text-blue-400">Authenticity Guaranteed</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Seller identity verified · Originals only · Counterfeits are structurally blocked from Dabia.
                   </p>
                 </div>
               </div>
@@ -1018,38 +1083,45 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
       {similarSelected && <ProductDetail product={similarSelected} onClose={() => setSimilarSelected(null)} />}
 
       {/* CTA */}
-      <div className="border-t border-border p-4 pb-safe shrink-0">
+      <div className="border-t border-border bg-background/95 backdrop-blur-sm px-4 pt-3 pb-safe shrink-0 space-y-2">
         {paymentError && (
-          <div className="mb-2 flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-[11px] text-red-400">
+          <div className="flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-[11px] text-red-400">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" /><span>{paymentError}</span>
           </div>
         )}
         {done ? (
-          <button className="w-full rounded-2xl bg-emerald-500 py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2">
-            <CheckCheck className="h-4 w-4" />Order Confirmed ✓
-          </button>
+          <div className="rounded-2xl bg-emerald-500/15 border border-emerald-400/30 py-3.5 flex items-center justify-center gap-2">
+            <CheckCheck className="h-5 w-5 text-emerald-400" />
+            <p className="text-sm font-bold text-emerald-400">Order Confirmed!</p>
+          </div>
         ) : (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-1 text-[11px]">
-              <span className="text-muted-foreground">Pay with Pi Network</span>
-              <span className="font-bold text-amber-400">{fmtPi(activeOffer.price)}</span>
+          <>
+            <div className="flex items-center justify-between text-[11px] px-0.5">
+              <span className="text-muted-foreground flex items-center gap-1"><ShieldCheck className="h-3 w-3 text-emerald-400" />Protected by escrow</span>
+              <span className="font-black text-amber-400 text-[14px]">{fmtPi(activeOffer.price)}</span>
             </div>
-            <button
-              disabled={paying}
-              onClick={() => { setPaymentError(""); setShowCheckout(true) }}
-              className="btn-primary w-full rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50">
-              <ShoppingCart className="h-4 w-4" />Buy Now
-            </button>
-            {/* مراسلة البائع مباشرةً حول هذا المنتج */}
-            {buyerUser && p.sellerUserId && String(p.sellerUserId) !== String(buyerUser.id) && (
-              <button onClick={async () => {
-                const tid = await openDMThread(buyerUser.id!, p.sellerUserId!)
-                if (tid) window.location.href = `/messages/${tid}`
-              }} className="w-full rounded-2xl border border-border py-2.5 text-[13px] font-bold flex items-center justify-center gap-2 active:scale-[0.99]">
-                <MessageCircle className="h-4 w-4" />Message seller
+            {buyerUser && p.sellerUserId && String(p.sellerUserId) !== String(buyerUser.id) ? (
+              <div className="flex gap-2">
+                <button onClick={async () => {
+                  const tid = await openDMThread(buyerUser.id!, p.sellerUserId!)
+                  if (tid) window.location.href = `/messages/${tid}`
+                }} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border active:scale-95 transition-transform">
+                  <MessageCircle className="h-5 w-5 text-muted-foreground" />
+                </button>
+                <button disabled={paying} onClick={() => { setPaymentError(""); setShowCheckout(true) }}
+                  className="btn-primary flex-1 rounded-2xl py-3 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform">
+                  {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                  Buy Now with Pi
+                </button>
+              </div>
+            ) : (
+              <button disabled={paying} onClick={() => { setPaymentError(""); setShowCheckout(true) }}
+                className="btn-primary w-full rounded-2xl py-3.5 text-sm font-bold text-black flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform">
+                {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                Buy Now with Pi
               </button>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -2240,6 +2312,10 @@ function SocialTab() {
     })
   }, [scope, user?.id])
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    fetch('/api/dabia/auto-post-trending', { method: 'POST' }).catch(() => {})
+  }, [])
 
   const toggleFollow = useCallback(async (authorId: string) => {
     if (!user?.id) return
