@@ -9,21 +9,43 @@ import { getAdminClient } from "@/lib/dabia/db/admin"
 const PI_API_BASE = "https://api.minepi.com/v2"
 const PI_API_KEY  = process.env.PI_API_KEY
 
+async function verifyPiToken(piToken: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${PI_API_BASE}/me`, {
+      headers: { Authorization: `Bearer ${piToken}` },
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // Require a valid Supabase session — prevents unauthenticated callers
-    // from approving/completing arbitrary Pi payment IDs via this endpoint.
+    // Accept either a Supabase JWT (browser users) or a Pi access token
+    // (Pi-only users who never got a Supabase session).
     const authHeader = req.headers.get("Authorization") ?? ""
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
-    if (!token) {
+    const supabaseToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : ""
+    const piToken = req.headers.get("X-Pi-Token") ?? ""
+
+    if (!supabaseToken && !piToken) {
       return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 })
     }
+
     const admin = getAdminClient()
-    if (admin) {
-      const { error } = await admin.auth.getUser(token)
-      if (error) {
-        return NextResponse.json({ ok: false, error: "Invalid or expired session" }, { status: 401 })
-      }
+    let authenticated = false
+
+    if (supabaseToken && admin) {
+      const { error } = await admin.auth.getUser(supabaseToken)
+      if (!error) authenticated = true
+    }
+
+    if (!authenticated && piToken) {
+      authenticated = await verifyPiToken(piToken)
+    }
+
+    if (!authenticated) {
+      return NextResponse.json({ ok: false, error: "Invalid or expired session" }, { status: 401 })
     }
 
     const body = await req.json()

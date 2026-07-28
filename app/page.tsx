@@ -721,6 +721,21 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
       return
     }
 
+    // Pre-authenticate with Pi to get an access token for Pi-only users
+    let piAccessToken: string | null = null
+    try {
+      const piAuth = await window.Pi!.authenticate(["payments", "username"], () => {})
+      piAccessToken = piAuth?.accessToken ?? null
+    } catch {}
+
+    const buildPayHeaders = async (): Promise<Record<string, string>> => {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`
+      else if (piAccessToken) headers["X-Pi-Token"] = piAccessToken
+      return headers
+    }
+
     try {
       window.Pi!.createPayment(
         {
@@ -731,20 +746,18 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
         {
           onReadyForServerApproval: async (paymentId: string) => {
             try {
-              const { data: { session } } = await supabase.auth.getSession()
               await fetch("/api/dabia/payments", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) },
+                headers: await buildPayHeaders(),
                 body: JSON.stringify({ action: "approve", paymentId }),
               })
             } catch {}
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
             try {
-              const { data: { session } } = await supabase.auth.getSession()
               await fetch("/api/dabia/payments", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) },
+                headers: await buildPayHeaders(),
                 body: JSON.stringify({ action: "complete", paymentId, txid }),
               })
             } catch {}
@@ -3349,6 +3362,23 @@ function BusinessTab() {
     if (!hasPi) { setPlanMsg("Pi payment requires Pi Browser — open this app inside Pi Browser to subscribe"); return }
 
     setActivating(true); setPlanMsg("")
+
+    // Pre-authenticate with Pi to get an access token for Pi-only users
+    // who have no Supabase session — the token is verified server-side.
+    let piAccessToken: string | null = null
+    try {
+      const piAuth = await window.Pi!.authenticate(["payments", "username"], () => {})
+      piAccessToken = piAuth?.accessToken ?? null
+    } catch {}
+
+    const buildPaymentHeaders = async (): Promise<Record<string, string>> => {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`
+      else if (piAccessToken) headers["X-Pi-Token"] = piAccessToken
+      return headers
+    }
+
     try {
       window.Pi!.createPayment(
         {
@@ -3358,12 +3388,27 @@ function BusinessTab() {
         },
         {
           onReadyForServerApproval: async (paymentId: string) => {
-            try { const { data: { session } } = await supabase.auth.getSession(); await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) }, body: JSON.stringify({ action: "approve", paymentId }) }) } catch {}
+            try {
+              await fetch("/api/dabia/payments", {
+                method: "POST",
+                headers: await buildPaymentHeaders(),
+                body: JSON.stringify({ action: "approve", paymentId }),
+              })
+            } catch {}
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
-            try { const { data: { session } } = await supabase.auth.getSession(); await fetch("/api/dabia/payments", { method: "POST", headers: { "Content-Type": "application/json", ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}) }, body: JSON.stringify({ action: "complete", paymentId, txid }) }) } catch {}
-            // فقط بعد اكتمال دفع Pi حقيقي ومُوافَق عليه، نُفعِّل الاشتراك بمعرّف المعاملة الحقيقي
-            const res = await fetch("/api/dabia/subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: bizUser.id, tier, txId: txid }) })
+            try {
+              await fetch("/api/dabia/payments", {
+                method: "POST",
+                headers: await buildPaymentHeaders(),
+                body: JSON.stringify({ action: "complete", paymentId, txid }),
+              })
+            } catch {}
+            const res = await fetch("/api/dabia/subscriptions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: bizUser.id, tier, paymentId, txId: txid }),
+            })
             const data = await res.json()
             setPlanMsg(data.success ? `${tier.toUpperCase()} activated!` : (data.error || "Activation failed"))
             mutate(`/api/dabia/subscriptions?userId=${bizUser.id}`)

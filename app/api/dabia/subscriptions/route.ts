@@ -50,8 +50,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
-  if (!body?.userId || !body?.tier || !body?.txId) {
-    return NextResponse.json({ error: "userId, tier, and txId required" }, { status: 400 })
+  if (!body?.userId || !body?.tier || (!body?.paymentId && !body?.txId)) {
+    return NextResponse.json({ error: "userId, tier, and paymentId required" }, { status: 400 })
   }
 
   const plan = SUBSCRIPTION_PLANS[body.tier]
@@ -66,10 +66,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Server is not configured (missing service role key)" }, { status: 503 })
   }
 
-  // التحقق الحقيقي: استدعاء Pi Platform API مباشرة للتأكد أن هذه المعاملة
-  // فعلياً اكتملت بنفس المبلغ المطلوب لهذه الخطة — لا قبول لأي شكل نصي للمعرّف
+  // Pi API verification uses the payment UUID (paymentId), not the blockchain txId.
+  const piPaymentId = body.paymentId ?? body.txId
   try {
-    const verifyRes = await fetch(`${PI_API_BASE}/payments/${body.txId}`, {
+    const verifyRes = await fetch(`${PI_API_BASE}/payments/${piPaymentId}`, {
       headers: { Authorization: `Key ${PI_API_KEY}` },
     })
     if (!verifyRes.ok) {
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     activated_at: now.toISOString(),
     expires_at:   expires.toISOString(),
     paid_in_pi:   plan.pricePi,
-    pi_tx_id:     body.txId,
+    pi_tx_id:     body.txId ?? body.paymentId,
   })
 
   if (!subscription) return NextResponse.json({ error: "Failed to save subscription" }, { status: 500 })
