@@ -8,7 +8,7 @@ import { useUserAuth, requestBrowserGeo, geoAlreadyAsked } from "@/hooks/use-use
 import { getCountryFlag, COUNTRIES } from "@/lib/countries"
 import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, setHideLocation, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, setHideLocation, togglePostLike, getPostLikeCount, isPostLikedByUser, recordPostShare, getPostShareCount, getPostCommentCount, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -23,7 +23,7 @@ import {
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
   Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff,
-  MapPin, Navigation, ChevronDown
+  MapPin, Navigation, ChevronDown, Palette
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -2223,13 +2223,13 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
   const isMine = currentUser && String(post.user_id) === String(currentUser.id)
 
   useEffect(() => {
-    getLikeCount(postId).then(setLikeCount)
-    getShareCount(postId).then(setShareCount)
-    getComments(postId).then(list => setCommentCount(list.length))
+    getPostLikeCount(postId).then(setLikeCount)
+    getPostShareCount(postId).then(setShareCount)
+    getPostCommentCount(postId).then(setCommentCount)
     if (currentUser?.id) {
-      isLikedByUser(currentUser.id, postId).then(setLiked)
+      isPostLikedByUser(currentUser.id, postId).then(setLiked)
       isPostSaved(currentUser.id, postId).then(setSaved)
-      hasReposted(currentUser.id, postId).then(setReposted)
+      hasReposted(postId, currentUser.id).then(setReposted)
     }
   }, [postId, currentUser?.id])
 
@@ -2237,7 +2237,7 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
     if (!currentUser?.id) return
     setLiked(v => !v)
     setLikeCount(c => liked ? Math.max(0, c - 1) : c + 1)
-    await toggleLike(currentUser.id, postId)
+    await togglePostLike(currentUser.id, postId)
   }
 
   const handleSave = async () => {
@@ -2259,7 +2259,7 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
     try { await (navigator as any).share({ url, title: post.text || "Check this out on Dabia" }) } catch {
       try { await navigator.clipboard.writeText(url) } catch {}
     }
-    recordShare(postId, currentUser?.id)
+    recordPostShare(postId, currentUser?.id)
     setShareCount(c => c + 1)
   }
 
@@ -2269,7 +2269,7 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
   const typeColor = post.type === "announcement" ? "bg-blue-500" : post.type === "poll" ? "bg-purple-500" : null
 
   return (
-    <div className="relative flex-shrink-0 overflow-hidden bg-zinc-950" style={{ height: "100%", scrollSnapAlign: "start" }}>
+    <div className="relative overflow-hidden bg-zinc-950" style={{ height: "100svh", maxHeight: "100%", scrollSnapAlign: "start" }}>
       {/* Background image */}
       {bg
         ? <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
@@ -2472,7 +2472,7 @@ function SocialTab() {
   if (activeStream) return <LiveStreamRoom stream={activeStream} user={user} onClose={() => setActiveStream(null)} />
 
   return (
-    <div className="relative h-full bg-black">
+    <div className="relative flex flex-col h-full bg-black">
       {/* Top overlay: LIVE pill + For You/Following tabs + Create button */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 py-3">
         <div className="pointer-events-auto">
@@ -2497,14 +2497,14 @@ function SocialTab() {
         </button>
       </div>
 
-      {/* Snap-scroll feed */}
-      <div className="h-full overflow-y-scroll no-scrollbar" style={{ scrollSnapType: "y mandatory" }}>
+      {/* Snap-scroll feed — كل شريحة تملأ الحاوية بالضبط */}
+      <div className="flex-1 overflow-y-scroll no-scrollbar" style={{ scrollSnapType: "y mandatory", minHeight: 0 }}>
         {loading ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex items-center justify-center" style={{ height: "100%" }}>
             <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
           </div>
         ) : posts.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 text-center px-8">
+          <div className="flex flex-col items-center justify-center gap-4 text-center px-8" style={{ height: "100%" }}>
             <Users2 className="h-12 w-12 text-white/20" />
             <p className="text-sm text-white/50 font-medium">
               {scope === "following" ? "Follow people to see their posts" : "No posts yet — be the first!"}
@@ -3656,8 +3656,20 @@ function ProfileTab() {
   const [followCounts, setFollowCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
   const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
   const [togglingLoc, setTogglingLoc] = useState(false)
+  const [colorTheme, setColorTheme] = useState<string>("aurum")
   useEffect(() => {
     try { setHideBalancePreview(localStorage.getItem("dabia_hide_balance") === "true") } catch {}
+    try {
+      const saved = localStorage.getItem("dabia_colortheme") || "aurum"
+      setColorTheme(saved)
+      document.documentElement.setAttribute("data-colortheme", saved === "aurum" ? "" : saved)
+    } catch {}
+  }, [])
+
+  const applyColorTheme = useCallback((theme: string) => {
+    setColorTheme(theme)
+    try { localStorage.setItem("dabia_colortheme", theme) } catch {}
+    document.documentElement.setAttribute("data-colortheme", theme === "aurum" ? "" : theme)
   }, [])
 
   const toggleHideLocation = useCallback(async () => {
@@ -3879,6 +3891,61 @@ function ProfileTab() {
             </div>
           )}
 
+          {/* ── SUBSCRIBER THEME PICKER ──────────────────────────────────────── */}
+          {(() => {
+            const isSubscriber = !!sub
+            const themes = [
+              { id: "aurum",    label: "Aurum",    swatch: ["#f59e0b", "#d97706"],  desc: "الذهبي الكلاسيكي" },
+              { id: "sakura",   label: "Sakura",   swatch: ["#f472b6", "#db2777"],  desc: "وردي أنثوي" },
+              { id: "midnight", label: "Midnight", swatch: ["#818cf8", "#4f46e5"],  desc: "بنفسجي ذكوري" },
+              { id: "obsidian", label: "Obsidian", swatch: ["#94a3b8", "#475569"],  desc: "رمادي معدني" },
+              { id: "sage",     label: "Sage",     swatch: ["#34d399", "#059669"],  desc: "أخضر طبيعي" },
+            ]
+            return (
+              <div className={`rounded-2xl border overflow-hidden transition-opacity ${isSubscriber ? "border-border bg-card" : "border-border/40 bg-card/50 opacity-70"}`}>
+                <div className="px-4 pt-3.5 pb-2 flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-400/15 shrink-0">
+                    <Palette className="h-3.5 w-3.5 text-amber-400" />
+                  </div>
+                  <p className="text-[12px] font-bold flex-1">App Theme</p>
+                  {!isSubscriber && (
+                    <span className="flex items-center gap-1 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[9px] font-bold text-amber-400">
+                      <Crown className="h-2.5 w-2.5" />PRO
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 px-4 pb-3.5">
+                  {themes.map(t => {
+                    const active = colorTheme === t.id
+                    return (
+                      <button
+                        key={t.id}
+                        disabled={!isSubscriber}
+                        onClick={() => isSubscriber && applyColorTheme(t.id)}
+                        title={`${t.label} — ${t.desc}`}
+                        className={`relative flex-1 flex flex-col items-center gap-1.5 rounded-xl py-2 transition-all duration-200 active:scale-90 ${active ? "bg-secondary ring-1 ring-inset ring-border" : "hover:bg-secondary/50"} ${!isSubscriber ? "cursor-not-allowed" : "cursor-pointer"}`}
+                      >
+                        <div
+                          className="h-7 w-7 rounded-full shadow-sm"
+                          style={{ background: `linear-gradient(135deg, ${t.swatch[0]}, ${t.swatch[1]})` }}
+                        />
+                        <span className={`text-[9px] font-semibold leading-none ${active ? "text-foreground" : "text-muted-foreground"}`}>{t.label}</span>
+                        {active && (
+                          <div className="absolute top-1 right-1 h-2 w-2 rounded-full" style={{ background: t.swatch[0] }} />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                {!isSubscriber && (
+                  <div className="border-t border-border/40 px-4 py-2">
+                    <p className="text-[10px] text-muted-foreground text-center">اشترك بخطة Pro أو Enterprise لتفعيل ثيمات التطبيق الحصرية</p>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* ── QUICK ACTIONS BENTO ──────────────────────────────────────────── */}
           {shareMsg && (
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-400 text-center">{shareMsg}</div>
@@ -4053,13 +4120,15 @@ export default function DabiaApp() {
   const effectiveTab: Tab = tab === "business" && !isBusinessAccount ? "home" : tab
 
   return (
-    <div id="dabia-app-root" className="flex min-h-dvh flex-col bg-background text-foreground font-sans sm:max-w-xl sm:mx-auto sm:border-x sm:border-border">
+    <div id="dabia-app-root" className={`flex flex-col bg-background text-foreground font-sans sm:max-w-xl sm:mx-auto sm:border-x sm:border-border ${effectiveTab === "social" ? "h-dvh overflow-hidden" : "min-h-dvh"}`}>
       {/* Header */}
-      <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-md pt-safe shrink-0">
-        <div className="flex items-center gap-1.5">
-          <Hexagon className="h-5 w-5 text-amber-400 shrink-0" />
-          <span className="text-base font-black tracking-tight">Dabia</span>
-          <span className="rounded-full bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-400/20">π</span>
+      <header className="header-bar sticky top-0 z-30 flex items-center gap-2 px-4 py-3 pt-safe shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 shadow-sm shrink-0">
+            <Hexagon className="h-4 w-4 text-black/80" strokeWidth={2.5} />
+          </div>
+          <span className="text-[15px] font-black tracking-tight" style={{ letterSpacing: "-0.025em" }}>Dabia</span>
+          <span className="rounded-md bg-amber-400/12 px-1.5 py-0.5 text-[9px] font-black text-amber-400 border border-amber-400/20 tracking-wide">π NET</span>
         </div>
 
         {tab === "home" && (
@@ -4132,7 +4201,7 @@ export default function DabiaApp() {
       </main>
 
       {/* Bottom nav */}
-      <nav className="sticky bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-md pb-safe shrink-0" aria-label="Main navigation">
+      <nav className="nav-bar sticky bottom-0 z-30 pb-safe shrink-0" aria-label="Main navigation">
         <div className="flex items-stretch">
           {navItems.map(item => {
             if (item.key === "social") return (

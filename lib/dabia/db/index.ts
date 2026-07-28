@@ -1745,6 +1745,35 @@ export async function getSavedPosts(userId: string): Promise<DBPost[]> {
   } catch { return [] }
 }
 
+// ── إعجابات المنشورات (post_likes — مستقلة عن product_likes) ─────────────────
+export async function togglePostLike(userId: string, postId: string): Promise<{ liked: boolean }> {
+  try {
+    const { data: existing } = await supabase.from('post_likes').select('id').eq('user_id', userId).eq('post_id', postId).maybeSingle()
+    if (existing) { await supabase.from('post_likes').delete().eq('id', existing.id); return { liked: false } }
+    await supabase.from('post_likes').insert({ user_id: Number(userId), post_id: Number(postId) })
+    return { liked: true }
+  } catch { return { liked: false } }
+}
+export async function getPostLikeCount(postId: string): Promise<number> {
+  try { const { count } = await supabase.from('post_likes').select('id', { count: 'exact', head: true }).eq('post_id', postId); return count ?? 0 } catch { return 0 }
+}
+export async function isPostLikedByUser(userId: string, postId: string): Promise<boolean> {
+  try { const { data } = await supabase.from('post_likes').select('id').eq('user_id', userId).eq('post_id', postId).maybeSingle(); return !!data } catch { return false }
+}
+
+// ── مشاركات المنشورات (post_shares) ─────────────────────────────────────────
+export async function recordPostShare(postId: string, userId?: string): Promise<void> {
+  try { await supabase.from('post_shares').insert({ post_id: Number(postId), user_id: userId ? Number(userId) : null }) } catch {}
+}
+export async function getPostShareCount(postId: string): Promise<number> {
+  try { const { count } = await supabase.from('post_shares').select('id', { count: 'exact', head: true }).eq('post_id', postId); return count ?? 0 } catch { return 0 }
+}
+
+// عدد تعليقات منشور (product_comments تُستخدم للمنشورات أيضاً عبر CommentsThread)
+export async function getPostCommentCount(postId: string): Promise<number> {
+  try { const { count } = await supabase.from('product_comments').select('id', { count: 'exact', head: true }).eq('product_id', postId); return count ?? 0 } catch { return 0 }
+}
+
 // إعادة نشر منشور ناجح — ينشئ منشوراً جديداً يشير للأصلي، يظهر في فيد الناشر الجديد
 export async function repostPost(originalPost: DBPost, repostUserId: string, repostUsername: string): Promise<DBPost | null> {
   try {

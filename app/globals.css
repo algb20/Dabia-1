@@ -3,83 +3,87 @@
 @tailwind utilities;
 
 @layer base {
-  /* ── Dark mode (default) ─────────────────────────────────── */
+  /* ── Dark mode (default) — warm-charcoal premium palette ─── */
   :root,
   .dark {
-    --background:          224 28% 7%;
-    --foreground:          45 20% 93%;
-    --card:                224 22% 10%;
-    --card-foreground:     45 20% 93%;
-    --popover:             224 22% 10%;
-    --popover-foreground:  45 20% 93%;
-    --primary:             43 82% 54%;
-    --primary-foreground:  224 28% 7%;
-    --secondary:           224 16% 15%;
-    --secondary-foreground:45 12% 72%;
-    --muted:               224 16% 12%;
-    --muted-foreground:    224 8% 46%;
-    --accent:              43 82% 54%;
-    --accent-foreground:   224 28% 7%;
-    --destructive:         0 68% 50%;
+    --background:          20 14% 6%;
+    --foreground:          38 18% 92%;
+    --card:                20 12% 9%;
+    --card-foreground:     38 18% 92%;
+    --popover:             20 12% 9%;
+    --popover-foreground:  38 18% 92%;
+    --primary:             43 88% 56%;
+    --primary-foreground:  20 14% 6%;
+    --secondary:           20 10% 13%;
+    --secondary-foreground:38 10% 68%;
+    --muted:               20 10% 11%;
+    --muted-foreground:    20 6% 44%;
+    --accent:              43 88% 56%;
+    --accent-foreground:   20 14% 6%;
+    --destructive:         0 72% 52%;
     --destructive-foreground: 0 0% 98%;
-    --border:              224 16% 16%;
-    --input:               224 16% 14%;
-    --ring:                43 82% 54%;
+    --border:              20 10% 15%;
+    --input:               20 10% 12%;
+    --ring:                43 88% 56%;
     --radius:              0.875rem;
 
     /* ── Extended semantic tokens ── */
-    --surface-1:           224 22% 10%;   /* card base */
-    --surface-2:           224 20% 13%;   /* elevated / hover */
-    --surface-3:           224 18% 17%;   /* selected / active */
-    --line:                hsl(224 16% 16%);
-    --pine:                hsl(165 60% 42%);  /* trust / verified accent */
-    --pine-muted:          hsl(165 30% 22%);
-    --pine-text:           hsl(165 55% 52%);
-    --amber:               hsl(43 82% 54%);
-    --amber-muted:         hsl(43 50% 18%);
-    --amber-text:          hsl(43 80% 62%);
-    --shadow-xs:           0 1px 2px hsl(224 28% 4% / 0.4);
-    --shadow-sm:           0 1px 3px hsl(224 28% 4% / 0.5), 0 4px 10px hsl(224 28% 4% / 0.3);
-    --shadow-md:           0 2px 8px hsl(224 28% 4% / 0.6), 0 8px 24px hsl(224 28% 4% / 0.35);
-    --shadow-amber:        0 4px 16px hsl(43 82% 54% / 0.18);
+    --surface-1:           20 12% 9%;
+    --surface-2:           20 10% 12%;
+    --surface-3:           20 10% 16%;
+    --line:                hsl(20 10% 15%);
+    --pine:                hsl(158 56% 40%);
+    --pine-muted:          hsl(158 28% 18%);
+    --pine-text:           hsl(158 52% 50%);
+    --amber:               hsl(43 88% 56%);
+    --amber-muted:         hsl(43 48% 16%);
+    --amber-text:          hsl(43 84% 64%);
+    --shadow-xs:           0 1px 2px hsl(20 20% 2% / 0.5);
+    --shadow-sm:           0 1px 3px hsl(20 20% 2% / 0.6), 0 4px 12px hsl(20 20% 2% / 0.35);
+    --shadow-md:           0 2px 10px hsl(20 20% 2% / 0.65), 0 10px 28px hsl(20 20% 2% / 0.4);
+    --shadow-lg:           0 4px 20px hsl(20 20% 2% / 0.7), 0 20px 48px hsl(20 20% 2% / 0.45);
+    --shadow-amber:        0 4px 20px hsl(43 88% 56% / 0.22), 0 1px 4px hsl(43 88% 56% / 0.12);
+    --glow-amber:          0 0 24px hsl(43 88% 56% / 0.18);
   }
 
-  /* ── Light mode ──────────────────────────────────────────── */
+  /* ── Light mode — warm white premium ───────────────────────── */
   html:not(.dark) {
-    --background:          0 0% 97%;
-    --foreground:          224 24% 10%;
+    --background:          36 20% 97%;
+    --foreground:          20 22% 10%;
     --card:                0 0% 100%;
-    --card-foreground:     224 24% 10%;
+    --card-foreground:     20 22% 10%;
     --popover:             0 0% 100%;
-    --popover-foreground:  224 24% 10%;
-    --primary:             43 85% 44%;
+    --popover-foreground:  20 22% 10%;
+    --primary:             43 88% 42%;
     --primary-foreground:  0 0% 100%;
-    --secondary:           220 14% 93%;
-    --secondary-foreground:224 16% 28%;
-    --muted:               220 14% 95%;
-    --muted-foreground:    224 8% 42%;
-    --accent:              43 85% 44%;
+    --secondary:           36 12% 92%;
+    --secondary-foreground:20 14% 28%;
+    --muted:               36 12% 94%;
+    --muted-foreground:    20 6% 42%;
+    --accent:              43 88% 42%;
     --accent-foreground:   0 0% 100%;
-    --destructive:         0 68% 46%;
+    --destructive:         0 70% 46%;
     --destructive-foreground: 0 0% 100%;
-    --border:              220 14% 88%;
-    --input:               220 14% 92%;
-    --ring:                43 85% 44%;
+    --border:              36 14% 87%;
+    --input:               36 12% 91%;
+    --ring:                43 88% 42%;
 
     --surface-1:           0 0% 100%;
-    --surface-2:           220 14% 97%;
-    --surface-3:           220 14% 93%;
-    --line:                hsl(220 14% 88%);
-    --pine:                hsl(165 55% 32%);
-    --pine-muted:          hsl(165 40% 92%);
-    --pine-text:           hsl(165 55% 30%);
-    --amber:               hsl(43 85% 44%);
+    --surface-2:           36 12% 97%;
+    --surface-3:           36 12% 93%;
+    --line:                hsl(36 14% 87%);
+    --pine:                hsl(158 50% 30%);
+    --pine-muted:          hsl(158 38% 92%);
+    --pine-text:           hsl(158 50% 28%);
+    --amber:               hsl(43 88% 42%);
     --amber-muted:         hsl(43 60% 94%);
-    --amber-text:          hsl(43 78% 36%);
-    --shadow-xs:           0 1px 2px hsl(224 8% 20% / 0.06);
-    --shadow-sm:           0 1px 3px hsl(224 8% 20% / 0.08), 0 4px 10px hsl(224 8% 20% / 0.04);
-    --shadow-md:           0 2px 8px hsl(224 8% 20% / 0.10), 0 8px 24px hsl(224 8% 20% / 0.06);
-    --shadow-amber:        0 4px 16px hsl(43 85% 44% / 0.20);
+    --amber-text:          hsl(43 80% 34%);
+    --shadow-xs:           0 1px 2px hsl(20 12% 18% / 0.07);
+    --shadow-sm:           0 1px 3px hsl(20 12% 18% / 0.09), 0 4px 12px hsl(20 12% 18% / 0.05);
+    --shadow-md:           0 2px 10px hsl(20 12% 18% / 0.11), 0 10px 28px hsl(20 12% 18% / 0.06);
+    --shadow-lg:           0 4px 20px hsl(20 12% 18% / 0.13), 0 20px 48px hsl(20 12% 18% / 0.07);
+    --shadow-amber:        0 4px 20px hsl(43 88% 42% / 0.22);
+    --glow-amber:          0 0 24px hsl(43 88% 42% / 0.14);
   }
 
   *, *::before, *::after {
@@ -140,21 +144,35 @@
     border: 1px solid hsl(var(--border));
   }
 
-  /* Solid surface cards — cleaner than glassmorphism for content */
+  /* Solid surface cards */
   .surface-card {
     background: hsl(var(--surface-1));
     border: 1px solid hsl(var(--border));
     box-shadow: var(--shadow-xs);
   }
 
-  /* Elevated card (used on hover / selected state) */
+  /* Premium card — inner top-edge highlight + subtle shadow */
+  .surface-premium {
+    background: hsl(var(--surface-1));
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-sm), inset 0 1px 0 hsl(var(--foreground) / 0.04);
+  }
+
+  /* Elevated card */
   .surface-elevated {
     background: hsl(var(--surface-2));
     border: 1px solid hsl(var(--border));
     box-shadow: var(--shadow-sm);
   }
 
-  /* Legacy alias — kept so existing code doesn't break */
+  /* Amber-tinted accent card */
+  .surface-accent {
+    background: linear-gradient(135deg, hsl(43 88% 56% / 0.08), hsl(43 88% 56% / 0.03));
+    border: 1px solid hsl(43 88% 56% / 0.18);
+    box-shadow: var(--shadow-xs), var(--glow-amber);
+  }
+
+  /* Legacy alias */
   .card-glass {
     background: hsl(var(--surface-1));
     border: 1px solid hsl(var(--border));
@@ -182,19 +200,21 @@
      BUTTONS
      ══════════════════════════════════════════════════════════ */
   .btn-primary {
-    background: linear-gradient(160deg, hsl(43 88% 58%), hsl(36 78% 44%));
+    background: linear-gradient(160deg, hsl(43 92% 60%), hsl(36 82% 44%));
     transition: filter 0.14s ease, transform 0.1s ease, box-shadow 0.14s ease;
     box-shadow: var(--shadow-amber);
+    letter-spacing: -0.01em;
   }
-  .btn-primary:hover  { filter: brightness(1.06); }
-  .btn-primary:active { transform: scale(0.96); filter: brightness(0.95); }
+  .btn-primary:hover  { filter: brightness(1.07); box-shadow: var(--shadow-amber), var(--glow-amber); }
+  .btn-primary:active { transform: scale(0.96); filter: brightness(0.95); box-shadow: none; }
 
   .btn-secondary {
     background: hsl(var(--surface-2));
     border: 1px solid hsl(var(--border));
-    transition: background 0.14s ease, border-color 0.14s ease;
+    box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.04);
+    transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
   }
-  .btn-secondary:hover  { background: hsl(var(--surface-3)); border-color: hsl(43 82% 54% / 0.3); }
+  .btn-secondary:hover  { background: hsl(var(--surface-3)); border-color: hsl(43 88% 56% / 0.28); }
   .btn-secondary:active { transform: scale(0.97); }
 
   .btn-ghost {
@@ -358,7 +378,95 @@
   button, a { -webkit-tap-highlight-color: transparent; }
 
   /* Page-level fade in */
-  main > div { animation: fade-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  main > div { animation: fade-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+  /* ══════════════════════════════════════════════════════════
+     PREMIUM UI ELEMENTS
+     ══════════════════════════════════════════════════════════ */
+
+  /* Header bar — warm frosted glass */
+  .header-bar {
+    background: hsl(var(--background) / 0.94);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border-bottom: 1px solid hsl(var(--border));
+    box-shadow: 0 1px 0 hsl(var(--foreground) / 0.03);
+  }
+
+  /* Nav bar — fully opaque premium */
+  .nav-bar {
+    background: hsl(var(--background) / 0.97);
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border-top: 1px solid hsl(var(--border));
+    box-shadow: 0 -1px 0 hsl(var(--foreground) / 0.03);
+  }
+
+  /* Nav item active indicator */
+  .nav-active-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: hsl(var(--amber));
+    box-shadow: 0 0 6px hsl(var(--amber) / 0.6);
+  }
+
+  /* Product card — elevated with accent border on hover */
+  .product-card {
+    background: hsl(var(--surface-1));
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-xs);
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 0.18s ease;
+    will-change: transform;
+  }
+  .product-card:hover {
+    transform: translateY(-2px) scale(1.005);
+    box-shadow: var(--shadow-md);
+    border-color: hsl(43 88% 56% / 0.22);
+  }
+  .product-card:active {
+    transform: translateY(0) scale(0.985);
+    transition-duration: 0.08s;
+  }
+
+  /* Price badge */
+  .price-badge {
+    background: linear-gradient(120deg, hsl(43 88% 56% / 0.15), hsl(43 88% 56% / 0.08));
+    border: 1px solid hsl(43 88% 56% / 0.22);
+    color: hsl(var(--amber-text));
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Verified badge */
+  .badge-verified {
+    background: linear-gradient(120deg, hsl(158 56% 40% / 0.15), hsl(158 56% 40% / 0.08));
+    border: 1px solid hsl(158 56% 40% / 0.25);
+    color: var(--pine-text);
+  }
+
+  /* Stat number display */
+  .stat-number {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    letter-spacing: -0.03em;
+    font-weight: 800;
+  }
+
+  /* Ambient section background */
+  .section-ambient {
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, hsl(43 88% 56% / 0.04) 0%, transparent 70%);
+  }
+
+  /* Ticker / info strip */
+  .info-strip {
+    background: linear-gradient(90deg, hsl(var(--surface-2)), hsl(var(--surface-3)), hsl(var(--surface-2)));
+    border: 1px solid hsl(var(--border));
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
+  }
 
   /* ══════════════════════════════════════════════════════════
      SPECIFIC COMPONENT HELPERS
@@ -388,6 +496,117 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: hsl(var(--muted-foreground));
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     PREMIUM SUBSCRIBER THEMES — 5 راقٍ أنماط للمشتركين
+     تُفعَّل عبر data-colortheme="name" على عنصر html
+     ══════════════════════════════════════════════════════════ */
+
+  /* ── 1. Aurum (الذهب الخالص) — النمط الافتراضي ── */
+  /* لا تعريف إضافي — هو المتغيرات الأصلية */
+
+  /* ── 2. Sakura (الزهر الياباني) — أنثوي راقٍ ── */
+  [data-colortheme="sakura"] {
+    --primary:             340 75% 58%;
+    --primary-foreground:  0 0% 100%;
+    --accent:              340 75% 58%;
+    --accent-foreground:   0 0% 100%;
+    --ring:                340 75% 58%;
+    --amber:               hsl(340 75% 58%);
+    --amber-muted:         hsl(340 45% 16%);
+    --amber-text:          hsl(340 70% 68%);
+    --shadow-amber:        0 4px 20px hsl(340 75% 58% / 0.22), 0 1px 4px hsl(340 75% 58% / 0.12);
+    --glow-amber:          0 0 24px hsl(340 75% 58% / 0.18);
+  }
+  html:not(.dark)[data-colortheme="sakura"] {
+    --primary:             340 72% 46%;
+    --primary-foreground:  0 0% 100%;
+    --accent:              340 72% 46%;
+    --amber:               hsl(340 72% 46%);
+    --amber-muted:         hsl(340 60% 95%);
+    --amber-text:          hsl(340 68% 38%);
+    --shadow-amber:        0 4px 20px hsl(340 72% 46% / 0.22);
+    --glow-amber:          0 0 24px hsl(340 72% 46% / 0.14);
+  }
+
+  /* ── 3. Midnight (منتصف الليل) — ذكوري فاخر ── */
+  [data-colortheme="midnight"] {
+    --primary:             248 78% 64%;
+    --primary-foreground:  0 0% 100%;
+    --accent:              248 78% 64%;
+    --accent-foreground:   0 0% 100%;
+    --ring:                248 78% 64%;
+    --amber:               hsl(248 78% 64%);
+    --amber-muted:         hsl(248 48% 16%);
+    --amber-text:          hsl(248 72% 72%);
+    --shadow-amber:        0 4px 20px hsl(248 78% 64% / 0.24), 0 1px 4px hsl(248 78% 64% / 0.14);
+    --glow-amber:          0 0 28px hsl(248 78% 64% / 0.2);
+  }
+  html:not(.dark)[data-colortheme="midnight"] {
+    --primary:             248 72% 52%;
+    --primary-foreground:  0 0% 100%;
+    --accent:              248 72% 52%;
+    --amber:               hsl(248 72% 52%);
+    --amber-muted:         hsl(248 60% 94%);
+    --amber-text:          hsl(248 68% 40%);
+    --shadow-amber:        0 4px 20px hsl(248 72% 52% / 0.22);
+    --glow-amber:          0 0 24px hsl(248 72% 52% / 0.14);
+  }
+
+  /* ── 4. Obsidian (الأوبسيديان) — أسود فضي ذكوري ── */
+  [data-colortheme="obsidian"] {
+    --background:          0 0% 5%;
+    --card:                0 0% 8%;
+    --surface-1:           0 0% 8%;
+    --surface-2:           0 0% 11%;
+    --surface-3:           0 0% 15%;
+    --border:              0 0% 14%;
+    --input:               0 0% 11%;
+    --muted:               0 0% 9%;
+    --secondary:           0 0% 12%;
+    --primary:             220 12% 78%;
+    --primary-foreground:  0 0% 5%;
+    --accent:              220 12% 78%;
+    --accent-foreground:   0 0% 5%;
+    --ring:                220 12% 78%;
+    --amber:               hsl(220 12% 78%);
+    --amber-muted:         hsl(220 8% 16%);
+    --amber-text:          hsl(220 10% 85%);
+    --shadow-amber:        0 4px 20px hsl(220 12% 78% / 0.16), 0 1px 4px hsl(220 12% 78% / 0.1);
+    --glow-amber:          0 0 28px hsl(220 12% 78% / 0.14);
+  }
+
+  /* ── 5. Sage (المريمية) — طبيعي هادئ ── */
+  [data-colortheme="sage"] {
+    --primary:             158 58% 44%;
+    --primary-foreground:  0 0% 100%;
+    --accent:              158 58% 44%;
+    --accent-foreground:   0 0% 100%;
+    --ring:                158 58% 44%;
+    --amber:               hsl(158 58% 44%);
+    --amber-muted:         hsl(158 35% 15%);
+    --amber-text:          hsl(158 52% 52%);
+    --shadow-amber:        0 4px 20px hsl(158 58% 44% / 0.22), 0 1px 4px hsl(158 58% 44% / 0.12);
+    --glow-amber:          0 0 24px hsl(158 58% 44% / 0.16);
+  }
+  html:not(.dark)[data-colortheme="sage"] {
+    --primary:             158 54% 32%;
+    --primary-foreground:  0 0% 100%;
+    --accent:              158 54% 32%;
+    --amber:               hsl(158 54% 32%);
+    --amber-muted:         hsl(158 42% 92%);
+    --amber-text:          hsl(158 52% 28%);
+    --shadow-amber:        0 4px 20px hsl(158 54% 32% / 0.22);
+    --glow-amber:          0 0 24px hsl(158 54% 32% / 0.14);
+  }
+
+  /* انتقال سلس بين الأنماط */
+  :root {
+    transition:
+      background-color 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+      color 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   /* Color fills kept for backward compatibility */
