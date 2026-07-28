@@ -4,10 +4,11 @@ import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
-import { useUserAuth } from "@/hooks/use-user-auth"
+import { useUserAuth, requestBrowserGeo, geoAlreadyAsked } from "@/hooks/use-user-auth"
+import { getCountryFlag, COUNTRIES } from "@/lib/countries"
 import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, setHideLocation, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -21,7 +22,8 @@ import {
   BookmarkPlus, Tag, ChevronRight, Lock, Plus, Truck,
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
-  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff
+  Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff,
+  MapPin, Navigation, ChevronDown
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -46,7 +48,7 @@ type NotifType   = "price_drop" | "new_arrival" | "trending" | "order" | "auctio
 interface Review       { id: number; author: string; rating: number; body: string; purchaseTxId: string; verified: boolean; timestamp: string }
 interface MerchantOffer { merchantName: string; accountType: AccountType; price: number; currency: "π"; inStock: boolean; deliveryDays: number; isOfficial: boolean; verified: boolean; rating: number; soldCount: number }
 interface TrustIndex   { total: number; breakdown: { sales: number; reviews: number; reliability: number; activity: number }; verifiedSalesCount: number }
-interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerUserId?: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
+interface Product      { id: number; name: string; price: number; originalPrice?: number; dealEndsAt?: string; dealLabel?: string; currency: "π"; image: string; rating: number; reviewCount: number; reviews: Review[]; trend: "hot" | "up" | "new" | "stable"; distance: string; verified: boolean; blockchainId: string; trustScore: number; trustIndex: TrustIndex; category: string; seller: string; sellerUserId?: string; sellerCountry?: string; sellerTrust: number; sold: number; liked: boolean; saved: boolean; badge?: "bestseller" | "premium" | "exclusive" | "rising"; isSponsored: boolean; location: { city: string }; viewCount: number; sellerAccountType?: AccountType; merchantOffers?: MerchantOffer[] }
 interface Auction      { id: string; productName: string; image: string; currentBid: number; minIncrement: number; currency: "π"; endsAt: string; status: AuctionStatus; bidCount: number; seller: string; blockchainId: string; verified: boolean }
 interface GroupShop    { id: string; productId: number; productName: string; image: string; originalPrice: number; groupPrice: number; currency: "π"; membersJoined: number; membersNeeded: number; endsAt: string; shareCode: string; status: "open" | "full" | "completed"; createdBy: string }
 interface Notif        { id: number; type: NotifType; title: string; body: string; time: string; read: boolean }
@@ -100,6 +102,7 @@ function dbProductToProduct(p: DBProduct): Product {
     category: p.category || "Other",
     seller: p.seller_name || "Dabia Seller",
     sellerUserId: p.seller_user_id ? String(p.seller_user_id) : undefined,
+    sellerCountry: p.seller_country || undefined,
     sellerAccountType: (p.seller_account_type as AccountType) || "standard",
     sellerTrust: 80,
     sold: p.review_count ?? 0,
@@ -195,7 +198,7 @@ function useAlerts(userId?: string) {
       const notifications = await getRealNotifications(userId)
       return { notifications }
     },
-    { refreshInterval: 20000 }
+    { refreshInterval: 60000, revalidateOnFocus: false }
   )
 }
 function useSubscription(userId: string) { return useSWR<{ subscription: Subscription | null }>(`/api/dabia/subscriptions?userId=${userId}`, fetcher) }
@@ -333,7 +336,8 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
     >
       {/* Image */}
       <div className="relative overflow-hidden bg-secondary/30 aspect-square sm:aspect-[3/4]">
-        <img src={p.image} alt={p.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" decoding="async" />
+        <img src={p.image} alt={p.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" decoding="async"
+          onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
 
         {/* Official overlay ring */}
         {isOfficial && <div className="absolute inset-0 ring-2 ring-inset ring-blue-400/20 rounded-2xl pointer-events-none" aria-hidden />}
@@ -393,9 +397,14 @@ const ProductCard = memo(function ProductCard({ product: p, onOpen, currentUser 
 
         <p className="line-clamp-2 text-[10px] font-semibold leading-tight sm:text-[11px]">{p.name}</p>
 
-        <div className="flex items-center gap-0.5">
-          <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
-          <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-0.5">
+            <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
+            <span className="text-[9px] font-semibold sm:text-[10px]">{p.rating}</span>
+          </div>
+          {p.sellerCountry && (
+            <span className="text-[11px]" title={p.sellerCountry}>{getCountryFlag(p.sellerCountry)}</span>
+          )}
         </div>
 
         {/* Trust score bar */}
@@ -807,7 +816,8 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
       <div className="flex-1 overflow-y-auto">
         {/* Hero image */}
         <div className="relative aspect-[4/3] w-full bg-secondary/30 overflow-hidden">
-          <img src={p.image} alt={p.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+          <img src={p.image} alt={p.name} className="h-full w-full object-cover" loading="eager" decoding="async"
+            onError={e => { (e.target as HTMLImageElement).style.opacity = "0" }} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
           {/* Top badges */}
           <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
@@ -849,8 +859,22 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
         </div>
 
         {/* Product name + stats */}
-        <div className="border-b border-border px-4 pt-3 pb-3 space-y-2">
+        <div className="border-b border-border px-4 pt-3 pb-3 space-y-2.5">
           <h1 className="text-[17px] font-black leading-snug">{p.name}</h1>
+          {/* Seller row with country */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground">by</span>
+            <span className="text-[11px] font-semibold text-foreground">{activeOffer.merchantName}</span>
+            {p.sellerAccountType && p.sellerAccountType !== "standard" && (
+              <AccountBadge type={p.sellerAccountType} size="sm" />
+            )}
+            {p.sellerCountry && (
+              <span className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className="text-sm">{getCountryFlag(p.sellerCountry)}</span>
+                {p.sellerCountry}
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {p.viewCount > 0 && (
               <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
@@ -863,18 +887,12 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
             <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground capitalize">
               <Tag className="h-3 w-3" />{p.category}
             </span>
-            {p.location?.city && (
-              <span className="flex items-center gap-1 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
-                <Globe2 className="h-3 w-3" />{p.location.city}
-              </span>
-            )}
             {p.dealEndsAt && (
               <span className="flex items-center gap-1 rounded-full border border-red-400/30 bg-red-400/10 px-2.5 py-1 text-[10px] font-bold text-red-400">
                 <Clock className="h-3 w-3" />{p.dealLabel || "Deal ends"} · <DealCountdown endsAt={p.dealEndsAt} />
               </span>
             )}
           </div>
-          <p className="text-[11px] text-muted-foreground">Sold by <span className="font-semibold text-foreground">{activeOffer.merchantName}</span></p>
         </div>
 
         {/* Tabs — Compare first */}
@@ -903,8 +921,18 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                     {isOfficial ? <Building className="h-6 w-6 text-blue-400" /> : <Store className="h-6 w-6 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-black truncate">{p.seller}</p>
-                    <AccountBadge type={p.sellerAccountType} size="sm" />
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-black truncate">{p.seller}</p>
+                      {p.sellerCountry && (
+                        <span className="text-base shrink-0" title={p.sellerCountry}>{getCountryFlag(p.sellerCountry)}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <AccountBadge type={p.sellerAccountType} size="sm" />
+                      {p.sellerCountry && (
+                        <span className="text-[9px] text-muted-foreground">{p.sellerCountry}</span>
+                      )}
+                    </div>
                   </div>
                   <div className="text-right shrink-0">
                     <p className={`text-xl font-black ${trustTotal >= 90 ? "text-emerald-400" : trustTotal >= 75 ? "text-amber-400" : "text-red-400"}`}>{trustTotal}</p>
@@ -941,6 +969,7 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
                   { label: "Rating",         value: `${p.rating} / 5  (${fmtNum(p.reviewCount)} reviews)` },
                   { label: "Units Sold",     value: fmtNum(p.sold) },
                   p.viewCount > 0 ? { label: "Total Views", value: fmtNum(p.viewCount) } : null,
+                  p.sellerCountry ? { label: "Seller Country", value: `${getCountryFlag(p.sellerCountry)} ${p.sellerCountry}` } : null,
                   p.location?.city ? { label: "Origin",    value: p.location.city } : null,
                   p.originalPrice ? { label: "Was",        value: fmtPi(p.originalPrice) } : null,
                   { label: "Verified",       value: p.verified ? "✓ Yes" : "Pending" },
@@ -2095,9 +2124,9 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, is
   )
 }
 
-function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; onCreated: () => void; user: DBUser }) {
+function CreatePostModal({ onClose, onCreated, user, defaultMode }: { onClose: () => void; onCreated: () => void; user: DBUser; defaultMode?: "text" | "announce" | "poll" }) {
   useCloseOnBack(onClose)
-  const [mode, setMode] = useState<"text" | "poll">("text")
+  const [mode, setMode] = useState<"text" | "announce" | "poll">(defaultMode || "text")
   const [text, setText] = useState("")
   const [question, setQuestion] = useState("")
   const [options, setOptions] = useState(["", ""])
@@ -2110,6 +2139,8 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
       if (mode === "text" && text.trim()) {
         const post = await createTextPost(user.id!, user.username, text.trim(), user.avatar_url, isOfficial)
         if (post?.id) await processMentions(text, user.id!, user.username, post.id)
+      } else if (mode === "announce" && text.trim()) {
+        await createAnnouncement(user.id!, user.store_name || user.username, text.trim(), false)
       } else if (mode === "poll" && question.trim() && options.filter(o => o.trim()).length >= 2) {
         await createPoll(user.id!, user.username, question.trim(), options.filter(o => o.trim()))
       }
@@ -2121,20 +2152,28 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-4 pb-8" onClick={e => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-bold">Create Post</p>
+          <p className="text-sm font-bold flex items-center gap-2">
+            {mode === "announce" ? <><Megaphone className="h-4 w-4 text-blue-400" />Announcement</> : <>Create Post</>}
+          </p>
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
-        <div className="mb-3 flex gap-2">
-          <button onClick={() => setMode("text")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "text" ? "bg-amber-400 text-black" : "border border-border"}`}>Post</button>
-          <button onClick={() => setMode("poll")} className={`flex-1 rounded-xl py-2 text-[12px] font-bold ${mode === "poll" ? "bg-amber-400 text-black" : "border border-border"}`}>Poll</button>
+        <div className="mb-3 flex gap-1.5">
+          <button onClick={() => setMode("text")} className={`flex-1 rounded-xl py-2 text-[11px] font-bold ${mode === "text" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Post</button>
+          <button onClick={() => setMode("announce")} className={`flex-1 rounded-xl py-2 text-[11px] font-bold ${mode === "announce" ? "bg-blue-500 text-white" : "border border-border text-muted-foreground"}`}>Announce</button>
+          <button onClick={() => setMode("poll")} className={`flex-1 rounded-xl py-2 text-[11px] font-bold ${mode === "poll" ? "bg-amber-400 text-black" : "border border-border text-muted-foreground"}`}>Poll</button>
         </div>
-        {mode === "text" ? (
+        {mode === "text" && (
           <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Share something... use @username to mention"
-            className="w-full rounded-xl input-field p-3 text-sm" />
-        ) : (
+            className="w-full rounded-xl input-field p-3 text-sm" autoFocus />
+        )}
+        {mode === "announce" && (
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Write your announcement..."
+            className="w-full rounded-xl input-field p-3 text-sm border-blue-400/30 focus:border-blue-400" autoFocus />
+        )}
+        {mode === "poll" && (
           <div className="space-y-2">
             <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ask a question..."
-              className="w-full rounded-xl input-field p-3 text-sm" />
+              className="w-full rounded-xl input-field p-3 text-sm" autoFocus />
             {options.map((o, i) => (
               <input key={i} value={o} onChange={e => setOptions(opts => opts.map((x, j) => j === i ? e.target.value : x))} placeholder={`Option ${i + 1}`}
                 className="w-full rounded-xl input-field p-2.5 text-[13px]" />
@@ -2142,8 +2181,9 @@ function CreatePostModal({ onClose, onCreated, user }: { onClose: () => void; on
             {options.length < 4 && <button onClick={() => setOptions(o => [...o, ""])} className="text-[11px] text-amber-400 font-semibold">+ Add option</button>}
           </div>
         )}
-        <button onClick={submit} disabled={posting} className="mt-3 w-full rounded-2xl bg-amber-400 py-3 text-sm font-bold text-black disabled:opacity-50">
-          {posting ? "Posting…" : "Post"}
+        <button onClick={submit} disabled={posting || (mode !== "poll" && !text.trim()) || (mode === "poll" && (!question.trim() || options.filter(o => o.trim()).length < 2))}
+          className={`mt-3 w-full rounded-2xl py-3 text-sm font-bold disabled:opacity-40 ${mode === "announce" ? "bg-blue-500 text-white" : "bg-amber-400 text-black"}`}>
+          {posting ? "Posting…" : mode === "announce" ? "Post Announcement" : "Post"}
         </button>
       </div>
     </div>
@@ -2162,23 +2202,29 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
   const [likeCount, setLikeCount] = useState(0)
   const [saved, setSaved] = useState(false)
   const [shareCount, setShareCount] = useState(0)
+  const [commentCount, setCommentCount] = useState(0)
   const [showComments, setShowComments] = useState(false)
+  const [reposted, setReposted] = useState(false)
+  const [reposting, setReposting] = useState(false)
   const postId = String(post.id)
+  const isMine = currentUser && String(post.user_id) === String(currentUser.id)
 
   useEffect(() => {
     getLikeCount(postId).then(setLikeCount)
     getShareCount(postId).then(setShareCount)
+    getComments(postId).then(list => setCommentCount(list.length))
     if (currentUser?.id) {
       isLikedByUser(currentUser.id, postId).then(setLiked)
       isPostSaved(currentUser.id, postId).then(setSaved)
+      hasReposted(currentUser.id, postId).then(setReposted)
     }
   }, [postId, currentUser?.id])
 
   const handleLike = async () => {
     if (!currentUser?.id) return
-    const { liked: nowLiked } = await toggleLike(currentUser.id, postId)
-    setLiked(nowLiked)
-    setLikeCount(c => nowLiked ? c + 1 : Math.max(0, c - 1))
+    setLiked(v => !v)
+    setLikeCount(c => liked ? Math.max(0, c - 1) : c + 1)
+    await toggleLike(currentUser.id, postId)
   }
 
   const handleSave = async () => {
@@ -2187,100 +2233,173 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
     setSaved(nowSaved)
   }
 
+  const handleRepost = async () => {
+    if (!currentUser?.id || reposting) return
+    setReposting(true)
+    if (reposted) { await undoRepost(currentUser.id, postId); setReposted(false) }
+    else { await repostPost(post, currentUser.id, currentUser.username || ''); setReposted(true); onRefresh() }
+    setReposting(false)
+  }
+
   const handleShare = async () => {
     const url = `${window.location.origin}/?post=${post.id}`
-    try { await (navigator as any).share({ url }) } catch {
+    try { await (navigator as any).share({ url, title: post.text || "Check this out on Dabia" }) } catch {
       try { await navigator.clipboard.writeText(url) } catch {}
     }
     recordShare(postId, currentUser?.id)
     setShareCount(c => c + 1)
   }
 
-  const bg = post.product_snapshot?.image?.startsWith("http") ? post.product_snapshot.image : null
+  const bg = post.product_snapshot?.image?.startsWith("http") ? post.product_snapshot.image
+    : post.type === "announcement" ? null : null
+
+  const typeColor = post.type === "announcement" ? "bg-blue-500" : post.type === "poll" ? "bg-purple-500" : null
 
   return (
     <div className="relative flex-shrink-0 overflow-hidden bg-zinc-950" style={{ height: "100%", scrollSnapAlign: "start" }}>
-      {bg && <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />}
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-black/40" />
+      {/* Background image */}
+      {bg
+        ? <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+        : <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black" />}
 
-      {/* Right side actions */}
-      <div className="absolute right-3 bottom-8 z-10 flex flex-col items-center gap-5">
-        <div className="relative mb-1">
-          <Link href={`/u/${post.user_id}`}>
-            <div className="h-11 w-11 rounded-full border-2 border-white overflow-hidden bg-zinc-800">
+      {/* Gradient overlay — stronger at bottom for readability */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-black/50 pointer-events-none" />
+
+      {/* ── RIGHT SIDEBAR ACTIONS ───────────────────────────────────────────── */}
+      <div className="absolute right-3 z-10 flex flex-col items-center gap-4" style={{ bottom: "80px" }}>
+
+        {/* Avatar + Follow button */}
+        <div className="flex flex-col items-center gap-1.5">
+          <Link href={`/u/${post.user_id}`} className="block">
+            <div className="h-12 w-12 rounded-full border-2 border-white overflow-hidden bg-zinc-800 shadow-lg">
               {post.avatar_url
-                ? <img src={post.avatar_url} alt="" className="h-full w-full object-cover" />
-                : <span className="flex h-full w-full items-center justify-center text-sm font-black text-white">{(post.username || "U")[0]?.toUpperCase()}</span>}
+                ? <img src={post.avatar_url} alt={post.username} className="h-full w-full object-cover" loading="lazy" />
+                : <span className="flex h-full w-full items-center justify-center text-base font-black text-white">{(post.username || "U")[0]?.toUpperCase()}</span>}
             </div>
           </Link>
-          {currentUser && String(post.user_id) !== String(currentUser.id) && (
+          {!isMine && (
             <button onClick={() => onToggleFollow(String(post.user_id))}
-              className={`absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full ${isFollowed ? "bg-white/80 text-zinc-900" : "bg-amber-400 text-black"}`}>
-              {isFollowed ? <CheckCheck className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+              className={`flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[10px] font-black shadow-md active:scale-90 transition-all ${isFollowed ? "bg-white/20 text-white border border-white/30" : "bg-amber-400 text-black"}`}>
+              {isFollowed ? <><CheckCheck className="h-2.5 w-2.5" /> Following</> : <><Plus className="h-2.5 w-2.5" /> Follow</>}
             </button>
           )}
         </div>
 
-        <div className="flex flex-col items-center gap-1">
-          <button onClick={handleLike} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-            <Heart className={`h-5 w-5 transition-colors ${liked ? "fill-red-500 text-red-500" : "text-white"}`} />
+        {/* Like */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleLike}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <Heart className={`h-6 w-6 transition-all ${liked ? "fill-red-500 text-red-500 scale-110" : "text-white"}`} />
           </button>
-          <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(likeCount)}</span>
+          <span className="text-[11px] font-bold text-white drop-shadow-md">{fmtNum(likeCount) || "0"}</span>
         </div>
 
-        <div className="flex flex-col items-center gap-1">
-          <button onClick={() => setShowComments(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-            <MessageCircle className="h-5 w-5 text-white" />
+        {/* Comments */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={() => setShowComments(true)}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <MessageCircle className="h-6 w-6 text-white" />
           </button>
-          <span className="text-[11px] font-bold text-white drop-shadow">0</span>
+          <span className="text-[11px] font-bold text-white drop-shadow-md">{fmtNum(commentCount) || "0"}</span>
         </div>
 
-        <button onClick={handleSave} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-          <Bookmark className={`h-5 w-5 transition-colors ${saved ? "fill-amber-400 text-amber-400" : "text-white"}`} />
-        </button>
-
-        <div className="flex flex-col items-center gap-1">
-          <button onClick={handleShare} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-            <Share2 className="h-5 w-5 text-white" />
+        {/* Repost */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleRepost} disabled={reposting}
+            className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-md ${reposted ? "bg-emerald-500/40" : "bg-black/30"}`}>
+            <Repeat2 className={`h-6 w-6 ${reposted ? "text-emerald-400" : "text-white"}`} />
           </button>
-          {shareCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(shareCount)}</span>}
+        </div>
+
+        {/* Save */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleSave}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <Bookmark className={`h-6 w-6 transition-all ${saved ? "fill-amber-400 text-amber-400" : "text-white"}`} />
+          </button>
+        </div>
+
+        {/* Share */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleShare}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <Share2 className="h-6 w-6 text-white" />
+          </button>
+          {shareCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow-md">{fmtNum(shareCount)}</span>}
         </div>
       </div>
 
-      {/* Bottom content */}
-      <div className="absolute bottom-6 left-4 right-16 z-10 space-y-2">
-        <div className="flex items-center gap-2">
-          <p className="text-[14px] font-black text-white drop-shadow">@{post.username}</p>
-          {post.account_type === "official" && <BadgeCheck className="h-4 w-4 text-blue-400" />}
-          {post.account_type === "premium" && <Crown className="h-3.5 w-3.5 text-amber-400" />}
-        </div>
-        {post.text && <p className="text-[13px] text-white/90 leading-relaxed line-clamp-3 drop-shadow">{post.text}</p>}
+      {/* ── BOTTOM INFO SECTION ─────────────────────────────────────────────── */}
+      <div className="absolute inset-x-0 z-10 px-4 space-y-2.5" style={{ bottom: "80px", paddingRight: "72px" }}>
 
+        {/* Post type badge */}
+        {typeColor && (
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black text-white ${typeColor}`}>
+            {post.type === "announcement" ? <><Megaphone className="h-2.5 w-2.5" />Announcement</> : <><BarChart3 className="h-2.5 w-2.5" />Poll</>}
+          </span>
+        )}
+
+        {/* Username row — click → profile */}
+        <Link href={`/u/${post.user_id}`} className="block">
+          <div className="flex items-center gap-2">
+            <span className="text-[15px] font-black text-white drop-shadow-md leading-none">@{post.username}</span>
+            {post.account_type === "official" && <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0" />}
+            {post.account_type === "premium" && <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
+          </div>
+        </Link>
+
+        {/* Caption */}
+        {post.text && (
+          <p className="text-[13px] text-white/90 leading-relaxed line-clamp-3 drop-shadow-md">{post.text}</p>
+        )}
+
+        {/* Product card — click → open product detail */}
         {post.product_snapshot && post.product_id && (
           <button onClick={() => onOpenProduct(String(post.product_id))}
-            className="w-full flex items-center gap-2 rounded-xl bg-white/10 backdrop-blur-md px-3 py-2 border border-white/15 active:bg-white/20 transition-colors text-left">
-            <div className="h-9 w-9 rounded-lg overflow-hidden bg-zinc-800 flex items-center justify-center text-lg shrink-0">
+            className="w-full flex items-center gap-3 rounded-2xl bg-white/12 backdrop-blur-md px-3 py-2.5 border border-white/15 active:bg-white/20 transition-colors text-left shadow-lg">
+            <div className="h-10 w-10 rounded-xl overflow-hidden bg-zinc-800 flex items-center justify-center text-xl shrink-0 border border-white/10">
               {post.product_snapshot.image?.startsWith("http")
-                ? <img src={post.product_snapshot.image} alt="" className="h-full w-full object-cover" />
+                ? <img src={post.product_snapshot.image} alt="" className="h-full w-full object-cover" loading="lazy" />
                 : (post.product_snapshot.image || "📦")}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[12px] font-bold text-white truncate">{post.product_snapshot.name}</p>
-              <p className="text-[11px] font-black text-amber-400">{post.product_snapshot.price}π</p>
+              <p className="text-[13px] font-black text-amber-400">{post.product_snapshot.price}π</p>
             </div>
-            <ChevronRight className="h-4 w-4 text-white/50 shrink-0" />
+            <div className="flex items-center gap-1 shrink-0 rounded-xl bg-amber-400 px-2.5 py-1">
+              <ShoppingCart className="h-3 w-3 text-black" />
+              <span className="text-[10px] font-black text-black">Buy</span>
+            </div>
           </button>
         )}
 
+        {/* Poll */}
         {post.poll && <PollCard post={post} currentUserId={currentUser?.id} />}
-        {post.created_at && <p className="text-[10px] text-white/40">{new Date(post.created_at).toLocaleDateString()}</p>}
+
+        {/* Time + music bar */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <div className="flex items-end gap-0.5 h-3">
+              {[3,5,4,6,3,5,2,4].map((h, i) => (
+                <div key={i} className="w-0.5 rounded-full bg-white/40 animate-pulse" style={{ height: `${h}px`, animationDelay: `${i * 0.1}s` }} />
+              ))}
+            </div>
+            <span className="text-[10px] text-white/50 truncate">Dabia · {post.created_at ? new Date(post.created_at).toLocaleDateString() : ""}</span>
+          </div>
+        </div>
       </div>
 
+      {/* ── COMMENTS SHEET ──────────────────────────────────────────────────── */}
       {showComments && (
-        <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col rounded-t-3xl border-t border-white/10 bg-zinc-950/95 backdrop-blur-md" style={{ maxHeight: "65%" }}>
+        <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col rounded-t-3xl border-t border-white/10 bg-zinc-950/97 backdrop-blur-xl shadow-2xl" style={{ maxHeight: "70%" }}>
           <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-white/10">
-            <p className="text-sm font-bold text-white">Comments</p>
-            <button onClick={() => setShowComments(false)}><X className="h-4 w-4 text-white" /></button>
+            <p className="text-sm font-bold text-white flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-amber-400" />Comments
+              {commentCount > 0 && <span className="text-[11px] text-white/50">({commentCount})</span>}
+            </p>
+            <button onClick={() => setShowComments(false)} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10">
+              <X className="h-3.5 w-3.5 text-white" />
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
             <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
@@ -2314,7 +2433,13 @@ function SocialTab() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    fetch('/api/dabia/auto-post-trending', { method: 'POST' }).catch(() => {})
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token
+      fetch('/api/dabia/auto-post-trending', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).catch(() => {})
+    }).catch(() => {})
   }, [])
 
   const toggleFollow = useCallback(async (authorId: string) => {
@@ -2392,6 +2517,86 @@ function SocialTab() {
   )
 }
 
+// GeoPermissionBanner أُزيل — تُفعَّل صلاحية GPS تلقائياً من DabiaApp عند أول دخول
+
+// ─── منتقي الموقع لـ "Near You" — مثل Facebook Marketplace ──────────────────
+function NearLocationModal({ current, userId, onSelect, onClose }: {
+  current: string; userId?: string; onSelect: (loc: string) => void; onClose: () => void
+}) {
+  useCloseOnBack(onClose)
+  const [query, setQuery] = useState("")
+  const [gpsLoading, setGpsLoading] = useState(false)
+  const filtered = COUNTRIES.filter(c =>
+    c.name.toLowerCase().includes(query.toLowerCase()) && query.length > 0
+  ).slice(0, 8)
+
+  const useGPS = async () => {
+    if (!userId) return
+    setGpsLoading(true)
+    await requestBrowserGeo(userId, (country) => { onSelect(country); onClose() })
+    setGpsLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background animate-slide-up">
+      <header className="sticky top-0 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-3 pt-safe backdrop-blur shrink-0">
+        <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border active:scale-95"><X className="h-4 w-4" /></button>
+        <p className="text-sm font-black flex-1">Near You — Choose Location</p>
+      </header>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* GPS button */}
+        <button onClick={useGPS} disabled={gpsLoading}
+          className="w-full flex items-center gap-3 rounded-2xl border border-blue-400/25 bg-blue-400/8 px-4 py-3.5 text-left active:scale-[0.99] disabled:opacity-50">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-400/15 shrink-0">
+            {gpsLoading ? <Loader2 className="h-5 w-5 text-blue-400 animate-spin" /> : <Navigation className="h-5 w-5 text-blue-400" />}
+          </div>
+          <div>
+            <p className="text-[13px] font-bold">Use my current location</p>
+            <p className="text-[11px] text-muted-foreground">Detect automatically via GPS</p>
+          </div>
+        </button>
+
+        {/* Search input */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <input
+            type="text" value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Type a country…"
+            className="w-full rounded-xl input-field pl-9 pr-3 py-2.5 text-sm"
+            autoFocus
+          />
+        </div>
+
+        {/* Results */}
+        {filtered.length > 0 && (
+          <div className="rounded-2xl border border-border overflow-hidden">
+            {filtered.map((c, i) => (
+              <button key={c.code} onClick={() => { onSelect(c.name); onClose() }}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/50 active:bg-secondary ${i > 0 ? "border-t border-border" : ""}`}>
+                <span className="text-2xl">{c.flag}</span>
+                <div className="flex-1">
+                  <p className="text-[13px] font-semibold">{c.name}</p>
+                </div>
+                {c.name === current && <span className="text-amber-400 font-bold text-[11px]">Current</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {current && (
+          <div>
+            <p className="text-[11px] text-muted-foreground mb-2 font-semibold">Current selection</p>
+            <div className="flex items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 px-4 py-3">
+              <span className="text-2xl">{getCountryFlag(current) || "📍"}</span>
+              <p className="text-[13px] font-bold">{current}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // عدّاد تنازلي حيّ لعرض محدود — يتحدّث كل ثانية
 function DealCountdown({ endsAt }: { endsAt: string }) {
   const [, tick] = useState(0)
@@ -2411,26 +2616,43 @@ function HomeTab() {
   const [sort, setSort]         = useState<SortKey>("smart")
   const [cols, setCols]         = useState<2 | 3>(3)
   const [selected, setSelected] = useState<Product | null>(null)
+  const [showNearPicker, setShowNearPicker] = useState(false)
   const { data, isLoading }     = useTrends(category, sort)
   const { user: homeUser }      = useUserAuth()
 
-  // العروض النشطة (تخفيض أو عرض محدود بوقت) — يضبطها التجار من إدارة متاجرهم
-  const { data: dealsData } = useSWR<Product[]>("dabia-active-deals",
+  // موقع "Near You" — يُحفظ في localStorage لتجاوز إعداد الحساب
+  const [nearLocation, setNearLocation] = useState<string>(() => {
+    if (typeof window === 'undefined') return ""
+    try { return localStorage.getItem('dabia_near_loc') || "" } catch { return "" }
+  })
+  const effectiveNearLocation = nearLocation || homeUser?.country || ""
+
+  const saveNearLocation = (loc: string) => {
+    setNearLocation(loc)
+    try { localStorage.setItem('dabia_near_loc', loc) } catch {}
+  }
+
+  // العروض النشطة — مؤجّلة ثانيتان لتسريع أول عرض للمنتجات
+  const [dealsReady, setDealsReady] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setDealsReady(true), 2000); return () => clearTimeout(t) }, [])
+  const { data: dealsData } = useSWR<Product[]>(dealsReady ? "dabia-active-deals" : null,
     async () => (await getActiveDeals(12)).map(dbProductToProduct),
-    { refreshInterval: 60000 })
+    { refreshInterval: 120000 })
   const deals = dealsData ?? []
 
-  // توصيات شخصية حقيقية من محرّك الخادم (تتعلّم من إعجابات/حفظ/طلبات المستخدم)
+  // توصيات شخصية — مؤجّلة ثلاث ثوانٍ
+  const [recsReady, setRecsReady] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setRecsReady(true), 3000); return () => clearTimeout(t) }, [])
   const { data: recData } = useSWR<Product[]>(
-    homeUser?.id ? `dabia-recs-${homeUser.id}` : "dabia-recs-anon",
+    recsReady ? (homeUser?.id ? `dabia-recs-${homeUser.id}` : "dabia-recs-anon") : null,
     async () => (await getRecommendations(homeUser?.id, 12)).map(dbProductToProduct),
-    { refreshInterval: 120000 })
+    { refreshInterval: 180000 })
   const recs = recData ?? []
 
-  // منتجات قريبة — تُصفَّى حسب بلد البائع ليرى كل مستخدم ما يقرب منه
+  // منتجات قريبة — تُصفَّى حسب بلد البائع (موقع المستخدم أو اختياره اليدوي)
   const { data: nearbyData } = useSWR<Product[]>(
-    homeUser?.country ? `dabia-nearby-${homeUser.country}` : null,
-    async () => (await getProductsByCountry(homeUser!.country!, 10)).map(dbProductToProduct),
+    effectiveNearLocation ? `dabia-nearby-${effectiveNearLocation}` : null,
+    async () => (await getProductsByCountry(effectiveNearLocation, 10)).map(dbProductToProduct),
     { refreshInterval: 300000 })
   const nearbyProducts = nearbyData ?? []
 
@@ -2524,28 +2746,48 @@ function HomeTab() {
         </section>
       )}
 
-      {/* Near You — منتجات وخدمات من نفس بلد المستخدم */}
-      {category === "All" && nearbyProducts.length > 0 && (
+      {/* Near You — منتجات وخدمات من نفس بلد المستخدم أو الموقع المختار */}
+      {category === "All" && (
         <section className="space-y-2">
-          <p className="text-xs font-bold flex items-center gap-2">
-            <Globe2 className="h-3.5 w-3.5 text-blue-400" />Near You
-            <span className="text-[9px] font-normal text-muted-foreground">sellers in {homeUser?.country}</span>
-          </p>
-          <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
-            {nearbyProducts.map(r => (
-              <button key={`near-${r.id}`} onClick={() => setSelected(r)}
-                className="shrink-0 w-32 rounded-2xl border border-blue-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
-                <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
-                  {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
-                </div>
-                <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
-                  {r.rating > 0 && <span className="text-[9px] text-muted-foreground">★{r.rating}</span>}
-                </div>
-              </button>
-            ))}
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 text-blue-400" />Near You
+              {effectiveNearLocation && (
+                <span className="text-[9px] font-normal text-muted-foreground">
+                  {getCountryFlag(effectiveNearLocation)} {effectiveNearLocation}
+                </span>
+              )}
+            </p>
+            <button onClick={() => setShowNearPicker(true)}
+              className="flex items-center gap-1 rounded-full border border-blue-400/25 bg-blue-400/8 px-2.5 py-1 text-[10px] font-bold text-blue-400 active:scale-95">
+              <ChevronDown className="h-3 w-3" />Change
+            </button>
           </div>
+          {nearbyProducts.length > 0 ? (
+            <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-4 px-4">
+              {nearbyProducts.map(r => (
+                <button key={`near-${r.id}`} onClick={() => setSelected(r)}
+                  className="shrink-0 w-32 rounded-2xl border border-blue-400/20 bg-card p-2 text-left space-y-1.5 active:scale-95 transition-transform">
+                  <div className="relative h-20 w-full overflow-hidden rounded-xl bg-secondary flex items-center justify-center text-3xl">
+                    {r.image.startsWith("http") ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : r.image}
+                    {r.sellerCountry && (
+                      <span className="absolute bottom-1 right-1 text-sm">{getCountryFlag(r.sellerCountry)}</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] font-bold leading-tight line-clamp-2">{r.name}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-black text-amber-400">{fmtPi(r.price)}</span>
+                    {r.rating > 0 && <span className="text-[9px] text-muted-foreground">★{r.rating}</span>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button onClick={() => setShowNearPicker(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl border border-dashed border-blue-400/25 py-5 text-[12px] text-blue-400 font-semibold active:scale-[0.99]">
+              <MapPin className="h-4 w-4" />Set your location to see nearby listings
+            </button>
+          )}
         </section>
       )}
 
@@ -2583,6 +2825,15 @@ function HomeTab() {
           : data?.ranked.map(p => <ProductCard key={p.id} product={p} onOpen={setSelected} currentUser={homeUser} />)
         }
       </div>
+
+      {showNearPicker && (
+        <NearLocationModal
+          current={effectiveNearLocation}
+          userId={homeUser?.id}
+          onSelect={saveNearLocation}
+          onClose={() => setShowNearPicker(false)}
+        />
+      )}
     </div>
   )
 }
@@ -2803,6 +3054,7 @@ function SpaceTab() {
   const [loading, setLoading] = useState(true)
   const [showCreateAuction, setShowCreateAuction] = useState(false)
   const [showCreateStream, setShowCreateStream] = useState(false)
+  const [showCreatePost, setShowCreatePost] = useState(false)
   const [activeStream, setActiveStream] = useState<DBLiveStream | null>(null)
   const isMerchant = user && ["merchant", "company", "factory", "agent", "service_provider", "partner"].includes(user.role || "")
 
@@ -2891,21 +3143,31 @@ function SpaceTab() {
         )}
       </section>
 
-      {/* Announcements — إعلانات رسمية حقيقية من المتاجر/الشركات */}
-      {announcements.length > 0 && (
-        <section className="space-y-2">
-          <p className="text-xs font-bold flex items-center gap-2"><Megaphone className="h-3.5 w-3.5 text-blue-400" />Announcements</p>
-          {announcements.slice(0, 5).map(a => (
-            <div key={a.id} className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 flex items-start gap-2">
-              <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-[12px] font-bold">{a.username}</p>
-                <p className="text-[12px] text-muted-foreground">{a.text}</p>
-              </div>
+      {/* Announcements + Create Post for all users */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-bold flex items-center gap-2 flex-1">
+            <Megaphone className="h-3.5 w-3.5 text-blue-400" />Announcements
+          </p>
+          {user && (
+            <button onClick={() => setShowCreatePost(true)}
+              className="flex items-center gap-1 rounded-lg bg-blue-500 px-2.5 py-1 text-[11px] font-bold text-white active:scale-95">
+              <Plus className="h-3 w-3" />Post
+            </button>
+          )}
+        </div>
+        {announcements.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground text-center py-3">No announcements yet</p>
+        ) : announcements.slice(0, 5).map(a => (
+          <div key={a.id} className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 flex items-start gap-2">
+            <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[12px] font-bold">{a.username}</p>
+              <p className="text-[12px] text-muted-foreground">{a.text}</p>
             </div>
-          ))}
-        </section>
-      )}
+          </div>
+        ))}
+      </section>
 
       {/* Live auctions — مزايدات حقيقية مع تحديث لحظي عبر Supabase Realtime */}
       <section className="space-y-3">
@@ -2941,6 +3203,9 @@ function SpaceTab() {
         <CreateStreamModal onClose={() => setShowCreateStream(false)} user={user}
           onGoLive={(s) => { setShowCreateStream(false); setActiveStream(s) }}
           onScheduled={() => { setShowCreateStream(false); load() }} />
+      )}
+      {showCreatePost && user && (
+        <CreatePostModal onClose={() => setShowCreatePost(false)} onCreated={load} user={user} defaultMode="announce" />
       )}
     </div>
   )
@@ -3336,7 +3601,7 @@ function BusinessTab() {
 // ─── PROFILE TAB ──────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 function ProfileTab() {
-  const { user: profileUser, loading: profileLoading } = useUserAuth()
+  const { user: profileUser, loading: profileLoading, updateProfile } = useUserAuth()
   const { data: subData } = useSubscription(profileUser?.id || "")
   const sub = subData?.subscription
   const [orderCount, setOrderCount] = useState<number | null>(null)
@@ -3345,9 +3610,28 @@ function ProfileTab() {
   const [hideBalancePreview, setHideBalancePreview] = useState(false)
   const [followCounts, setFollowCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
   const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
+  const [togglingLoc, setTogglingLoc] = useState(false)
   useEffect(() => {
     try { setHideBalancePreview(localStorage.getItem("dabia_hide_balance") === "true") } catch {}
   }, [])
+
+  const toggleHideLocation = useCallback(async () => {
+    if (!profileUser?.id || togglingLoc) return
+    setTogglingLoc(true)
+    const next = !profileUser.hide_location
+    try {
+      const ok = await setHideLocation(profileUser.id, next, profileUser.pi_uid)
+      if (ok) {
+        await updateProfile({ hide_location: next })
+      } else {
+        alert(next ? "Could not hide location — please try again." : "Could not show location — please try again.")
+      }
+    } catch {
+      alert("Could not update location setting.")
+    } finally {
+      setTogglingLoc(false)
+    }
+  }, [profileUser, togglingLoc, updateProfile])
 
   useEffect(() => {
     if (!profileUser?.id) return
@@ -3390,6 +3674,7 @@ function ProfileTab() {
     { label: "Order History",  icon: <Receipt className="h-4 w-4" />,     badge: orderCount === null ? "…" : `${orderCount} order${orderCount === 1 ? "" : "s"}`,  href: "/orders", onAction: null },
     { label: "Saved Products", icon: <BookmarkPlus className="h-4 w-4" />, badge: savedCountReal === null ? "…" : `${savedCount} item${savedCount === 1 ? "" : "s"}`,     href: "/saved", onAction: null },
     { label: "Invite & Earn",  icon: <UserPlus className="h-4 w-4" />,     badge: "Share App", href: null, onAction: handleShareApp },
+    { label: profileUser?.hide_location ? "Show My Location" : "Hide My Location", icon: profileUser?.hide_location ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />, badge: profileUser?.hide_location ? "Hidden" : "Visible", href: null, onAction: toggleHideLocation },
     { label: "Security",       icon: <ShieldCheck className="h-4 w-4" />,  badge: "",             href: "/security", onAction: null },
     ...(isPending ? [
       { label: "Account Verification", icon: <Clock className="h-4 w-4" />, badge: "⏳ Pending", href: "/account" },
@@ -3682,6 +3967,12 @@ export default function DabiaApp() {
     load(); const t = setInterval(load, 30000); return () => clearInterval(t)
   }, [dbUser?.id])
 
+  // طلب إذن GPS مرة واحدة عند أول دخول للمستخدم المسجّل (الحوار الأصلي للمتصفح فقط)
+  useEffect(() => {
+    if (!dbUser?.id || geoAlreadyAsked()) return
+    requestBrowserGeo(dbUser.id, () => {})
+  }, [dbUser?.id])
+
   // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
   // مصدران: (1) معامل الاستعلام على الجذر /?p=ID (الرابط الجديد الأكثر متانة)،
   // (2) sessionStorage الذي يضعه مسار /p/[id] القديم (توافق خلفي للروابط القديمة).
@@ -3707,8 +3998,8 @@ export default function DabiaApp() {
   const isBusinessAccount = !!dbUser && dbUser.role !== "buyer"
   const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "home",     label: "Home",     icon: <Home      className="h-5 w-5" /> },
-    { key: "discover", label: "Discover", icon: <Compass   className="h-5 w-5" /> },
     { key: "social",   label: "Social",   icon: <Users2    className="h-5 w-5" /> },
+    { key: "discover", label: "Discover", icon: <Compass   className="h-5 w-5" /> },
     { key: "space",    label: "Space",    icon: <Layers    className="h-5 w-5" /> },
     ...(isBusinessAccount ? [{ key: "business" as Tab, label: "Pro", icon: <BarChart3 className="h-5 w-5" /> }] : []),
     { key: "profile",  label: "Profile",  icon: <User      className="h-5 w-5" /> },
@@ -3766,6 +4057,15 @@ export default function DabiaApp() {
                 <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-black">{dmUnread}</span>
               )}
             </Link>
+          )}
+          {dbUser && (
+            <button
+              onClick={() => requestBrowserGeo(dbUser.id!, () => {})}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors"
+              title={dbUser.country ? `Location: ${dbUser.country}` : "Set location"}
+              aria-label="Location">
+              <MapPin className={`h-4 w-4 ${dbUser.country ? "text-blue-400" : "text-muted-foreground"}`} />
+            </button>
           )}
           <button onClick={openNotifs} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
             <Bell className="h-4 w-4" />

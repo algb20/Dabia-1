@@ -1,10 +1,29 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 // POST /api/dabia/auto-post-trending
 // Publishes top trending products to the social feed if they have no recent post.
-// Called from the client when the Social tab opens (fire-and-forget).
-export async function POST() {
+// Accepts EITHER a valid Supabase user JWT (browser client) OR CRON_SECRET header
+// (scheduled cron jobs). Rejects callers that provide neither when CRON_SECRET is set.
+export async function POST(req: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret) {
+    const authHeader = req.headers.get("authorization") ?? ""
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader
+    const isCron = token === cronSecret
+    if (!isCron) {
+      // Also accept a valid Supabase user session from the browser
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+      if (token && supabaseUrl && anonKey) {
+        const check = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } })
+        const { error } = await check.auth.getUser(token)
+        if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      } else {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      }
+    }
+  }
   const supa = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,

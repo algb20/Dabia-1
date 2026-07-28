@@ -70,7 +70,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 // (The hash lives only in the guarded `user_secrets` vault / legacy `password`
 // column, read exclusively by the server-side auth path.)
 const USER_PUBLIC_COLS =
-  "id, username, emall, role, status, created_at, country, phone, pi_uid, store_name, wallet_balance, profile, auth_id, avatar_url, bio, website_url, social_links, account_type"
+  "id, username, emall, role, status, created_at, country, city, phone, pi_uid, store_name, wallet_balance, profile, auth_id, avatar_url, bio, website_url, social_links, account_type, hide_location"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface DBUser {
@@ -93,6 +93,8 @@ export interface DBUser {
   bio?:            string
   website_url?:    string
   auth_id?:        string
+  city?:           string
+  hide_location?:  boolean
   social_links?: {
     telegram?:  { url: string; enabled: boolean }
     instagram?: { url: string; enabled: boolean }
@@ -114,6 +116,7 @@ export interface DBProduct {
   seller_user_id?: string
   seller_name?:    string
   seller_account_type?: 'standard' | 'premium' | 'official' // شارة البائع — تُرفق عند الجلب لعرض العلامة الرسمية/المميّزة
+  seller_country?: string  // بلد البائع — يُرفق عند الجلب لعرض العلم
   stock?:          number
   rating?:         number
   review_count?:   number
@@ -428,6 +431,23 @@ export async function updateUser(id: string, u: Partial<DBUser>): Promise<DBUser
   }
 }
 
+// Uses SECURITY DEFINER RPC to bypass RLS — works for both email users (verified
+// via auth.uid()) and Pi-only users (verified via pi_uid match).
+export async function setHideLocation(userId: string, hide: boolean, piUid?: string | null): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('set_hide_location', {
+      p_user_id: Number(userId),
+      p_hide:    hide,
+      p_pi_uid:  piUid || null,
+    })
+    if (error) { console.error('[setHideLocation]', error.message); return false }
+    return !!data
+  } catch (e) {
+    console.error('[setHideLocation] Exception:', e instanceof Error ? e.message : e)
+    return false
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECURITY — تغيير كلمة السر بالتحقق الحقيقي من كلمة السر الحالية أولاً
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -641,9 +661,20 @@ export async function attachSellerAccountTypes(list: DBProduct[]): Promise<DBPro
   const ids = Array.from(new Set(list.map(p => p.seller_user_id).filter(Boolean))) as string[]
   if (ids.length === 0) return list
   try {
-    const { data } = await supabase.from('users').select('id, account_type').in('id', ids)
-    const byId = new Map((data ?? []).map((u: any) => [String(u.id), u.account_type as DBProduct['seller_account_type']]))
-    return list.map(p => ({ ...p, seller_account_type: byId.get(String(p.seller_user_id)) || 'standard' }))
+    const { data } = await supabase.from('users').select('id, account_type, country, hide_location').in('id', ids)
+    const byId = new Map((data ?? []).map((u: any) => [String(u.id), {
+      account_type: u.account_type as DBProduct['seller_account_type'],
+      country: u.country as string | undefined,
+      hide_location: u.hide_location as boolean | undefined,
+    }]))
+    return list.map(p => {
+      const info = byId.get(String(p.seller_user_id))
+      return {
+        ...p,
+        seller_account_type: info?.account_type || 'standard',
+        seller_country: info?.hide_location ? undefined : (info?.country || undefined),
+      }
+    })
   } catch { return list }
 }
 
