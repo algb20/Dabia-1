@@ -431,6 +431,23 @@ export async function updateUser(id: string, u: Partial<DBUser>): Promise<DBUser
   }
 }
 
+// Uses SECURITY DEFINER RPC to bypass RLS — works for both email users (verified
+// via auth.uid()) and Pi-only users (verified via pi_uid match).
+export async function setHideLocation(userId: string, hide: boolean, piUid?: string | null): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('set_hide_location', {
+      p_user_id: Number(userId),
+      p_hide:    hide,
+      p_pi_uid:  piUid || null,
+    })
+    if (error) { console.error('[setHideLocation]', error.message); return false }
+    return !!data
+  } catch (e) {
+    console.error('[setHideLocation] Exception:', e instanceof Error ? e.message : e)
+    return false
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECURITY — تغيير كلمة السر بالتحقق الحقيقي من كلمة السر الحالية أولاً
 // ═══════════════════════════════════════════════════════════════════════════════

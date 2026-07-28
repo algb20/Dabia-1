@@ -8,7 +8,7 @@ import { useUserAuth, requestBrowserGeo, geoAlreadyAsked } from "@/hooks/use-use
 import { getCountryFlag, COUNTRIES } from "@/lib/countries"
 import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, setHideLocation, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -2204,7 +2204,10 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
   const [shareCount, setShareCount] = useState(0)
   const [commentCount, setCommentCount] = useState(0)
   const [showComments, setShowComments] = useState(false)
+  const [reposted, setReposted] = useState(false)
+  const [reposting, setReposting] = useState(false)
   const postId = String(post.id)
+  const isMine = currentUser && String(post.user_id) === String(currentUser.id)
 
   useEffect(() => {
     getLikeCount(postId).then(setLikeCount)
@@ -2213,14 +2216,15 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
     if (currentUser?.id) {
       isLikedByUser(currentUser.id, postId).then(setLiked)
       isPostSaved(currentUser.id, postId).then(setSaved)
+      hasReposted(currentUser.id, postId).then(setReposted)
     }
   }, [postId, currentUser?.id])
 
   const handleLike = async () => {
     if (!currentUser?.id) return
-    const { liked: nowLiked } = await toggleLike(currentUser.id, postId)
-    setLiked(nowLiked)
-    setLikeCount(c => nowLiked ? c + 1 : Math.max(0, c - 1))
+    setLiked(v => !v)
+    setLikeCount(c => liked ? Math.max(0, c - 1) : c + 1)
+    await toggleLike(currentUser.id, postId)
   }
 
   const handleSave = async () => {
@@ -2229,100 +2233,173 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
     setSaved(nowSaved)
   }
 
+  const handleRepost = async () => {
+    if (!currentUser?.id || reposting) return
+    setReposting(true)
+    if (reposted) { await undoRepost(currentUser.id, postId); setReposted(false) }
+    else { await repostPost(post, currentUser.id, currentUser.username || ''); setReposted(true); onRefresh() }
+    setReposting(false)
+  }
+
   const handleShare = async () => {
     const url = `${window.location.origin}/?post=${post.id}`
-    try { await (navigator as any).share({ url }) } catch {
+    try { await (navigator as any).share({ url, title: post.text || "Check this out on Dabia" }) } catch {
       try { await navigator.clipboard.writeText(url) } catch {}
     }
     recordShare(postId, currentUser?.id)
     setShareCount(c => c + 1)
   }
 
-  const bg = post.product_snapshot?.image?.startsWith("http") ? post.product_snapshot.image : null
+  const bg = post.product_snapshot?.image?.startsWith("http") ? post.product_snapshot.image
+    : post.type === "announcement" ? null : null
+
+  const typeColor = post.type === "announcement" ? "bg-blue-500" : post.type === "poll" ? "bg-purple-500" : null
 
   return (
     <div className="relative flex-shrink-0 overflow-hidden bg-zinc-950" style={{ height: "100%", scrollSnapAlign: "start" }}>
-      {bg && <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />}
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-black/40" />
+      {/* Background image */}
+      {bg
+        ? <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+        : <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black" />}
 
-      {/* Right side actions */}
-      <div className="absolute right-3 bottom-8 z-10 flex flex-col items-center gap-5">
-        <div className="relative mb-1">
-          <Link href={`/u/${post.user_id}`}>
-            <div className="h-11 w-11 rounded-full border-2 border-white overflow-hidden bg-zinc-800">
+      {/* Gradient overlay — stronger at bottom for readability */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-black/50 pointer-events-none" />
+
+      {/* ── RIGHT SIDEBAR ACTIONS ───────────────────────────────────────────── */}
+      <div className="absolute right-3 z-10 flex flex-col items-center gap-4" style={{ bottom: "80px" }}>
+
+        {/* Avatar + Follow button */}
+        <div className="flex flex-col items-center gap-1.5">
+          <Link href={`/u/${post.user_id}`} className="block">
+            <div className="h-12 w-12 rounded-full border-2 border-white overflow-hidden bg-zinc-800 shadow-lg">
               {post.avatar_url
-                ? <img src={post.avatar_url} alt="" className="h-full w-full object-cover" />
-                : <span className="flex h-full w-full items-center justify-center text-sm font-black text-white">{(post.username || "U")[0]?.toUpperCase()}</span>}
+                ? <img src={post.avatar_url} alt={post.username} className="h-full w-full object-cover" loading="lazy" />
+                : <span className="flex h-full w-full items-center justify-center text-base font-black text-white">{(post.username || "U")[0]?.toUpperCase()}</span>}
             </div>
           </Link>
-          {currentUser && String(post.user_id) !== String(currentUser.id) && (
+          {!isMine && (
             <button onClick={() => onToggleFollow(String(post.user_id))}
-              className={`absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full ${isFollowed ? "bg-white/80 text-zinc-900" : "bg-amber-400 text-black"}`}>
-              {isFollowed ? <CheckCheck className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+              className={`flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[10px] font-black shadow-md active:scale-90 transition-all ${isFollowed ? "bg-white/20 text-white border border-white/30" : "bg-amber-400 text-black"}`}>
+              {isFollowed ? <><CheckCheck className="h-2.5 w-2.5" /> Following</> : <><Plus className="h-2.5 w-2.5" /> Follow</>}
             </button>
           )}
         </div>
 
-        <div className="flex flex-col items-center gap-1">
-          <button onClick={handleLike} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-            <Heart className={`h-5 w-5 transition-colors ${liked ? "fill-red-500 text-red-500" : "text-white"}`} />
+        {/* Like */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleLike}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <Heart className={`h-6 w-6 transition-all ${liked ? "fill-red-500 text-red-500 scale-110" : "text-white"}`} />
           </button>
-          <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(likeCount)}</span>
+          <span className="text-[11px] font-bold text-white drop-shadow-md">{fmtNum(likeCount) || "0"}</span>
         </div>
 
-        <div className="flex flex-col items-center gap-1">
-          <button onClick={() => setShowComments(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-            <MessageCircle className="h-5 w-5 text-white" />
+        {/* Comments */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={() => setShowComments(true)}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <MessageCircle className="h-6 w-6 text-white" />
           </button>
-          {commentCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(commentCount)}</span>}
+          <span className="text-[11px] font-bold text-white drop-shadow-md">{fmtNum(commentCount) || "0"}</span>
         </div>
 
-        <button onClick={handleSave} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-          <Bookmark className={`h-5 w-5 transition-colors ${saved ? "fill-amber-400 text-amber-400" : "text-white"}`} />
-        </button>
-
-        <div className="flex flex-col items-center gap-1">
-          <button onClick={handleShare} className="flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform">
-            <Share2 className="h-5 w-5 text-white" />
+        {/* Repost */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleRepost} disabled={reposting}
+            className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-md ${reposted ? "bg-emerald-500/40" : "bg-black/30"}`}>
+            <Repeat2 className={`h-6 w-6 ${reposted ? "text-emerald-400" : "text-white"}`} />
           </button>
-          {shareCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow">{fmtNum(shareCount)}</span>}
+        </div>
+
+        {/* Save */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleSave}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <Bookmark className={`h-6 w-6 transition-all ${saved ? "fill-amber-400 text-amber-400" : "text-white"}`} />
+          </button>
+        </div>
+
+        {/* Share */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleShare}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
+            <Share2 className="h-6 w-6 text-white" />
+          </button>
+          {shareCount > 0 && <span className="text-[11px] font-bold text-white drop-shadow-md">{fmtNum(shareCount)}</span>}
         </div>
       </div>
 
-      {/* Bottom content */}
-      <div className="absolute bottom-6 left-4 right-16 z-10 space-y-2">
-        <div className="flex items-center gap-2">
-          <p className="text-[14px] font-black text-white drop-shadow">@{post.username}</p>
-          {post.account_type === "official" && <BadgeCheck className="h-4 w-4 text-blue-400" />}
-          {post.account_type === "premium" && <Crown className="h-3.5 w-3.5 text-amber-400" />}
-        </div>
-        {post.text && <p className="text-[13px] text-white/90 leading-relaxed line-clamp-3 drop-shadow">{post.text}</p>}
+      {/* ── BOTTOM INFO SECTION ─────────────────────────────────────────────── */}
+      <div className="absolute inset-x-0 z-10 px-4 space-y-2.5" style={{ bottom: "80px", paddingRight: "72px" }}>
 
+        {/* Post type badge */}
+        {typeColor && (
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black text-white ${typeColor}`}>
+            {post.type === "announcement" ? <><Megaphone className="h-2.5 w-2.5" />Announcement</> : <><BarChart3 className="h-2.5 w-2.5" />Poll</>}
+          </span>
+        )}
+
+        {/* Username row — click → profile */}
+        <Link href={`/u/${post.user_id}`} className="block">
+          <div className="flex items-center gap-2">
+            <span className="text-[15px] font-black text-white drop-shadow-md leading-none">@{post.username}</span>
+            {post.account_type === "official" && <BadgeCheck className="h-4 w-4 text-blue-400 shrink-0" />}
+            {post.account_type === "premium" && <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
+          </div>
+        </Link>
+
+        {/* Caption */}
+        {post.text && (
+          <p className="text-[13px] text-white/90 leading-relaxed line-clamp-3 drop-shadow-md">{post.text}</p>
+        )}
+
+        {/* Product card — click → open product detail */}
         {post.product_snapshot && post.product_id && (
           <button onClick={() => onOpenProduct(String(post.product_id))}
-            className="w-full flex items-center gap-2 rounded-xl bg-white/10 backdrop-blur-md px-3 py-2 border border-white/15 active:bg-white/20 transition-colors text-left">
-            <div className="h-9 w-9 rounded-lg overflow-hidden bg-zinc-800 flex items-center justify-center text-lg shrink-0">
+            className="w-full flex items-center gap-3 rounded-2xl bg-white/12 backdrop-blur-md px-3 py-2.5 border border-white/15 active:bg-white/20 transition-colors text-left shadow-lg">
+            <div className="h-10 w-10 rounded-xl overflow-hidden bg-zinc-800 flex items-center justify-center text-xl shrink-0 border border-white/10">
               {post.product_snapshot.image?.startsWith("http")
-                ? <img src={post.product_snapshot.image} alt="" className="h-full w-full object-cover" />
+                ? <img src={post.product_snapshot.image} alt="" className="h-full w-full object-cover" loading="lazy" />
                 : (post.product_snapshot.image || "📦")}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[12px] font-bold text-white truncate">{post.product_snapshot.name}</p>
-              <p className="text-[11px] font-black text-amber-400">{post.product_snapshot.price}π</p>
+              <p className="text-[13px] font-black text-amber-400">{post.product_snapshot.price}π</p>
             </div>
-            <ChevronRight className="h-4 w-4 text-white/50 shrink-0" />
+            <div className="flex items-center gap-1 shrink-0 rounded-xl bg-amber-400 px-2.5 py-1">
+              <ShoppingCart className="h-3 w-3 text-black" />
+              <span className="text-[10px] font-black text-black">Buy</span>
+            </div>
           </button>
         )}
 
+        {/* Poll */}
         {post.poll && <PollCard post={post} currentUserId={currentUser?.id} />}
-        {post.created_at && <p className="text-[10px] text-white/40">{new Date(post.created_at).toLocaleDateString()}</p>}
+
+        {/* Time + music bar */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <div className="flex items-end gap-0.5 h-3">
+              {[3,5,4,6,3,5,2,4].map((h, i) => (
+                <div key={i} className="w-0.5 rounded-full bg-white/40 animate-pulse" style={{ height: `${h}px`, animationDelay: `${i * 0.1}s` }} />
+              ))}
+            </div>
+            <span className="text-[10px] text-white/50 truncate">Dabia · {post.created_at ? new Date(post.created_at).toLocaleDateString() : ""}</span>
+          </div>
+        </div>
       </div>
 
+      {/* ── COMMENTS SHEET ──────────────────────────────────────────────────── */}
       {showComments && (
-        <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col rounded-t-3xl border-t border-white/10 bg-zinc-950/95 backdrop-blur-md" style={{ maxHeight: "65%" }}>
+        <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col rounded-t-3xl border-t border-white/10 bg-zinc-950/97 backdrop-blur-xl shadow-2xl" style={{ maxHeight: "70%" }}>
           <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-white/10">
-            <p className="text-sm font-bold text-white">Comments</p>
-            <button onClick={() => setShowComments(false)}><X className="h-4 w-4 text-white" /></button>
+            <p className="text-sm font-bold text-white flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-amber-400" />Comments
+              {commentCount > 0 && <span className="text-[11px] text-white/50">({commentCount})</span>}
+            </p>
+            <button onClick={() => setShowComments(false)} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10">
+              <X className="h-3.5 w-3.5 text-white" />
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
             <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
@@ -3533,9 +3610,21 @@ function ProfileTab() {
   }, [])
 
   const toggleHideLocation = useCallback(async () => {
-    if (!profileUser || togglingLoc) return
+    if (!profileUser?.id || togglingLoc) return
     setTogglingLoc(true)
-    try { await updateProfile({ hide_location: !profileUser.hide_location }) } finally { setTogglingLoc(false) }
+    const next = !profileUser.hide_location
+    try {
+      const ok = await setHideLocation(profileUser.id, next, profileUser.pi_uid)
+      if (ok) {
+        await updateProfile({ hide_location: next })
+      } else {
+        alert(next ? "Could not hide location — please try again." : "Could not show location — please try again.")
+      }
+    } catch {
+      alert("Could not update location setting.")
+    } finally {
+      setTogglingLoc(false)
+    }
   }, [profileUser, togglingLoc, updateProfile])
 
   useEffect(() => {
@@ -3903,8 +3992,8 @@ export default function DabiaApp() {
   const isBusinessAccount = !!dbUser && dbUser.role !== "buyer"
   const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "home",     label: "Home",     icon: <Home      className="h-5 w-5" /> },
-    { key: "discover", label: "Discover", icon: <Compass   className="h-5 w-5" /> },
     { key: "social",   label: "Social",   icon: <Users2    className="h-5 w-5" /> },
+    { key: "discover", label: "Discover", icon: <Compass   className="h-5 w-5" /> },
     { key: "space",    label: "Space",    icon: <Layers    className="h-5 w-5" /> },
     ...(isBusinessAccount ? [{ key: "business" as Tab, label: "Pro", icon: <BarChart3 className="h-5 w-5" /> }] : []),
     { key: "profile",  label: "Profile",  icon: <User      className="h-5 w-5" /> },
