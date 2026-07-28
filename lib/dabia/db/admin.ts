@@ -94,3 +94,21 @@ export const TIER_TO_ACCOUNT_TYPE: Record<string, "premium" | "official"> = {
   pro: "premium",
   enterprise: "official",
 }
+
+// إرسال push notification لمستخدم بعد إنشاء إشعار حقيقي
+// يُستدعى من route handlers الخادم فقط — لا يُستورَد في المتصفح
+export async function sendPushToUser(
+  userId: string,
+  title: string,
+  message: string,
+  url = "/",
+): Promise<void> {
+  try {
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://dabiaacdfb2093.pinet.com"
+    await fetch(`${base}/api/dabia/push`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "send", userId, title, message, url }),
+    })
+  } catch {}
+}

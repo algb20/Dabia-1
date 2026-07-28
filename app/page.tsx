@@ -37,6 +37,21 @@ declare global {
   }
 }
 
+// ─── Push Notification Helpers ────────────────────────────────────────────────
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const raw = atob(base64)
+  const arr = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i)
+  return arr.buffer as ArrayBuffer
+}
+function arrayBufferToBase64(buf: ArrayBuffer | null): string {
+  if (!buf) return ""
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab         = "home" | "discover" | "space" | "business" | "profile" | "social"
 type SortKey     = "smart" | "price" | "rating" | "distance"
@@ -4207,6 +4222,43 @@ export default function DabiaApp() {
       return next
     })
   }, [])
+
+  // تسجيل Service Worker (Offline + Push) مرة واحدة عند التحميل
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(async reg => {
+      // اطلب إذن Push إذا كان المستخدم مسجّلاً ولم يسبق الاشتراك
+      if (!dbUser?.id) return
+      if (Notification.permission === "denied") return
+      if (Notification.permission === "default") {
+        const perm = await Notification.requestPermission()
+        if (perm !== "granted") return
+      }
+      try {
+        const res = await fetch("/api/dabia/push")
+        const { publicKey } = await res.json()
+        if (!publicKey) return
+        const existing = await reg.pushManager.getSubscription()
+        const sub = existing ?? await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        })
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (!token) return
+        await fetch("/api/dabia/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            endpoint: sub.endpoint,
+            p256dh:   arrayBufferToBase64(sub.getKey("p256dh")),
+            auth:     arrayBufferToBase64(sub.getKey("auth")),
+          }),
+        })
+      } catch {}
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbUser?.id])
 
   const { data: alertsData, mutate: refreshNotifs } = useAlerts(dbUser?.id)
   const notifs   = alertsData?.notifications ?? []
