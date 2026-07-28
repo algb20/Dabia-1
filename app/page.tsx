@@ -2433,7 +2433,13 @@ function SocialTab() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    fetch('/api/dabia/auto-post-trending', { method: 'POST' }).catch(() => {})
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token
+      fetch('/api/dabia/auto-post-trending', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).catch(() => {})
+    }).catch(() => {})
   }, [])
 
   const toggleFollow = useCallback(async (authorId: string) => {
