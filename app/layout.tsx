@@ -2,6 +2,7 @@ import type React from "react";
 import type { Metadata } from "next";
 import { APP_CONFIG } from "@/lib/app-config";
 import TranslationProvider from "@/components/translation-provider";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const appName = APP_CONFIG.NAME;
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="font-sans">
         <TranslationProvider>{children}</TranslationProvider>
+        <Analytics />
       </body>
     </html>
   );

@@ -23,7 +23,7 @@ import {
   Lightbulb, Send, UserPlus, CheckCheck, Layers, Heart, TrendingUp,
   ArrowRight, ShieldCheck, Store, LayoutGrid, Grid3x3, Hexagon,
   Building, Receipt, Activity, Zap, Radio, Users, Compass, Clock, Loader2, AlertCircle, Edit3, Globe2, CreditCard, LogIn, MessageCircle, Users2, Instagram, Twitter, Eye, EyeOff, Megaphone, Moon, Sun, Repeat2, Pin, Bookmark, Mic, ImageIcon, Video, CalendarClock, MoreHorizontal, Trash2, BellOff,
-  MapPin, Navigation, ChevronDown, Palette
+  MapPin, Navigation, ChevronDown, Palette, Download
 } from "lucide-react"
 
 // ─── Pi SDK global type (declared again locally for type-safety in this file) ─
@@ -2219,6 +2219,10 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
   const [showComments, setShowComments] = useState(false)
   const [reposted, setReposted] = useState(false)
   const [reposting, setReposting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadDone, setDownloadDone] = useState(false)
+  const [showOptions, setShowOptions] = useState(false)
+  const [optionBusy, setOptionBusy] = useState(false)
   const postId = String(post.id)
   const isMine = currentUser && String(post.user_id) === String(currentUser.id)
 
@@ -2261,6 +2265,67 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
     }
     recordPostShare(postId, currentUser?.id)
     setShareCount(c => c + 1)
+  }
+
+  const handleDownload = async () => {
+    if (downloading) return
+    const rawImg = post.product_snapshot?.image
+    const imageUrl = rawImg?.startsWith("http") ? rawImg : null
+    if (imageUrl) {
+      setDownloading(true)
+      try {
+        const res = await fetch(imageUrl)
+        const blob = await res.blob()
+        const blobUrl = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = blobUrl
+        a.download = `dabia-${postId}.jpg`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+        setDownloadDone(true)
+        setTimeout(() => setDownloadDone(false), 2500)
+      } catch {
+        window.open(imageUrl, "_blank")
+      } finally {
+        setDownloading(false)
+      }
+    } else {
+      // لا توجد صورة — انسخ رابط المنشور
+      const url = `${window.location.origin}/?post=${post.id}`
+      try { await navigator.clipboard.writeText(url) } catch {}
+      setDownloadDone(true)
+      setTimeout(() => setDownloadDone(false), 2500)
+    }
+  }
+
+  const handleDeletePost = async () => {
+    if (!currentUser?.id || optionBusy) return
+    if (!confirm("Delete this post?")) return
+    setOptionBusy(true)
+    await deletePost(postId)
+    setOptionBusy(false)
+    setShowOptions(false)
+    onRefresh()
+  }
+
+  const handlePinPost = async () => {
+    if (!currentUser?.id || optionBusy) return
+    setOptionBusy(true)
+    await togglePinPost(postId, !post.pinned)
+    setOptionBusy(false)
+    setShowOptions(false)
+    onRefresh()
+  }
+
+  const handleReport = async () => {
+    if (!currentUser?.id || optionBusy) return
+    setOptionBusy(true)
+    await reportContent(postId, "post", currentUser.id, "Reported from social feed")
+    setOptionBusy(false)
+    setShowOptions(false)
+    alert("Report submitted — thank you.")
   }
 
   const bg = post.product_snapshot?.image?.startsWith("http") ? post.product_snapshot.image
@@ -2329,6 +2394,16 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
           <button onClick={handleSave}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md">
             <Bookmark className={`h-6 w-6 transition-all ${saved ? "fill-amber-400 text-amber-400" : "text-white"}`} />
+          </button>
+        </div>
+
+        {/* Download */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button onClick={handleDownload} disabled={downloading}
+            className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-md ${downloadDone ? "bg-emerald-500/40" : "bg-black/30"}`}>
+            {downloading
+              ? <Loader2 className="h-5 w-5 text-white animate-spin" />
+              : <Download className={`h-6 w-6 transition-all ${downloadDone ? "text-emerald-400" : "text-white"}`} />}
           </button>
         </div>
 
@@ -2401,6 +2476,43 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
           </div>
         </div>
       </div>
+
+      {/* ── TOP-RIGHT MORE OPTIONS BUTTON ───────────────────────────────────── */}
+      <button onClick={() => setShowOptions(true)}
+        className="absolute top-safe right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm active:scale-90 transition-transform shadow-md mt-16">
+        <MoreHorizontal className="h-5 w-5 text-white" />
+      </button>
+
+      {/* ── OPTIONS SHEET ───────────────────────────────────────────────────── */}
+      {showOptions && (
+        <div className="absolute inset-0 z-30 flex items-end" onClick={() => setShowOptions(false)}>
+          <div className="w-full rounded-t-3xl bg-zinc-900/98 backdrop-blur-xl border-t border-white/10 shadow-2xl pb-safe" onClick={e => e.stopPropagation()}>
+            <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-white/20 mb-4" />
+            {isMine ? (
+              <>
+                <button onClick={handlePinPost} disabled={optionBusy}
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm font-medium text-white hover:bg-white/5 active:bg-white/10">
+                  <Pin className="h-4.5 w-4.5 text-amber-400 shrink-0" />
+                  {post.pinned ? "Unpin Post" : "Pin to Profile"}
+                </button>
+                <button onClick={handleDeletePost} disabled={optionBusy}
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm font-medium text-red-400 hover:bg-white/5 active:bg-white/10">
+                  <Trash2 className="h-4.5 w-4.5 shrink-0" />Delete Post
+                </button>
+              </>
+            ) : (
+              <button onClick={handleReport} disabled={optionBusy}
+                className="flex w-full items-center gap-3 px-5 py-3.5 text-sm font-medium text-red-400 hover:bg-white/5 active:bg-white/10">
+                <AlertCircle className="h-4.5 w-4.5 shrink-0" />Report Post
+              </button>
+            )}
+            <button onClick={() => setShowOptions(false)}
+              className="flex w-full items-center justify-center py-3.5 text-sm font-bold text-white/50 border-t border-white/10 mt-1 mb-1">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── COMMENTS SHEET ──────────────────────────────────────────────────── */}
       {showComments && (
@@ -3657,6 +3769,7 @@ function ProfileTab() {
   const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
   const [togglingLoc, setTogglingLoc] = useState(false)
   const [colorTheme, setColorTheme] = useState<string>("aurum")
+  const [analyticsData, setAnalyticsData] = useState<{ summary?: any; byCountry?: any[] } | null>(null)
   useEffect(() => {
     try { setHideBalancePreview(localStorage.getItem("dabia_hide_balance") === "true") } catch {}
     try {
@@ -3695,7 +3808,17 @@ function ProfileTab() {
     getOrdersByBuyer(profileUser.id).then(orders => setOrderCount(orders.length)).catch(() => setOrderCount(0))
     getSavedProducts(profileUser.id).then(list => setSavedCountReal(list.length)).catch(() => setSavedCountReal(0))
     getFollowCounts(profileUser.id).then(setFollowCounts).catch(() => {})
-  }, [profileUser?.id])
+    // جلب تحليلات الزوار للأدمين فقط
+    if (profileUser.emall === "maskmal088@gmail.com") {
+      supabase.auth.getSession().then(({ data }) => {
+        const token = data.session?.access_token
+        if (!token) return
+        fetch("/api/dabia/analytics", {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(r => r.ok ? r.json() : null).then(d => { if (d) setAnalyticsData(d) }).catch(() => {})
+      })
+    }
+  }, [profileUser?.id, profileUser?.emall])
 
   const handleShareApp = useCallback(async () => {
     const url = "https://dabiaacdfb2093.pinet.com"
@@ -3946,6 +4069,43 @@ function ProfileTab() {
             )
           })()}
 
+          {/* ── ADMIN ANALYTICS ───────────────────────────────────────────────── */}
+          {profileUser?.emall === "maskmal088@gmail.com" && analyticsData && (
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="px-4 pt-3.5 pb-2 flex items-center gap-2 border-b border-border">
+                <BarChart3 className="h-4 w-4 text-amber-400 shrink-0" />
+                <p className="text-[12px] font-bold flex-1">Visitor Analytics</p>
+                <span className="text-[9px] text-muted-foreground">Last 30 days</span>
+              </div>
+              {/* Summary numbers */}
+              <div className="grid grid-cols-3 gap-px bg-border">
+                {[
+                  { label: "Total Views", val: analyticsData.summary?.total_views ?? 0 },
+                  { label: "Sessions",    val: analyticsData.summary?.unique_sessions ?? 0 },
+                  { label: "Today",       val: analyticsData.summary?.views_24h ?? 0 },
+                ].map(s => (
+                  <div key={s.label} className="flex flex-col items-center py-3 bg-card">
+                    <span className="text-lg font-black leading-none">{Number(s.val).toLocaleString()}</span>
+                    <span className="text-[9px] text-muted-foreground mt-0.5">{s.label}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Top countries */}
+              {(analyticsData.byCountry ?? []).slice(0, 5).length > 0 && (
+                <div className="px-4 py-3 space-y-1.5">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Top Countries</p>
+                  {(analyticsData.byCountry as any[]).slice(0, 5).map((c: any) => (
+                    <div key={c.country_code} className="flex items-center gap-2">
+                      <span className="text-[11px] w-5 text-center">{getCountryFlag(c.country_code)}</span>
+                      <span className="text-[11px] flex-1 truncate">{c.country_name}</span>
+                      <span className="text-[11px] font-bold tabular-nums">{Number(c.views).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── QUICK ACTIONS BENTO ──────────────────────────────────────────── */}
           {shareMsg && (
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[12px] text-emerald-400 text-center">{shareMsg}</div>
@@ -4084,6 +4244,26 @@ export default function DabiaApp() {
     if (!dbUser?.id || geoAlreadyAsked()) return
     requestBrowserGeo(dbUser.id, () => {})
   }, [dbUser?.id])
+
+  // beacon تحليلات الزوار — يُرسَل مرة عند فتح التطبيق
+  useEffect(() => {
+    try {
+      let sid = sessionStorage.getItem("dabia_sid")
+      if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("dabia_sid", sid) }
+      fetch("/api/dabia/analytics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sid,
+          page: window.location.pathname || "/",
+          referrer: document.referrer || null,
+          userId: dbUser?.id ?? null,
+        }),
+        keepalive: true,
+      }).catch(() => {})
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // فتح منتج تلقائياً إذا جاء المستخدم من رابط مشاركة مباشر.
   // مصدران: (1) معامل الاستعلام على الجذر /?p=ID (الرابط الجديد الأكثر متانة)،
