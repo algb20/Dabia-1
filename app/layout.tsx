@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { APP_CONFIG } from "@/lib/app-config";
 import TranslationProvider from "@/components/translation-provider";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const appName = APP_CONFIG.NAME;
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans">
         <TranslationProvider>{children}</TranslationProvider>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
