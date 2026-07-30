@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { buildAuthHeaders } from "../auth-headers"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // تشفير كلمات السر — مدمج مباشرة هنا (بدل استيراد ملف منفصل) لتجنب مشاكل bundling
@@ -1233,80 +1234,74 @@ export async function resetPasswordWithCode(email: string, code: string, newPass
 // ═══════════════════════════════════════════════════════════════════════════════
 export const ORDER_STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'shipped', 'delivered'] as const
 
+// كل عمليات الطلبات تمرّ عبر مسار الخادم /api/dabia/orders الذي يتحقق من الهوية
+// (Supabase JWT أو رمز Pi) ويفرض الملكية بـ service_role. جدول orders مُغلق أمام
+// العميل في القاعدة — لذا لا وصول مباشر من المتصفح إطلاقاً (حماية بيانات العملاء
+// والضمان escrow).
+async function ordersApi<T>(action: string, payload: Record<string, any> = {}): Promise<T | null> {
+  try {
+    const headers = await buildAuthHeaders()
+    const res = await fetch('/api/dabia/orders', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action, ...payload }),
+    })
+    if (!res.ok) return null
+    return (await res.json()) as T
+  } catch { return null }
+}
+
 export async function createOrder(d: DBOrder): Promise<DBOrder> {
-  const { data, error } = await supabase.from('orders').insert({ ...d, status: d.status || 'confirmed' }).select().single()
-  if (error) throw new Error(error.message)
-  // خصم المخزون يتم تلقائياً في القاعدة عبر trigger عند إدراج الطلب
-  // (لم يعد العميل يكتب عمود stock مباشرة — جدول المنتجات مقفل على المالك).
-  return data as DBOrder
+  // الملكية (user_id) والحالة الأولية يفرضهما الخادم من الهوية — لا نرسلهما ثقةً.
+  const res = await ordersApi<{ order?: DBOrder; error?: string }>('create', { order: d })
+  if (!res?.order) throw new Error(res?.error || 'Could not create order')
+  // خصم المخزون يتم تلقائياً في القاعدة عبر trigger عند إدراج الطلب.
+  return res.order
 }
 
 // طلبات المشتري — يتابع كل مشترياته
-export async function getOrdersByBuyer(bid: string): Promise<DBOrder[]> {
-  try {
-    const { data, error } = await supabase.from('orders').select('*').eq('user_id', bid).order('created_at',{ascending:false}).limit(50)
-    if (error) return []
-    return (data??[]) as DBOrder[]
-  } catch { return [] }
+export async function getOrdersByBuyer(_bid: string): Promise<DBOrder[]> {
+  const res = await ordersApi<{ orders?: DBOrder[] }>('listBuyer')
+  return res?.orders ?? []
 }
 
 // طلبات البائع — يتابع كل ما بِيع من متجره ويُحدّث حالته
-export async function getOrdersBySeller(sellerId: string): Promise<DBOrder[]> {
-  try {
-    const { data, error } = await supabase.from('orders').select('*').eq('seller_user_id', sellerId).order('created_at',{ascending:false}).limit(100)
-    if (error) return []
-    return (data??[]) as DBOrder[]
-  } catch { return [] }
+export async function getOrdersBySeller(_sellerId: string): Promise<DBOrder[]> {
+  const res = await ordersApi<{ orders?: DBOrder[] }>('listSeller')
+  return res?.orders ?? []
 }
 
 export async function getOrderById(id: string): Promise<DBOrder | null> {
-  try { const { data } = await supabase.from('orders').select('*').eq('id', id).maybeSingle(); return data as DBOrder | null } catch { return null }
+  const res = await ordersApi<{ order?: DBOrder | null }>('getById', { id })
+  return res?.order ?? null
 }
 
 // البائع يُحدّث حالة الطلب (قيد التحضير → شُحن → تم التسليم) — تتبع حقيقي.
 // عند الشحن يمكنه إرفاق شركة الشحن ورقم التتبّع الخارجي (يُحفظان في سجل الحالة).
 export async function updateOrderStatus(orderId: string, status: DBOrder['status'], opts?: { note?: string; carrier?: string; tracking_number?: string }): Promise<boolean> {
-  try {
-    const payload: any = { status, updated_at: new Date().toISOString() }
-    if (opts?.note)            payload.tracking_note   = opts.note
-    if (opts?.carrier)         payload.carrier         = opts.carrier
-    if (opts?.tracking_number) payload.tracking_number = opts.tracking_number
-    const { error } = await supabase.from('orders').update(payload).eq('id', orderId)
-    return !error
-  } catch { return false }
+  const res = await ordersApi<{ ok?: boolean }>('updateStatus', {
+    orderId, status, note: opts?.note, carrier: opts?.carrier, tracking_number: opts?.tracking_number,
+  })
+  return !!res?.ok
 }
 
 // المشتري يؤكّد استلام الطلب — إغلاق آمن للطرفين. عند التأكيد يُحرَّر مبلغ
 // الضمان للبائع (escrow released). لا يُحرَّر المال إلا بتأكيد المشتري.
 export async function confirmOrderReceived(orderId: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.from('orders').update({
-      status: 'delivered',
-      escrow_status: 'released',
-      escrow_released_at: new Date().toISOString(),
-      tracking_note: 'Receipt confirmed by buyer — payment released to seller',
-      updated_at: new Date().toISOString(),
-    }).eq('id', orderId)
-    return !error
-  } catch { return false }
+  const res = await ordersApi<{ ok?: boolean }>('confirmReceived', { orderId })
+  return !!res?.ok
 }
 
 // تتبّع طلب برقمه — متاح للطرفين لمتابعة الشحنة
 export async function getOrderByNumber(orderNumber: string): Promise<DBOrder | null> {
-  try { const { data } = await supabase.from('orders').select('*').eq('order_number', orderNumber.trim().toUpperCase()).maybeSingle(); return data as DBOrder | null } catch { return null }
+  const res = await ordersApi<{ order?: DBOrder | null }>('getByNumber', { orderNumber })
+  return res?.order ?? null
 }
 
 // المشتري يطلب إلغاء/استرداد — يُعاد مبلغ الضمان المحتجز للمشتري (escrow refunded)
 export async function requestOrderCancellation(orderId: string, reason: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.from('orders').update({
-      status: 'cancelled',
-      escrow_status: 'refunded',
-      tracking_note: `Cancelled by buyer: ${reason}`,
-      updated_at: new Date().toISOString(),
-    }).eq('id', orderId)
-    return !error
-  } catch { return false }
+  const res = await ordersApi<{ ok?: boolean }>('requestCancellation', { orderId, reason })
+  return !!res?.ok
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2070,18 +2065,20 @@ export interface RealPlatformStats {
 
 export async function getRealPlatformStats(): Promise<RealPlatformStats> {
   try {
-    const [{ count: totalUsers }, { count: totalProducts }, { data: orders }, { count: activeMerchants }] = await Promise.all([
+    // جدول orders مُقفل أمام العميل — نجلب الإجماليات عبر دالة تجميع آمنة
+    // (SECURITY DEFINER) تُرجع العدد والحجم فقط دون كشف أي صف/PII.
+    const [{ count: totalUsers }, { count: totalProducts }, { data: orderStats }, { count: activeMerchants }] = await Promise.all([
       supabase.from('users').select('id', { count: 'exact', head: true }),
       supabase.from('products').select('id', { count: 'exact', head: true }),
-      supabase.from('orders').select('total_price'),
+      supabase.rpc('get_platform_order_stats'),
       supabase.from('users').select('id', { count: 'exact', head: true }).neq('role', 'buyer').eq('status', 'active'),
     ])
-    const totalVolumePi = (orders ?? []).reduce((sum, o: any) => sum + (Number(o.total_price) || 0), 0)
+    const stat = Array.isArray(orderStats) ? orderStats[0] : orderStats
     return {
       totalUsers: totalUsers ?? 0,
       totalProducts: totalProducts ?? 0,
-      totalOrders: (orders ?? []).length,
-      totalVolumePi,
+      totalOrders: Number(stat?.order_count) || 0,
+      totalVolumePi: Number(stat?.volume) || 0,
       activeMerchants: activeMerchants ?? 0,
     }
   } catch {

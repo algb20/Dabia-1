@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { useUserAuth, requestBrowserGeo, geoAlreadyAsked } from "@/hooks/use-user-auth"
+import { setPiAccessToken } from "@/lib/dabia/auth-headers"
 import { getCountryFlag, COUNTRIES } from "@/lib/countries"
 import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
@@ -741,6 +742,8 @@ const ProductDetail = memo(function ProductDetail({ product: p, onClose }: { pro
     try {
       const piAuth = await window.Pi!.authenticate(["payments", "username"], () => {})
       piAccessToken = piAuth?.accessToken ?? null
+      // مشاركة الرمز مع مساعد مصادقة الطلبات حتى لا يتكرر استدعاء Pi عند إنشاء الطلب
+      try { setPiAccessToken(piAccessToken) } catch {}
     } catch {}
 
     const buildPayHeaders = async (): Promise<Record<string, string>> => {
@@ -3496,6 +3499,7 @@ function BusinessTab() {
     try {
       const piAuth = await window.Pi!.authenticate(["payments", "username"], () => {})
       piAccessToken = piAuth?.accessToken ?? null
+      try { setPiAccessToken(piAccessToken) } catch {}
     } catch {}
 
     const buildPaymentHeaders = async (): Promise<Record<string, string>> => {

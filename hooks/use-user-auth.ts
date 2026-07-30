@@ -6,6 +6,7 @@ import {
   loginOrRegisterWithPi, updateUser, tryAutoVerify, meetsVerificationRequirements, supabase,
   VERIFICATION_REQUIREMENTS, type DBUser
 } from '@/lib/dabia/db'
+import { setPiAccessToken } from '@/lib/dabia/auth-headers'
 
 export type { DBUser as DabiaUser }
 
@@ -170,6 +171,8 @@ export function useUserAuth() {
       const uid      = auth?.user?.uid || ''
       const username = auth?.user?.username || ''
       if (!uid) throw new Error('Could not read your Pi identity — try again')
+      // التقاط رمز Pi لإعادة استخدامه في مصادقة مسارات API الحسّاسة (الطلبات…)
+      try { setPiAccessToken(auth?.accessToken ?? null) } catch {}
 
       const res = await loginOrRegisterWithPi(uid, username)
       if (!res.ok || !res.user) throw new Error(res.error || 'Pi sign-in failed')
