@@ -9,16 +9,24 @@ import { SITE } from "@/lib/discover/config";
 // (Supabase) and (2) replace `wrapAffiliate` with each network's real deep-link
 // builder (Amazon tag, Awin/CJ redirect, Skimlinks, etc.). Nothing else changes.
 
-const AFFILIATE_TAG = process.env.DISCOVER_AFFILIATE_TAG || ""; // e.g. "dabia-20"
+// Per-network affiliate identifiers. These are PUBLIC (they appear in every
+// outbound link), so a default is safe; override per environment if needed.
+// Amazon Associates tag (amazon.com store). Add eBay/AliExpress IDs here as
+// their programs are approved.
+const AMAZON_TAG = process.env.DISCOVER_AMAZON_TAG || "dabia08-20";
 
 function wrapAffiliate(rawUrl: string, sourceId: string): string {
-  if (!AFFILIATE_TAG) return rawUrl;
   try {
     const url = new URL(rawUrl);
-    // Generic placeholder wiring; real networks each have their own scheme.
-    if (sourceId === "amazon") url.searchParams.set("tag", AFFILIATE_TAG);
-    else url.searchParams.set("ref", AFFILIATE_TAG);
-    return url.toString();
+    const host = url.hostname.toLowerCase();
+    // Only wrap sources whose affiliate program is actually set up. Amazon is
+    // live; other official sources stay clean direct links until their program
+    // is approved (avoids fake/broken affiliate params on brand stores).
+    if (sourceId === "amazon" && host.includes("amazon.") && AMAZON_TAG) {
+      url.searchParams.set("tag", AMAZON_TAG);
+      return url.toString();
+    }
+    return rawUrl;
   } catch {
     return rawUrl;
   }
