@@ -690,21 +690,33 @@ export async function getProducts(o: { category?: string; limit?: number; search
     const { data } = await q; return await attachSellerAccountTypes((data ?? []) as DBProduct[])
   } catch { return [] }
 }
-export async function addProduct(d: DBProduct): Promise<DBProduct> {
-  const { data, error } = await supabase.from('products').insert({ ...d, active: true }).select().single()
-  if (error) throw new Error(error.message); return data as DBProduct
-}
-// تعديل منتج/خدمة موجودة فعلياً (اسم، سعر، خصم، وصف، صور، مخزون)
-export async function updateProduct(id: string, updates: Partial<DBProduct>): Promise<DBProduct | null> {
+// كل كتابة على المنتجات تمرّ عبر /api/dabia/products (مصادقة + ملكية بـ service_role).
+// جدول products مُغلق للكتابة أمام العميل — القراءة فقط عامة.
+async function productsApi<T>(action: string, payload: Record<string, any> = {}): Promise<T | null> {
   try {
-    const { data, error } = await supabase.from('products').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single()
-    if (error) return null
-    return data as DBProduct
+    const headers = await buildAuthHeaders()
+    const res = await fetch('/api/dabia/products', {
+      method: 'POST', headers, body: JSON.stringify({ action, ...payload }),
+    })
+    if (!res.ok) return null
+    return (await res.json()) as T
   } catch { return null }
 }
-// إيقاف/تفعيل منتج دون حذفه نهائياً (يبقى بسجلات الطلبات القديمة)
+export async function addProduct(d: DBProduct): Promise<DBProduct> {
+  // seller_user_id تُفرض من الهوية على الخادم — لا تُرسَل ثقةً من العميل.
+  const res = await productsApi<{ product?: DBProduct; error?: string }>('create', { product: d })
+  if (!res?.product) throw new Error(res?.error || 'Could not create product')
+  return res.product
+}
+// تعديل منتج/خدمة موجودة فعلياً (اسم، سعر، خصم، وصف، صور، مخزون) — صاحبه فقط
+export async function updateProduct(id: string, updates: Partial<DBProduct>): Promise<DBProduct | null> {
+  const res = await productsApi<{ product?: DBProduct | null }>('update', { id, updates })
+  return res?.product ?? null
+}
+// إيقاف/تفعيل منتج دون حذفه نهائياً (يبقى بسجلات الطلبات القديمة) — صاحبه فقط
 export async function toggleProductActive(id: string, active: boolean): Promise<boolean> {
-  try { const { error } = await supabase.from('products').update({ active }).eq('id', id); return !error } catch { return false }
+  const res = await productsApi<{ ok?: boolean }>('toggleActive', { id, active })
+  return !!res?.ok
 }
 export async function getProductById(id: string): Promise<DBProduct | null> {
   try {
@@ -735,16 +747,12 @@ export interface DBReview {
   created_at?: string
 }
 
-export async function addOrUpdateReview(productId: string, userId: string, username: string, rating: number, body?: string): Promise<{ review: DBReview | null; error?: string }> {
-  try {
-    const { data, error } = await supabase
-      .from('product_reviews')
-      .upsert({ product_id: productId, user_id: userId, username, rating, body: body || null }, { onConflict: 'product_id,user_id' })
-      .select()
-      .single()
-    if (error) return { review: null, error: error.message }
-    return { review: data as DBReview }
-  } catch (e) { return { review: null, error: e instanceof Error ? e.message : 'Failed to save review' } }
+// التقييم يمرّ عبر /api/dabia/products — الهوية (user_id/username) تُفرض من الخادم
+// لمنع تقييمات مزيّفة أو منتحِلة. userId/username من العميل يُتجاهلان أمنياً.
+export async function addOrUpdateReview(productId: string, _userId: string, _username: string, rating: number, body?: string): Promise<{ review: DBReview | null; error?: string }> {
+  const res = await productsApi<{ review?: DBReview; error?: string }>('reviewUpsert', { productId, rating, body: body || null })
+  if (!res?.review) return { review: null, error: res?.error || 'Failed to save review' }
+  return { review: res.review }
 }
 
 export async function getProductReviews(productId: string): Promise<DBReview[]> {
@@ -1153,7 +1161,8 @@ export async function getStreamReservationCount(streamId: string): Promise<numbe
   try { const { count } = await supabase.from('stream_reservations').select('*', { count: 'exact', head: true }).eq('stream_id', streamId); return count ?? 0 } catch { return 0 }
 }
 export async function deleteProduct(id: string): Promise<boolean> {
-  try { const { error } = await supabase.from('products').delete().eq('id', id); return !error } catch { return false }
+  const res = await productsApi<{ ok?: boolean }>('delete', { id })
+  return !!res?.ok
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
