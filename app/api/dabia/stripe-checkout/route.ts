@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { APP_URL } from "@/lib/app-config"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Stripe Checkout — دفع ببطاقة بنكية (Visa/Mastercard) بعملة حقيقية موازي لـ Pi
@@ -25,8 +26,8 @@ export async function POST(req: NextRequest) {
     // إنشاء جلسة دفع حقيقية عبر Stripe Checkout (REST مباشر — بدون SDK لتقليل حجم الحزمة)
     const params = new URLSearchParams()
     params.append("mode", "payment")
-    params.append("success_url", "https://dabiaacdfb2093.pinet.com/orders?paid=1")
-    params.append("cancel_url", "https://dabiaacdfb2093.pinet.com/")
+    params.append("success_url", `${APP_URL}/orders?paid=1`)
+    params.append("cancel_url", `${APP_URL}/`)
     params.append("line_items[0][price_data][currency]", currency)
     params.append("line_items[0][price_data][product_data][name]", productName || "Dabia Purchase")
     params.append("line_items[0][price_data][unit_amount]", String(Math.round(amount * 100)))

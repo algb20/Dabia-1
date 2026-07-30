@@ -3840,7 +3840,7 @@ function ProfileTab() {
   }, [profileUser?.id, profileUser?.emall])
 
   const handleShareApp = useCallback(async () => {
-    const url = "https://dabiaacdfb2093.pinet.com"
+    const url = (typeof window !== "undefined" && window.location?.origin) || "https://dabiaacdfb2093.pinet.com"
     const text = "Join me on Dabia — smart social commerce on Pi Network! 🚀"
     try {
       if (navigator.share) {
@@ -3947,7 +3947,8 @@ function ProfileTab() {
                   </button>
                 </Link>
                 <button onClick={async () => {
-                  const url = `https://dabiaacdfb2093.pinet.com/u/${profileUser.id}`
+                  const origin = (typeof window !== "undefined" && window.location?.origin) || "https://dabiaacdfb2093.pinet.com"
+                  const url = `${origin}/u/${profileUser.id}`
                   const text = `Check out ${profileUser.username} on Dabia${profileUser.store_name ? ` — ${profileUser.store_name}` : ""}`
                   try {
                     if (navigator.share) { await navigator.share({ title: profileUser.username, text, url }) }

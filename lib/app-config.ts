@@ -15,6 +15,21 @@ export const APP_CONFIG = {
   DESCRIPTION: "A smart portal blending social media and intelligent shopping with an immersive 3D environment",
 } as const;
 
+// عنوان التطبيق العام — مصدر واحد للحقيقة. لتغيير الدومين مستقبلاً غيّر متغيّر
+// البيئة NEXT_PUBLIC_APP_URL فقط (في Vercel) — لا حاجة لأي تعديل في الكود.
+// الافتراضي هو دومين Pi Browser المجاني. على العميل نفضّل origin الحالي تلقائياً.
+export const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL || "https://dabiaacdfb2093.pinet.com";
+
+// أفضل عنوان متاح: origin الحالي في المتصفح (يتكيّف مع أي دومين تلقائياً)،
+// وإلا APP_URL على الخادم. يجعل تغيير الدومين بلا مخاطر.
+export function appOrigin(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return APP_URL;
+}
+
 // Colors Configuration - UPDATE THESE VALUES BASED ON USER DESIGN PREFERENCES
 export const COLORS = {
   // UPDATE: Set to the background color (hex format)
