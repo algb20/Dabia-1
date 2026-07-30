@@ -2146,7 +2146,7 @@ function PostCard({ post, currentUser, onRefresh, isFollowed, onToggleFollow, is
 
       {showComments && (
         <div className="border-t border-border p-3">
-          <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
+          <CommentsThread threadId={postId} threadType="post" currentUser={currentUser} ownerId={String(post.user_id)} />
         </div>
       )}
 
@@ -2545,7 +2545,7 @@ function TikTokPostSlide({ post, currentUser, isFollowed, onToggleFollow, onRefr
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
-            <CommentsThread threadId={postId} currentUser={currentUser} ownerId={String(post.user_id)} />
+            <CommentsThread threadId={postId} threadType="post" currentUser={currentUser} ownerId={String(post.user_id)} />
           </div>
         </div>
       )}

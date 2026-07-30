@@ -30,9 +30,14 @@ function timeAgo(iso?: string): string {
   return `${Math.floor(s / 86400)}d`
 }
 
-export function CommentsThread({ threadId, currentUser, ownerId }: {
+export function CommentsThread({ threadId, currentUser, ownerId, threadType = "product" }: {
   threadId: string; currentUser: DBUser | null; ownerId?: string
+  // نوع الخيط: منتج أو منشور. جدول التعليقات مشترك ومفتاحه نصّي، لذا نُميّز
+  // منشورات عن منتجات بمساحة أسماء (post:<id>) لمنع تصادم معرّفات المنتجات
+  // والمنشورات (تسلسلان منفصلان). المنتجات تبقى بمعرّفها الرقمي كما كان.
+  threadType?: "product" | "post"
 }) {
+  const storageKey = threadType === "post" ? `post:${threadId}` : threadId
   const [comments, setComments] = useState<DBComment[]>([])
   const [liked, setLiked] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -45,14 +50,14 @@ export function CommentsThread({ threadId, currentUser, ownerId }: {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
-    const list = await getComments(threadId)
+    const list = await getComments(storageKey)
     setComments(list)
     if (currentUser?.id) {
       const ids = list.map(c => String(c.id))
       setLiked(await getCommentLikes(currentUser.id, ids))
     }
     setLoading(false)
-  }, [threadId, currentUser?.id])
+  }, [storageKey, currentUser?.id])
   useEffect(() => { load() }, [load])
 
   // بناء الشجرة: أعلى مستوى + ردود
@@ -83,7 +88,7 @@ export function CommentsThread({ threadId, currentUser, ownerId }: {
     if (!t || !currentUser) return
     setPosting(true); setError("")
     const { comment, error: e } = await addComment({
-      product_id: threadId, user_id: currentUser.id!, username: currentUser.username,
+      product_id: storageKey, user_id: currentUser.id!, username: currentUser.username,
       avatar_url: currentUser.avatar_url, text: t, parent_id: replyTo?.id ?? null,
     })
     setPosting(false)

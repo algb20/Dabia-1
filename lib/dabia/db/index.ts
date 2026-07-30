@@ -1764,9 +1764,10 @@ export async function getPostShareCount(postId: string): Promise<number> {
   try { const { count } = await supabase.from('post_shares').select('id', { count: 'exact', head: true }).eq('post_id', postId); return count ?? 0 } catch { return 0 }
 }
 
-// عدد تعليقات منشور (product_comments تُستخدم للمنشورات أيضاً عبر CommentsThread)
+// عدد تعليقات منشور — التعليقات مخزّنة بمساحة أسماء post:<id> (انظر CommentsThread)
+// لمنع تصادم معرّفات المنشورات مع معرّفات المنتجات في جدول product_comments المشترك.
 export async function getPostCommentCount(postId: string): Promise<number> {
-  try { const { count } = await supabase.from('product_comments').select('id', { count: 'exact', head: true }).eq('product_id', postId); return count ?? 0 } catch { return 0 }
+  try { const { count } = await supabase.from('product_comments').select('id', { count: 'exact', head: true }).eq('product_id', `post:${postId}`); return count ?? 0 } catch { return 0 }
 }
 
 // إعادة نشر منشور ناجح — ينشئ منشوراً جديداً يشير للأصلي، يظهر في فيد الناشر الجديد
