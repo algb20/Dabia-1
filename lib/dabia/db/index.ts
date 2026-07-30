@@ -539,14 +539,25 @@ export interface DBComment {
   replies?: DBComment[] // مبنية شجرياً في الواجهة
 }
 
-export async function addComment(c: DBComment): Promise<{ comment: DBComment | null; error?: string }> {
+// كل كتابة على المنشورات/التعليقات تمرّ عبر /api/dabia/social (هوية + ملكية
+// بـ service_role). الجدولان مُغلقان للكتابة أمام العميل — القراءة عامة.
+async function socialApi<T>(action: string, payload: Record<string, any> = {}): Promise<T | null> {
   try {
-    const row: any = { product_id: c.product_id, user_id: c.user_id, username: c.username, avatar_url: c.avatar_url, text: c.text }
-    if (c.parent_id) row.parent_id = Number(c.parent_id)
-    const { data, error } = await supabase.from('product_comments').insert(row).select().single()
-    if (error) { console.error('[addComment]', error.message); return { comment: null, error: error.message } }
-    return { comment: data as DBComment }
-  } catch (e) { return { comment: null, error: e instanceof Error ? e.message : 'Failed to comment' } }
+    const headers = await buildAuthHeaders()
+    const res = await fetch('/api/dabia/social', {
+      method: 'POST', headers, body: JSON.stringify({ action, ...payload }),
+    })
+    if (!res.ok) return null
+    return (await res.json()) as T
+  } catch { return null }
+}
+export async function addComment(c: DBComment): Promise<{ comment: DBComment | null; error?: string }> {
+  // الهوية (user_id/username/avatar) تُفرض من الخادم — لا تُرسَل ثقةً من العميل.
+  const res = await socialApi<{ comment?: DBComment; error?: string }>('addComment', {
+    product_id: c.product_id, text: c.text, parent_id: c.parent_id,
+  })
+  if (!res?.comment) return { comment: null, error: res?.error || 'Failed to comment' }
+  return { comment: res.comment }
 }
 
 // إعجاب/إلغاء إعجاب على تعليق (العدّاد يُحدَّث بـ trigger في القاعدة)
@@ -575,11 +586,13 @@ export async function getComments(productId: string): Promise<DBComment[]> {
 
 // تعديل تعليق (لصاحبه فقط — يُتحقق في الواجهة بإظهار الزر لصاحب التعليق)
 export async function updateComment(commentId: string, text: string): Promise<boolean> {
-  try { const { error } = await supabase.from('product_comments').update({ text }).eq('id', commentId); return !error } catch { return false }
+  const res = await socialApi<{ ok?: boolean }>('updateComment', { commentId, text })
+  return !!res?.ok
 }
-// حذف تعليق
+// حذف تعليق — صاحبه أو صاحب المنشور/المنتج (إشراف) — يُفرض على الخادم
 export async function deleteComment(commentId: string): Promise<boolean> {
-  try { const { error } = await supabase.from('product_comments').delete().eq('id', commentId); return !error } catch { return false }
+  const res = await socialApi<{ ok?: boolean }>('deleteComment', { commentId })
+  return !!res?.ok
 }
 
 // ─── نظام التحقق حسب نوع الحساب ──────────────────────────────────────────────
@@ -1540,50 +1553,35 @@ async function attachAuthorAccountTypes(posts: DBPost[]): Promise<DBPost[]> {
 }
 
 // إعلان رسمي من متجر/شركة — يصل كإشعار حقيقي لكل متابعي هذا الحساب
-export async function createAnnouncement(userId: string, username: string, text: string, isOfficial = true): Promise<DBPost | null> {
-  try {
-    const row = { user_id: userId, username, type: 'announcement', text, is_official: isOfficial, pinned: true }
-    const { data, error } = await supabase.from('posts').insert(row).select().single()
-    if (error) return null
-    return data as DBPost
-  } catch { return null }
+// كل هذه الدوال تمرّ عبر /api/dabia/social — الهوية (user_id/username/avatar/
+// is_official) تُفرض من الخادم لمنع الانتحال وانتحال الشارة الرسمية. معاملات
+// userId/username/isOfficial من العميل تبقى في التوقيع للتوافق لكنها تُتجاهل أمنياً.
+export async function createAnnouncement(_userId: string, _username: string, text: string, _isOfficial = true): Promise<DBPost | null> {
+  const res = await socialApi<{ post?: DBPost }>('createPost', { type: 'announcement', text })
+  return res?.post ?? null
 }
 
 // نشر منتج حقيقي من المتجر إلى التاب الاجتماعي
-export async function sharePostFromProduct(userId: string, username: string, product: { id: string; name: string; price: number; image?: string }, caption?: string): Promise<DBPost | null> {
-  try {
-    const row = {
-      user_id: userId, username, type: 'product_share',
-      text: caption || '', product_id: product.id,
-      product_snapshot: { name: product.name, price: product.price, image: product.image },
-    }
-    const { data, error } = await supabase.from('posts').insert(row).select().single()
-    if (error) return null
-    return data as DBPost
-  } catch { return null }
+export async function sharePostFromProduct(_userId: string, _username: string, product: { id: string; name: string; price: number; image?: string }, caption?: string): Promise<DBPost | null> {
+  const res = await socialApi<{ post?: DBPost }>('createPost', {
+    type: 'product_share', text: caption || '', product_id: product.id,
+    product_snapshot: { name: product.name, price: product.price, image: product.image },
+  })
+  return res?.post ?? null
 }
 
 // منشور نصي عادي (حساب فردي/تاجر/شركة)
-export async function createTextPost(userId: string, username: string, text: string, avatarUrl?: string, isOfficial = false): Promise<DBPost | null> {
-  try {
-    const row = { user_id: userId, username, avatar_url: avatarUrl, type: 'text', text, is_official: isOfficial }
-    const { data, error } = await supabase.from('posts').insert(row).select().single()
-    if (error) return null
-    return data as DBPost
-  } catch { return null }
+export async function createTextPost(_userId: string, _username: string, text: string, _avatarUrl?: string, _isOfficial = false): Promise<DBPost | null> {
+  const res = await socialApi<{ post?: DBPost }>('createPost', { type: 'text', text })
+  return res?.post ?? null
 }
 
 // استفتاء حقيقي
-export async function createPoll(userId: string, username: string, question: string, options: string[]): Promise<DBPost | null> {
-  try {
-    const row = {
-      user_id: userId, username, type: 'poll',
-      poll: { question, options: options.map(o => ({ text: o, votes: 0 })) },
-    }
-    const { data, error } = await supabase.from('posts').insert(row).select().single()
-    if (error) return null
-    return data as DBPost
-  } catch { return null }
+export async function createPoll(_userId: string, _username: string, question: string, options: string[]): Promise<DBPost | null> {
+  const res = await socialApi<{ post?: DBPost }>('createPost', {
+    type: 'poll', poll: { question, options: options.map(o => ({ text: o, votes: 0 })) },
+  })
+  return res?.post ?? null
 }
 
 // التصويت عبر دالة موثوقة (المصوّت ليس صاحب المنشور، والجدول مقفل على المالك)
@@ -1609,7 +1607,8 @@ export async function getPostsByUser(userId: string): Promise<DBPost[]> {
 }
 
 export async function togglePinPost(postId: string, pinned: boolean): Promise<boolean> {
-  try { const { error } = await supabase.from('posts').update({ pinned }).eq('id', postId); return !error } catch { return false }
+  const res = await socialApi<{ ok?: boolean }>('pinPost', { postId, pinned })
+  return !!res?.ok
 }
 
 // ── نظام المتابعة (Follow) ────────────────────────────────────────────────
@@ -1723,11 +1722,13 @@ export async function getSocialFeed(scope: 'foryou' | 'following', userId?: stri
 }
 
 export async function deletePost(postId: string): Promise<boolean> {
-  try { const { error } = await supabase.from('posts').delete().eq('id', postId); return !error } catch { return false }
+  const res = await socialApi<{ ok?: boolean }>('deletePost', { postId })
+  return !!res?.ok
 }
-// تعديل نص منشور/إعلان (لصاحبه — يُتحقق في الواجهة)
+// تعديل نص منشور/إعلان — صاحبه فقط (يُفرض على الخادم)
 export async function updatePost(postId: string, text: string): Promise<boolean> {
-  try { const { error } = await supabase.from('posts').update({ text }).eq('id', postId); return !error } catch { return false }
+  const res = await socialApi<{ ok?: boolean }>('updatePost', { postId, text })
+  return !!res?.ok
 }
 
 // حفظ منشور/إعلان — نفس منطق حفظ المنتجات لكن للمنشورات
@@ -1783,18 +1784,10 @@ export async function getPostCommentCount(postId: string): Promise<number> {
 }
 
 // إعادة نشر منشور ناجح — ينشئ منشوراً جديداً يشير للأصلي، يظهر في فيد الناشر الجديد
-export async function repostPost(originalPost: DBPost, repostUserId: string, repostUsername: string): Promise<DBPost | null> {
-  try {
-    const row: any = {
-      user_id: repostUserId, username: repostUsername, type: originalPost.type,
-      text: originalPost.text, product_id: originalPost.product_id,
-      product_snapshot: originalPost.product_snapshot, poll: null, // الاستفتاءات لا تُعاد نشرها بأصواتها لتفادي الالتباس
-      reposted_from: originalPost.id, reposted_from_username: originalPost.username,
-    }
-    const { data, error } = await supabase.from('posts').insert(row).select().single()
-    if (error) return null
-    return data as DBPost
-  } catch { return null }
+export async function repostPost(originalPost: DBPost, _repostUserId: string, _repostUsername: string): Promise<DBPost | null> {
+  // الهوية من الخادم — معاملات repostUserId/Username تبقى للتوافق وتُتجاهل أمنياً.
+  const res = await socialApi<{ post?: DBPost }>('repost', { original: originalPost })
+  return res?.post ?? null
 }
 
 // هل أعاد هذا المستخدم نشر هذا المنشور؟ (لعرض حالة الزر: نشر/تراجع)
@@ -1805,13 +1798,10 @@ export async function hasReposted(originalPostId: string, userId: string): Promi
     return !!data
   } catch { return false }
 }
-// التراجع عن إعادة النشر — يحذف منشور إعادة النشر الخاص بالمستخدم
-export async function undoRepost(originalPostId: string, userId: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.from('posts').delete()
-      .eq('user_id', userId).eq('reposted_from', Number(originalPostId))
-    return !error
-  } catch { return false }
+// التراجع عن إعادة النشر — يحذف منشور إعادة النشر الخاص بالمستخدم (على الخادم)
+export async function undoRepost(originalPostId: string, _userId: string): Promise<boolean> {
+  const res = await socialApi<{ ok?: boolean }>('undoRepost', { originalPostId })
+  return !!res?.ok
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
