@@ -33,7 +33,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* يطبَّق فوراً قبل أي رسم — يمنع الوميض ويضمن ثبات الوضع المحفوظ عند كل فتح للتطبيق */}
         <script
