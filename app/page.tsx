@@ -9,7 +9,7 @@ import { setPiAccessToken } from "@/lib/dabia/auth-headers"
 import { getCountryFlag, COUNTRIES } from "@/lib/countries"
 import { usePiNetworkAuthentication } from "@/hooks/use-pi-network-authentication"
 import { useTranslation, LANGUAGES } from "@/hooks/use-translation"
-import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, setHideLocation, togglePostLike, getPostLikeCount, isPostLikedByUser, recordPostShare, getPostShareCount, getPostCommentCount, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
+import { supabase, getProducts, createOrder, getOrdersByBuyer, addWalletTransaction, getWalletBalance, getRealNotifications, toggleLike, getLikeCount, isLikedByUser, recordShare, getShareCount, addComment, getComments, updateComment, deleteComment, sharePostFromProduct, createTextPost, createPoll, votePoll, getFeedPosts, getSocialFeed, getPostsByUser, togglePinPost, deletePost, updatePost, hasReposted, undoRepost, followUser, unfollowUser, getFollowingSet, getFollowing, setFollowNotify, isFollowing, getFollowCounts, searchAccounts, getGroups, getDMUnreadCount, openDMThread, getSellerTrust, getNotificationsUnread, markNotificationsRead, reportContent, recordProductView, processMentions, createAuction, getLiveAuctions, getAuctionById, placeBid, getAuctionBids, subscribeToAuction, endAuction, createGroupDeal, getOpenGroupDeals, joinGroupDeal, createAnnouncement, sendVerificationCode, verifyEmailCode, getRealPlatformStats, getProductById, toggleSaveProduct, isProductSaved, getSavedProducts, toggleSavePost, isPostSaved, getSavedPosts, repostPost, addOrUpdateReview, getProductReviews, getTrendScores, getTrendingProducts, getActiveDeals, getRecommendations, getProductsByCountry, createStream, startStream, getLiveStreams, getUpcomingStreams, setHideLocation, togglePostLike, getPostLikeCount, isPostLikedByUser, recordPostShare, getPostShareCount, getPostCommentCount, type DBLiveStream, type DBProduct, type RealNotif, type DBComment, type DBUser, type DBPost, type DBPoll, type DBAuction, type DBGroupDeal, type RealPlatformStats, type DBReview, type DBOrder } from "@/lib/dabia/db"
 import { Progress } from "@/components/ui/progress"
 import { rankByImageSimilarity } from "@/lib/image-search"
 import { LiveStreamRoom } from "@/components/live-stream"
@@ -3784,6 +3784,8 @@ function ProfileTab() {
   const [savedCountReal, setSavedCountReal] = useState<number | null>(null)
   const [shareMsg, setShareMsg] = useState("")
   const [hideBalancePreview, setHideBalancePreview] = useState(false)
+  // الرصيد يُجلب من مسار خادم موثّق (عمود wallet_balance لم يعد مقروءاً من العميل)
+  const [walletPreview, setWalletPreview] = useState<number>(0)
   const [followCounts, setFollowCounts] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 })
   const [connTab, setConnTab] = useState<"followers" | "following" | null>(null)
   const [togglingLoc, setTogglingLoc] = useState(false)
@@ -3827,6 +3829,7 @@ function ProfileTab() {
     getOrdersByBuyer(profileUser.id).then(orders => setOrderCount(orders.length)).catch(() => setOrderCount(0))
     getSavedProducts(profileUser.id).then(list => setSavedCountReal(list.length)).catch(() => setSavedCountReal(0))
     getFollowCounts(profileUser.id).then(setFollowCounts).catch(() => {})
+    getWalletBalance(profileUser.id).then(setWalletPreview).catch(() => setWalletPreview(0))
     // جلب تحليلات الزوار للأدمين فقط
     if (profileUser.emall === "maskmal088@gmail.com") {
       supabase.auth.getSession().then(({ data }) => {
@@ -4013,7 +4016,7 @@ function ProfileTab() {
             </div>
             <Link href="/wallet" className="block active:scale-[0.98] transition-transform">
               <p className="text-3xl font-black text-amber-400 tracking-tight">
-                {hideBalancePreview ? "•••π" : `${(profileUser.wallet_balance ?? 0).toLocaleString()}π`}
+                {hideBalancePreview ? "•••π" : `${walletPreview.toLocaleString()}π`}
               </p>
               <Progress value={96} className="h-1 mt-2.5 mb-1" />
               <p className="text-[10px] text-muted-foreground">96% profile strength · <span className="text-amber-400 font-semibold">View wallet →</span></p>

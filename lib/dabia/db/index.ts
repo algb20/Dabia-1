@@ -71,7 +71,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 // (The hash lives only in the guarded `user_secrets` vault / legacy `password`
 // column, read exclusively by the server-side auth path.)
 const USER_PUBLIC_COLS =
-  "id, username, emall, role, status, created_at, country, city, phone, pi_uid, store_name, wallet_balance, profile, auth_id, avatar_url, bio, website_url, social_links, account_type, hide_location"
+  // ملاحظة أمنية: phone و wallet_balance مُنعا عن العميل على مستوى الأعمدة
+  // (كانا يُكشفان لكل مستخدم للعموم). الرصيد يُقرأ عبر /api/dabia/wallet، والهاتف
+  // بيانات خاصة تُدار في التسجيل/الإعدادات. emall/pi_uid يبقيان (مفتاحا بحث الدخول).
+  "id, username, emall, role, status, created_at, country, city, pi_uid, store_name, profile, auth_id, avatar_url, bio, website_url, social_links, account_type, hide_location"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface DBUser {
@@ -1416,10 +1419,15 @@ export async function markNotificationsRead(userId: string): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════════════════
 // WALLET — محفظة حقيقية
 // ═══════════════════════════════════════════════════════════════════════════════
-export async function getWalletBalance(userId: string): Promise<number> {
+// الرصيد يُقرأ عبر /api/dabia/wallet — الهوية من الرمز، فلا يقرأ أحد رصيد غيره.
+// (عمود wallet_balance مُنع عن العميل على مستوى الأعمدة). userId يبقى للتوافق.
+export async function getWalletBalance(_userId: string): Promise<number> {
   try {
-    const { data } = await supabase.from('users').select('wallet_balance').eq('id', userId).single()
-    return (data as any)?.wallet_balance ?? 0
+    const headers = await buildAuthHeaders()
+    const res = await fetch('/api/dabia/wallet', { method: 'POST', headers, body: '{}' })
+    if (!res.ok) return 0
+    const { balance } = await res.json()
+    return typeof balance === 'number' ? balance : 0
   } catch { return 0 }
 }
 
