@@ -366,7 +366,10 @@ export async function getOfficialLinks(): Promise<OfficialLink[]> {
   } catch { return [] }
 }
 
-// تحديث رابط رسمي واحد من لوحة الأدمن (بديل لتعديله يدوياً من Supabase Table Editor)
+// ⚠️ الجدول app_official_links مُقفل أمام كتابة العميل (كان مفتوحاً للجميع =
+// ثغرة تصيّد). الإدارة تتم من Supabase Table Editor بـ service_role الذي يتجاوز
+// RLS. هذه الدالة تعمل فقط من سياق خادم بمفتاح service_role — إن استُدعيت من
+// المتصفح فستفشل (return false) لأن anon/authenticated ممنوعان من الكتابة.
 export async function upsertOfficialLink(platform: OfficialLinkPlatform, url: string, enabled: boolean): Promise<boolean> {
   try {
     const { error } = await supabase.from('app_official_links').upsert({ platform, url, enabled }, { onConflict: 'platform' })
