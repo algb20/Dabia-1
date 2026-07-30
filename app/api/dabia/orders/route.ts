@@ -157,6 +157,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: !error })
     }
 
+    // ── نزاع طلب واحد — لطرفَي الطلب فقط ──────────────────────────────────
+    case "getDispute": {
+      const { data: order } = await admin.from("orders").select("user_id, seller_user_id").eq("id", Number(body.orderId)).maybeSingle()
+      if (!order || (String(order.user_id) !== meId && String(order.seller_user_id) !== meId)) {
+        return NextResponse.json({ dispute: null })
+      }
+      const { data } = await admin.from("order_disputes").select("*").eq("order_id", Number(body.orderId)).maybeSingle()
+      return NextResponse.json({ dispute: data ?? null })
+    }
+
+    // ── نزاعات البائع — نزاعات متاجره فقط ─────────────────────────────────
+    case "listSellerDisputes": {
+      const { data } = await admin.from("order_disputes").select("*")
+        .eq("seller_id", Number(meId)).order("created_at", { ascending: false })
+      return NextResponse.json({ disputes: data ?? [] })
+    }
+
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 })
   }

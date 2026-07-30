@@ -890,11 +890,15 @@ export async function resolveDispute(disputeId: string, actorId: string, resolut
     return data as DBDispute
   } catch { return null }
 }
+// قراءة النزاعات عبر مسار الطلبات (order_disputes مُغلق للقراءة أمام العميل —
+// يحوي أسباب النزاع وأطرافه). الملكية (طرف الطلب / البائع) تُفرض على الخادم.
 export async function getDisputeForOrder(orderId: string): Promise<DBDispute | null> {
-  try { const { data } = await supabase.from('order_disputes').select('*').eq('order_id', orderId).maybeSingle(); return (data as DBDispute) ?? null } catch { return null }
+  const res = await ordersApi<{ dispute?: DBDispute | null }>('getDispute', { orderId })
+  return res?.dispute ?? null
 }
-export async function getDisputesForSeller(sellerId: string): Promise<DBDispute[]> {
-  try { const { data } = await supabase.from('order_disputes').select('*').eq('seller_id', sellerId).order('created_at', { ascending: false }); return (data ?? []) as DBDispute[] } catch { return [] }
+export async function getDisputesForSeller(_sellerId: string): Promise<DBDispute[]> {
+  const res = await ordersApi<{ disputes?: DBDispute[] }>('listSellerDisputes')
+  return res?.disputes ?? []
 }
 
 // ── درجة الثقة الحقيقية للبائع (محسوبة من تقييمات/طلبات/نزاعات فعلية) ────────
