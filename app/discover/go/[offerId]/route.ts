@@ -11,21 +11,32 @@ import { SITE } from "@/lib/discover/config";
 
 // Per-network affiliate identifiers. These are PUBLIC (they appear in every
 // outbound link), so a default is safe; override per environment if needed.
-// Amazon Associates tag (amazon.com store). Add eBay/AliExpress IDs here as
-// their programs are approved.
 const AMAZON_TAG = process.env.DISCOVER_AMAZON_TAG || "dabia08-20";
+// AliExpress via Admitad deeplink id (from the account's default deeplink
+// https://rzekl.com/g/<id>/). Products are wrapped with the standard `ulp`
+// parameter carrying the url-encoded destination.
+const ALI_ADMITAD_ID = process.env.DISCOVER_ADMITAD_ALI_ID || "1e8d11449436227c19ef16525dc3e8";
 
 function wrapAffiliate(rawUrl: string, sourceId: string): string {
   try {
     const url = new URL(rawUrl);
     const host = url.hostname.toLowerCase();
-    // Only wrap sources whose affiliate program is actually set up. Amazon is
-    // live; other official sources stay clean direct links until their program
-    // is approved (avoids fake/broken affiliate params on brand stores).
+
+    // Amazon Associates — append the tag to any amazon.* destination.
     if (sourceId === "amazon" && host.includes("amazon.") && AMAZON_TAG) {
       url.searchParams.set("tag", AMAZON_TAG);
       return url.toString();
     }
+
+    // AliExpress via Admitad — build a deeplink to the clean product URL.
+    // Tracking params are stripped so the deeplink resolves reliably.
+    if (sourceId === "aliexpress" && host.includes("aliexpress.") && ALI_ADMITAD_ID) {
+      const clean = `${url.origin}${url.pathname}`;
+      return `https://rzekl.com/g/${ALI_ADMITAD_ID}/?ulp=${encodeURIComponent(clean)}`;
+    }
+
+    // Other official sources stay clean direct links until their program is
+    // approved (avoids fake/broken affiliate params on brand stores).
     return rawUrl;
   } catch {
     return rawUrl;
