@@ -10,7 +10,7 @@ const appName = APP_CONFIG.NAME;
 const appDescription = APP_CONFIG.DESCRIPTION;
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://dabia-1.vercel.app"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://dabia-app.vercel.app"),
   title: "Dabia — Smart Commerce on Pi Network",
   description: appDescription,
   alternates: { canonical: "/" },

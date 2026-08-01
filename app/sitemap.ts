@@ -3,7 +3,7 @@ import { PRODUCTS, BRANDS, CATEGORIES } from "@/lib/discover/data"
 
 // عنوان الموقع القابل للفهرسة (الويب). يُضبط عبر NEXT_PUBLIC_SITE_URL عند
 // النشر؛ الافتراضي هو نشر Vercel الحالي. (دومين Pi Browser لا يُفهرس.)
-const BASE = process.env.NEXT_PUBLIC_SITE_URL || "https://dabia-1.vercel.app"
+const BASE = process.env.NEXT_PUBLIC_SITE_URL || "https://dabia-app.vercel.app"
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date()
