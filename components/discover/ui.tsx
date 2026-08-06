@@ -4,20 +4,41 @@ import { money, availabilityLabel, shortDate } from "@/lib/discover/format";
 import { toUSD } from "@/lib/discover/store";
 import { href } from "@/lib/discover/config";
 
-/* Generated product/brand tile — a systematic colored panel with a monogram
-   and initial. Deliberately not stock imagery, so the set reads as designed. */
+/* Product/brand tile. Shows the real product photo when one is known;
+   otherwise falls back to the generated monogram panel, so a product with
+   no image still renders as part of the set rather than as a hole. */
 export function Tile({
   hue,
   initial,
   mono,
+  image,
+  alt,
   className = "",
 }: {
   hue: number;
   initial: string;
   mono?: string;
+  image?: string;
+  alt?: string;
   className?: string;
 }) {
   const bg = `linear-gradient(150deg, hsl(${hue} 30% 44%), hsl(${(hue + 22) % 360} 36% 26%))`;
+
+  if (image) {
+    return (
+      <div className={`d-tile d-tile--photo ${className}`} style={{ background: bg }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={image}
+          alt={alt ?? ""}
+          loading="lazy"
+          decoding="async"
+          className="d-tile-img"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={`d-tile ${className}`} style={{ background: bg }} aria-hidden="true">
       <span className="d-tile-shine" />
@@ -58,7 +79,7 @@ export function ProductCard({ p }: { p: ProductView }) {
   const sources = p.offers.length;
   return (
     <Link href={href(`/p/${p.slug}`)} className="d-card">
-      <Tile hue={p.hue} initial={p.name.charAt(0)} mono={p.brand.monogram} />
+      <Tile hue={p.hue} initial={p.name.charAt(0)} mono={p.brand.monogram} image={p.image} alt={p.name} />
       <div className="d-card-body">
         <span className="d-card-brand">{p.brand.name}</span>
         <span className="d-card-name">{p.name}</span>

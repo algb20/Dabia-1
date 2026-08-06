@@ -198,6 +198,15 @@
 .d-tile-init { font-size: clamp(30px, 6vw, 52px); font-weight: 800; letter-spacing: -0.04em; color: rgba(255, 255, 255, 0.95); }
 .d-tile-shine { position: absolute; inset: 0; background: radial-gradient(120% 80% at 80% 0%, rgba(255, 255, 255, 0.22), transparent 55%); }
 
+/* Real product photo. Product shots are shot on white, so the tile sits on a
+   light plate in both themes and the image is contained rather than cropped —
+   nothing of the product is cut off. */
+.d-tile--photo { background: #ffffff !important; }
+.d-tile-img {
+  width: 100%; height: 100%; object-fit: contain; padding: 10%;
+  display: block;
+}
+
 /* ---- cards / grid ---- */
 .d-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
 .d-grid--3 { grid-template-columns: repeat(3, 1fr); }

@@ -50,7 +50,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {/* left: media + specs */}
         <div className="d-stack" style={{ gap: 18 }}>
           <div className="d-media">
-            <Tile hue={p.hue} initial={p.name.charAt(0)} mono={p.brand.monogram} />
+            <Tile hue={p.hue} initial={p.name.charAt(0)} mono={p.brand.monogram} image={p.image} alt={p.name} />
           </div>
           <div className="d-panel">
             <span className="d-kicker">Specifications</span>

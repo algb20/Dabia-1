@@ -67,6 +67,9 @@ export interface Product {
   description: string;
   specs: { label: string; value: string }[];
   gtin?: string;
+  /** Real product photo (official/authorized source). When absent the
+      generated monogram tile is used, so a missing image never breaks a card. */
+  image?: string;
   hue: number;
   /** Base currency for the headline price history. */
   currency: string;

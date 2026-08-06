@@ -95,6 +95,7 @@ function rowToView(row: any): ProductView {
     currency: row.currency ?? "USD",
     hue: row.hue ?? 220,
     gtin: row.gtin ?? undefined,
+    image: row.image ?? undefined,
     brand: row.discover_brands,
     category: row.discover_categories,
     offers,
@@ -103,7 +104,7 @@ function rowToView(row: any): ProductView {
 }
 
 const PRODUCT_SELECT = `
-  id, slug, name, brand_id, category_id, summary, description, specs, history, currency, hue, gtin,
+  id, slug, name, brand_id, category_id, summary, description, specs, history, currency, hue, gtin, image,
   discover_brands ( id, slug, name, official, monogram, hue, blurb ),
   discover_categories ( id, slug, name, blurb ),
   discover_offers (
