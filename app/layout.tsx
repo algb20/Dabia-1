@@ -15,7 +15,10 @@ export const metadata: Metadata = {
   description: appDescription,
   alternates: { canonical: "/" },
   manifest: "/manifest.json",
-  // تحقّق ملكية الموقع لشبكات الإحالة (Admitad وغيرها)
+  // تحقّق ملكية الموقع — محرّكات البحث وشبكات الإحالة
+  verification: {
+    google: "DJjXUtMLHnsInNQ_E37lpFua6hXuAGDGMXKZTsdXpC4",
+  },
   other: {
     "verify-admitad": "36227c19ef",
   },
