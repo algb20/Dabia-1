@@ -11,7 +11,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from "next/server"
 import { getAdminClient } from "@/lib/dabia/db/admin"
-import { fetchHotProducts, searchProducts, aliexpressConfigured, type AliProduct } from "@/lib/discover/aliexpress"
+import { fetchHotProducts, searchProducts, aliexpressConfigured, diagnoseSignature, type AliProduct } from "@/lib/discover/aliexpress"
 
 const ADMIN_EMAILS = new Set(["maskmal088@gmail.com"])
 
@@ -147,8 +147,14 @@ export async function GET(req: NextRequest) {
   if (!(await authorize(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
-  if (new URL(req.url).searchParams.get("probe")) {
+  const q = new URL(req.url).searchParams
+  if (q.get("probe")) {
     return NextResponse.json({ configured: aliexpressConfigured() })
+  }
+  // ?diagnose=1 — fires every signature variant once and reports which one the
+  // gateway accepts, so the format is settled in a single round trip.
+  if (q.get("diagnose")) {
+    return NextResponse.json(await diagnoseSignature())
   }
   return runSync({})
 }

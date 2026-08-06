@@ -20,12 +20,101 @@ export function aliexpressConfigured(): boolean {
   return Boolean(APP_KEY && APP_SECRET)
 }
 
-function sign(params: Record<string, string>, secret: string): string {
-  const base = Object.keys(params)
+function signBase(params: Record<string, string>): string {
+  return Object.keys(params)
     .sort()
     .map(k => `${k}${params[k]}`)
     .join("")
-  return crypto.createHmac("sha256", secret).update(base, "utf8").digest("hex").toUpperCase()
+}
+
+function sign(params: Record<string, string>, secret: string): string {
+  return crypto.createHmac("sha256", secret).update(signBase(params), "utf8").digest("hex").toUpperCase()
+}
+
+// `yyyy-MM-dd HH:mm:ss` in GMT+8 — the legacy TOP timestamp form.
+function timestampGmt8(): string {
+  const d = new Date(Date.now() + 8 * 60 * 60 * 1000)
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
+}
+
+// ── Signature diagnostics ────────────────────────────────────────────────
+// The gateway only ever answers "IncompleteSignature" — it never says which
+// part is wrong. Rather than guess one variant per deploy, this fires every
+// plausible combination once and reports which one the gateway accepts.
+type Variant = {
+  name: string
+  params: Record<string, string>
+  signer: (p: Record<string, string>, secret: string) => string
+}
+
+function buildVariants(method: string, business: Record<string, string>): Variant[] {
+  const ms = String(Date.now())
+  const dt = timestampGmt8()
+  const hmac256 = (p: Record<string, string>, s: string) =>
+    crypto.createHmac("sha256", s).update(signBase(p), "utf8").digest("hex").toUpperCase()
+  // Legacy TOP MD5: the secret wraps the base on both sides.
+  const md5Wrapped = (p: Record<string, string>, s: string) =>
+    crypto.createHash("md5").update(s + signBase(p) + s, "utf8").digest("hex").toUpperCase()
+
+  return [
+    {
+      name: "A: sha256 + ms timestamp (bare)",
+      params: { app_key: APP_KEY, method, sign_method: "sha256", timestamp: ms, ...business },
+      signer: hmac256,
+    },
+    {
+      name: "B: sha256 + ms timestamp + format/v",
+      params: { app_key: APP_KEY, method, sign_method: "sha256", timestamp: ms, format: "json", v: "2.0", ...business },
+      signer: hmac256,
+    },
+    {
+      name: "C: sha256 + datetime GMT+8 + format/v",
+      params: { app_key: APP_KEY, method, sign_method: "sha256", timestamp: dt, format: "json", v: "2.0", ...business },
+      signer: hmac256,
+    },
+    {
+      name: "D: hmac-sha256 label + ms timestamp",
+      params: { app_key: APP_KEY, method, sign_method: "hmac-sha256", timestamp: ms, ...business },
+      signer: hmac256,
+    },
+    {
+      name: "E: md5 wrapped + datetime GMT+8 + format/v",
+      params: { app_key: APP_KEY, method, sign_method: "md5", timestamp: dt, format: "json", v: "2.0", ...business },
+      signer: md5Wrapped,
+    },
+  ]
+}
+
+/** Fires each signature variant once and reports the gateway's verdict. */
+export async function diagnoseSignature(): Promise<{ configured: boolean; results: any[] }> {
+  if (!aliexpressConfigured()) return { configured: false, results: [] }
+
+  const business = { page_size: "1", page_no: "1", target_currency: "USD", target_language: "EN" }
+  const results: any[] = []
+
+  for (const v of buildVariants("aliexpress.affiliate.hotproduct.query", business)) {
+    const params = { ...v.params }
+    params.sign = v.signer(params, APP_SECRET)
+    try {
+      const res = await fetch(GATEWAY, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(params).toString(),
+        cache: "no-store",
+      })
+      const text = await res.text()
+      let verdict = "unknown"
+      if (/IncompleteSignature/i.test(text)) verdict = "bad-signature"
+      else if (/IllegalAccess|permission|not authorized|ApiCallLimit/i.test(text)) verdict = "signature-OK-but-access-denied"
+      else if (/error_response|"code"\s*:\s*"?[1-9]/i.test(text)) verdict = "other-error"
+      else verdict = "ACCEPTED"
+      results.push({ variant: v.name, verdict, sample: text.slice(0, 220) })
+    } catch (e) {
+      results.push({ variant: v.name, verdict: "network-error", sample: String(e).slice(0, 160) })
+    }
+  }
+  return { configured: true, results }
 }
 
 export async function callAliexpress(
