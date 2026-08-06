@@ -17,6 +17,41 @@ const config: Config = {
   			serif: ['Georgia', 'ui-serif', 'serif'],
   		},
   		colors: {
+  			// The app was built with hard-coded `amber-*` utilities as its accent.
+  			// Rather than rewrite ~500 call sites, the scale itself is remapped to
+  			// the Discover site's restrained brass, so the whole app inherits the
+  			// refined tone against the new verdigris base. Dabia's gold identity
+  			// is kept — it is simply no longer neon.
+  			amber: {
+  				50:  '#faf6ec',
+  				100: '#f3ecd6',
+  				200: '#e9dcb2',
+  				300: '#dcc584',
+  				400: '#d3ad57',
+  				500: '#c0973f',
+  				600: '#a37c2c',
+  				700: '#8f7016',
+  				800: '#6d551a',
+  				900: '#5a4719',
+  				950: '#33270c',
+  			},
+  			// Blue read as a foreign accent against verdigris + brass. It is
+  			// remapped to the site's periwinkle (`--pi`), which the site reserves
+  			// for Pi identity — giving the app the same three-colour system:
+  			// verdigris (primary) · brass (seal) · periwinkle (Pi / info).
+  			blue: {
+  				50:  '#f0eefc',
+  				100: '#ece9fb',
+  				200: '#d8d2f7',
+  				300: '#bcb2f2',
+  				400: '#9c8cff',
+  				500: '#7c68f0',
+  				600: '#5b45e0',
+  				700: '#4a37bd',
+  				800: '#3b2c96',
+  				900: '#2f2477',
+  				950: '#191534',
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
