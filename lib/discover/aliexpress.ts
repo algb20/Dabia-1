@@ -28,13 +28,6 @@ function sign(params: Record<string, string>, secret: string): string {
   return crypto.createHmac("sha256", secret).update(base, "utf8").digest("hex").toUpperCase()
 }
 
-// AliExpress expects `yyyy-MM-dd HH:mm:ss` in GMT+8.
-function timestampGmt8(): string {
-  const d = new Date(Date.now() + 8 * 60 * 60 * 1000)
-  const p = (n: number) => String(n).padStart(2, "0")
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
-}
-
 export async function callAliexpress(
   method: string,
   business: Record<string, string | number | undefined> = {},
@@ -43,13 +36,14 @@ export async function callAliexpress(
     return { ok: false, error: "ALIEXPRESS_APP_KEY / ALIEXPRESS_APP_SECRET not set" }
   }
 
+  // The IOP gateway (api-sg.aliexpress.com/sync) takes the timestamp as
+  // milliseconds since epoch — the older `yyyy-MM-dd HH:mm:ss` form belongs to
+  // the legacy TOP gateway and is rejected here as IncompleteSignature.
   const params: Record<string, string> = {
     app_key: APP_KEY,
     method,
-    format: "json",
-    v: "2.0",
     sign_method: "sha256",
-    timestamp: timestampGmt8(),
+    timestamp: String(Date.now()),
   }
   for (const [k, v] of Object.entries(business)) {
     if (v !== undefined && v !== null && v !== "") params[k] = String(v)
@@ -70,10 +64,17 @@ export async function callAliexpress(
     } catch {
       return { ok: false, error: `Non-JSON response: ${text.slice(0, 300)}` }
     }
-    // The gateway reports failures in-band with HTTP 200.
+    // The gateway reports failures in-band with HTTP 200, and uses two shapes:
+    // the TOP-style `error_response`, and IOP's flat `code`/`message` fields.
     if (json?.error_response) {
       const e = json.error_response
       return { ok: false, error: `${e.code ?? ""} ${e.msg ?? ""} ${e.sub_msg ?? ""}`.trim() }
+    }
+    if (json?.code && String(json.code) !== "0") {
+      return {
+        ok: false,
+        error: `${json.code} ${json.message ?? ""} ${json.request_id ? `(req ${json.request_id})` : ""}`.trim(),
+      }
     }
     return { ok: true, data: json }
   } catch (e) {
