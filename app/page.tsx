@@ -16,6 +16,7 @@ import { LiveStreamRoom } from "@/components/live-stream"
 import { CommentsThread } from "@/components/comments-thread"
 import { PiBrowserGate } from "@/components/pi-browser-gate"
 import { ConnectionsModal } from "@/components/connections-modal"
+import DiscoverFab from "@/components/discover-fab"
 import {
   Home, Search, User, Sparkles, Bell, Star,
   BarChart3, Wallet, Shield, CheckCircle2,
@@ -4470,6 +4471,9 @@ export default function DabiaApp() {
 
       {/* Floating AI assistant — hidden on home to not block the product feed */}
       {tab !== "home" && <AIAssistant />}
+
+      {/* جسر الموقع — يُخفى في الفيد ملء الشاشة حتى لا يعترض المحتوى */}
+      <DiscoverFab hidden={effectiveTab === "social"} />
 
       {/* Overlays */}
       {showNotifs && <NotifPanel notifs={notifs} onClose={() => setShowNotifs(false)} />}
