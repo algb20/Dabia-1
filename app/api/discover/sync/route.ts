@@ -47,13 +47,17 @@ export async function POST(req: NextRequest) {
   if (!(await authorize(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+  const body = await req.json().catch(() => ({} as any))
+  return runSync(body)
+}
+
+async function runSync(body: any) {
   if (!aliexpressConfigured()) {
     return NextResponse.json({ error: "AliExpress credentials not configured" }, { status: 503 })
   }
   const admin = getAdminClient()
   if (!admin) return NextResponse.json({ error: "Not configured" }, { status: 503 })
 
-  const body = await req.json().catch(() => ({} as any))
   const keywords: string | undefined = body?.keywords
   const pageSize: number = Math.min(Number(body?.pageSize) || 20, 50)
   const categoryId: string = body?.categoryId || "electronics"
@@ -136,10 +140,15 @@ export async function POST(req: NextRequest) {
   })
 }
 
-// Quick health probe — reports whether credentials are wired, without syncing.
+// Vercel Cron invokes scheduled paths with GET, so GET runs the same sync.
+// `?probe=1` skips the fetch and just reports whether credentials are wired —
+// useful for checking the wiring without spending API quota.
 export async function GET(req: NextRequest) {
   if (!(await authorize(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
-  return NextResponse.json({ configured: aliexpressConfigured() })
+  if (new URL(req.url).searchParams.get("probe")) {
+    return NextResponse.json({ configured: aliexpressConfigured() })
+  }
+  return runSync({})
 }
