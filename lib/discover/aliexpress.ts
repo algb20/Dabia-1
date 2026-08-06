@@ -12,9 +12,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import crypto from "crypto"
 
-const GATEWAY = process.env.ALIEXPRESS_GATEWAY || "https://api-sg.aliexpress.com/sync"
-const APP_KEY = process.env.ALIEXPRESS_APP_KEY || ""
-const APP_SECRET = process.env.ALIEXPRESS_APP_SECRET || ""
+// Credentials are trimmed: pasting into a dashboard field very easily carries a
+// trailing newline, and a single stray character makes every signature fail
+// with an error that points at the algorithm rather than the value.
+const GATEWAY = (process.env.ALIEXPRESS_GATEWAY || "https://api-sg.aliexpress.com/sync").trim()
+const APP_KEY = (process.env.ALIEXPRESS_APP_KEY || "").trim()
+const APP_SECRET = (process.env.ALIEXPRESS_APP_SECRET || "").trim()
 
 export function aliexpressConfigured(): boolean {
   return Boolean(APP_KEY && APP_SECRET)
@@ -98,6 +101,9 @@ export function credentialFingerprint() {
     app_key_length: APP_KEY.length,
     secret_length: APP_SECRET.length,
     secret_masked: APP_SECRET ? mask(APP_SECRET) : "(missing)",
+    // Length before trimming — a gap between the two means the env value
+    // carried stray whitespace, which the client now strips.
+    secret_raw_length: (process.env.ALIEXPRESS_APP_SECRET ?? "").length,
     // Whitespace pasted around a value is a classic env-var mistake and would
     // silently break every signature.
     secret_has_whitespace: /^\s|\s$/.test(process.env.ALIEXPRESS_APP_SECRET ?? ""),
