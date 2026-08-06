@@ -86,8 +86,28 @@ function buildVariants(method: string, business: Record<string, string>): Varian
   ]
 }
 
+/** Masked view of the credentials, so they can be compared against the
+ *  AliExpress console without printing the secret itself. If every signature
+ *  variant fails, a mismatched secret is the likeliest cause — for example a
+ *  secret that was reset in the console after being copied into the env. */
+export function credentialFingerprint() {
+  const mask = (s: string) =>
+    s.length <= 4 ? "(too short)" : `${s.slice(0, 2)}…${s.slice(-2)}`
+  return {
+    app_key: APP_KEY || "(missing)",
+    app_key_length: APP_KEY.length,
+    secret_length: APP_SECRET.length,
+    secret_masked: APP_SECRET ? mask(APP_SECRET) : "(missing)",
+    // Whitespace pasted around a value is a classic env-var mistake and would
+    // silently break every signature.
+    secret_has_whitespace: /^\s|\s$/.test(process.env.ALIEXPRESS_APP_SECRET ?? ""),
+    app_key_has_whitespace: /^\s|\s$/.test(process.env.ALIEXPRESS_APP_KEY ?? ""),
+    gateway: GATEWAY,
+  }
+}
+
 /** Fires each signature variant once and reports the gateway's verdict. */
-export async function diagnoseSignature(): Promise<{ configured: boolean; results: any[] }> {
+export async function diagnoseSignature(): Promise<{ configured: boolean; credentials?: any; results: any[] }> {
   if (!aliexpressConfigured()) return { configured: false, results: [] }
 
   const business = { page_size: "1", page_no: "1", target_currency: "USD", target_language: "EN" }
@@ -114,7 +134,7 @@ export async function diagnoseSignature(): Promise<{ configured: boolean; result
       results.push({ variant: v.name, verdict: "network-error", sample: String(e).slice(0, 160) })
     }
   }
-  return { configured: true, results }
+  return { configured: true, credentials: credentialFingerprint(), results }
 }
 
 export async function callAliexpress(
