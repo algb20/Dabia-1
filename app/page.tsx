@@ -2758,7 +2758,9 @@ function DealCountdown({ endsAt }: { endsAt: string }) {
 function HomeTab() {
   const [category, setCategory] = useState("All")
   const [sort, setSort]         = useState<SortKey>("smart")
-  const [cols, setCols]         = useState<2 | 3>(3)
+  // Two columns by default: at phone widths three cards leave each one too
+  // narrow for the image, name and price to breathe. The 3-col toggle stays.
+  const [cols, setCols]         = useState<2 | 3>(2)
   const [selected, setSelected] = useState<Product | null>(null)
   const [showNearPicker, setShowNearPicker] = useState(false)
   const { data, isLoading }     = useTrends(category, sort)
@@ -4210,6 +4212,9 @@ export default function DabiaApp() {
   const [showSearch, setShowSearch] = useState(false)
   const [showLang,   setShowLang]   = useState(false)
   const [isDarkMode, setIsDarkMode] = useState(true)
+  // Overflow menu for the set-once header controls (theme, language, location,
+  // reels). Nothing is removed — the header just stops competing with itself.
+  const [showMore,   setShowMore]   = useState(false)
 
   // ضمان إضافي (بجانب سكربت layout.tsx) — يُعيد فرض الثيم المحفوظ في كل مرة يُفتح التطبيق فعلياً
   useEffect(() => {
@@ -4379,19 +4384,7 @@ export default function DabiaApp() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Dark/Light toggle — أيقونة فقط بدون كتابة */}
-          <button onClick={toggleTheme}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary hover:text-amber-400 transition-colors"
-            aria-label="Toggle theme">
-            {isDarkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-          </button>
-          {/* Google Translate Button */}
-          <button onClick={() => setShowLang(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary hover:text-amber-400 transition-colors"
-            title="Translate / ترجمة">
-            <GoogleTranslateIcon size={18} />
-          </button>
-          {/* Merchant Add Product */}
+          {/* Merchant Add Product — a primary action for sellers, so it stays. */}
           {dbUser && dbUser.role !== "buyer" && dbUser.status === "active" && (
             <Link href="/products/add">
               <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 hover:bg-emerald-400/20 text-emerald-400 transition-colors" title="Add Product">
@@ -4399,9 +4392,6 @@ export default function DabiaApp() {
               </button>
             </Link>
           )}
-          <Link href="/reels" className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label="Reels">
-            <Video className="h-4 w-4" />
-          </Link>
           <button onClick={() => setShowSearch(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label="Search">
             <Search className="h-4 w-4" />
           </button>
@@ -4413,23 +4403,53 @@ export default function DabiaApp() {
               )}
             </Link>
           )}
-          {dbUser && (
-            <button
-              onClick={() => requestBrowserGeo(dbUser.id!, () => {})}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors"
-              title={dbUser.country ? `Location: ${dbUser.country}` : "Set location"}
-              aria-label="Location">
-              <MapPin className={`h-4 w-4 ${dbUser.country ? "text-blue-400" : "text-muted-foreground"}`} />
-            </button>
-          )}
           <button onClick={openNotifs} className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}>
             <Bell className="h-4 w-4" />
             {unread > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{unread}</span>
             )}
           </button>
+
+          {/* Overflow — theme, language, location and reels are set-once or
+              occasional, so they live here instead of crowding the bar. */}
+          <button onClick={() => setShowMore(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-secondary transition-colors"
+            aria-label="More options" aria-haspopup="menu">
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
         </div>
       </header>
+
+      {showMore && (
+        <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/50 backdrop-blur-sm pt-16 pr-3"
+          onClick={() => setShowMore(false)} role="dialog" aria-label="More options">
+          <div className="animate-slide-up w-56 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <button onClick={() => { toggleTheme(); setShowMore(false) }}
+              className="flex w-full items-center gap-3 px-4 py-3 text-[13px] font-semibold hover:bg-secondary transition-colors">
+              {isDarkMode ? <Moon className="h-4 w-4 text-amber-400" /> : <Sun className="h-4 w-4 text-amber-400" />}
+              {isDarkMode ? "Dark mode" : "Light mode"}
+            </button>
+            <button onClick={() => { setShowLang(true); setShowMore(false) }}
+              className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-[13px] font-semibold hover:bg-secondary transition-colors">
+              <GoogleTranslateIcon size={16} />
+              Language · ترجمة
+            </button>
+            <Link href="/reels" onClick={() => setShowMore(false)}
+              className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-[13px] font-semibold hover:bg-secondary transition-colors">
+              <Video className="h-4 w-4 text-amber-400" />
+              Reels
+            </Link>
+            {dbUser && (
+              <button onClick={() => { requestBrowserGeo(dbUser.id!, () => {}); setShowMore(false) }}
+                className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-[13px] font-semibold hover:bg-secondary transition-colors">
+                <MapPin className={`h-4 w-4 ${dbUser.country ? "text-blue-400" : "text-muted-foreground"}`} />
+                {dbUser.country ? dbUser.country : "Set location"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main content */}
       <main className={`flex-1 ${effectiveTab === "social" ? "overflow-hidden p-0" : "overflow-y-auto px-4 pt-4"}`}>

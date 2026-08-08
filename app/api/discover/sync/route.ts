@@ -58,21 +58,45 @@ async function runSync(body: any) {
   const admin = getAdminClient()
   if (!admin) return NextResponse.json({ error: "Not configured" }, { status: 503 })
 
-  const keywords: string | undefined = body?.keywords
-  const pageSize: number = Math.min(Number(body?.pageSize) || 20, 50)
+  const pageSize: number = Math.min(Number(body?.pageSize) || 50, 50)
+  // Pages per query. 20 queries × 10 pages × 50 = up to 10 000 products a run.
+  const pages: number = Math.min(Math.max(Number(body?.pages) || 6, 1), 20)
   const categoryId: string = body?.categoryId || "electronics"
 
-  // Trending by default; keyword search when asked for a specific catalog.
-  const res = keywords
-    ? await searchProducts(keywords, { pageSize })
-    : await fetchHotProducts({ pageSize, categoryIds: body?.categoryIds })
+  // Each query maps to a site category, so the catalog fills out broadly
+  // instead of piling everything into one bucket.
+  const DEFAULT_QUERIES: { q: string; cat: string }[] = [
+    { q: "wireless earbuds", cat: "audio" },
+    { q: "bluetooth speaker", cat: "audio" },
+    { q: "smart watch", cat: "wearables" },
+    { q: "fitness tracker", cat: "fitness" },
+    { q: "phone case", cat: "mobile" },
+    { q: "tablet", cat: "mobile" },
+    { q: "laptop stand", cat: "computing" },
+    { q: "mechanical keyboard", cat: "computing" },
+    { q: "computer mouse", cat: "computing" },
+    { q: "monitor", cat: "tv" },
+    { q: "projector", cat: "tv" },
+    { q: "gaming controller", cat: "gaming" },
+    { q: "smart home camera", cat: "smarthome" },
+    { q: "led strip lights", cat: "smarthome" },
+    { q: "robot vacuum", cat: "home" },
+    { q: "air fryer", cat: "kitchen" },
+    { q: "coffee machine", cat: "kitchen" },
+    { q: "power bank", cat: "power" },
+    { q: "usb c charger", cat: "power" },
+    { q: "action camera", cat: "cameras" },
+    { q: "drone", cat: "cameras" },
+    { q: "wifi router", cat: "networking" },
+    { q: "portable ssd", cat: "networking" },
+    { q: "hair dryer", cat: "beauty" },
+    { q: "electric shaver", cat: "beauty" },
+  ]
 
-  if (!res.ok) {
-    return NextResponse.json({ error: res.error ?? "Fetch failed" }, { status: 502 })
-  }
-  if (!res.products.length) {
-    return NextResponse.json({ ok: true, imported: 0, note: "No products returned" })
-  }
+  // A single keyword still works, for topping up one category on demand.
+  const queries: { q: string; cat: string }[] = body?.keywords
+    ? [{ q: String(body.keywords), cat: categoryId }]
+    : DEFAULT_QUERIES
 
   // The source row these offers hang off. Created once, then reused.
   await admin.from("discover_sources").upsert(
@@ -80,16 +104,44 @@ async function runSync(body: any) {
     { onConflict: "id" },
   )
 
-  let imported = 0
+  // Collect across every query and page first, de-duplicated by product id, so
+  // the same item surfacing under two keywords is stored once.
+  const collected = new Map<string, { p: AliProduct; cat: string }>()
   const errors: string[] = []
+  let fetchedPages = 0
 
-  for (const p of res.products as AliProduct[]) {
+  for (const { q, cat } of queries) {
+    for (let page = 1; page <= pages; page++) {
+      const r = await searchProducts(q, { pageSize, pageNo: page })
+      fetchedPages++
+      if (!r.ok) {
+        if (errors.length < 5) errors.push(`"${q}" p${page}: ${r.error}`)
+        break // a failing query will keep failing on later pages
+      }
+      if (!r.products.length) break // no more pages for this query
+      for (const p of r.products) {
+        if (!collected.has(p.productId)) collected.set(p.productId, { p, cat })
+      }
+    }
+  }
+
+  if (!collected.size) {
+    return NextResponse.json(
+      { ok: false, imported: 0, fetchedPages, errors: errors.slice(0, 5), note: "No products returned" },
+      { status: errors.length ? 502 : 200 },
+    )
+  }
+
+  let imported = 0
+
+  for (const { p, cat } of collected.values()) {
+    const productCategory = cat || categoryId
     const slug = `${slugify(p.title)}-${p.productId.slice(-6)}`
     const productRow = {
       slug,
       name: p.title.slice(0, 200),
       brand_id: body?.brandId || "generic",
-      category_id: categoryId,
+      category_id: productCategory,
       summary: p.categoryName ? `${p.categoryName} — listed from AliExpress.` : "Listed from AliExpress.",
       description: p.title,
       specs: p.rating || p.orders
@@ -112,7 +164,7 @@ async function runSync(body: any) {
       .single()
 
     if (pErr || !saved) {
-      errors.push(`${slug}: ${pErr?.message ?? "insert failed"}`)
+      if (errors.length < 10) errors.push(`${slug}: ${pErr?.message ?? "insert failed"}`)
       continue
     }
 
@@ -134,7 +186,9 @@ async function runSync(body: any) {
 
   return NextResponse.json({
     ok: true,
-    fetched: res.products.length,
+    queries: queries.length,
+    fetchedPages,
+    unique: collected.size,
     imported,
     errors: errors.slice(0, 5),
   })
