@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { SITE, href } from "@/lib/discover/config";
+import { CATEGORIES } from "@/lib/discover/data";
 
 /* ---------------- search ---------------- */
 export function SearchBox({ size = "sm", autoFocus = false }: { size?: "sm" | "lg"; autoFocus?: boolean }) {
@@ -93,12 +94,17 @@ export function Header() {
             {wordmark} <small>index</small>
           </span>
         </Link>
+        {/* Categories are read from the catalog rather than hard-coded, so a new
+            category appears in the nav the moment it is added to the data. The
+            row scrolls horizontally instead of wrapping, which keeps the header
+            one line tall no matter how many categories exist. */}
         <nav className="d-nav" aria-label="Primary">
-          <Link href={href("/c/audio")}>Audio</Link>
-          <Link href={href("/c/mobile")}>Mobile</Link>
-          <Link href={href("/c/cameras")}>Cameras</Link>
-          <Link href={href("/c/computing")}>Computing</Link>
-          <Link href={href("/how-it-works")}>How it works</Link>
+          {CATEGORIES.map(c => (
+            <Link key={c.id} href={href(`/c/${c.slug}`)}>
+              {c.name}
+            </Link>
+          ))}
+          <Link href={href("/how-it-works")} className="d-nav-sep">How it works</Link>
         </nav>
         <div className="d-head-search">
           <SearchBox />

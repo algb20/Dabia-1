@@ -4,18 +4,24 @@ import { SITE, href } from "@/lib/discover/config";
 import { getTrending, getCategories, getBrands, STATS } from "@/lib/discover/store";
 import { ProductCard, Tile, Seal } from "@/components/discover/ui";
 import { SearchBox } from "@/components/discover/client";
+import { money } from "@/lib/discover/format";
 
 export default async function DiscoverHome() {
   const [trending, categories, brands] = await Promise.all([
-    getTrending(8),
+    getTrending(12),
     getCategories(),
     getBrands(),
   ]);
+
+  // The hero's proof panel uses the most-compared product that actually has
+  // several sources, so the example is real rather than illustrative.
+  const heroProduct = trending.find((p) => p.offers.length >= 3) ?? trending[0];
 
   return (
     <>
       {/* hero */}
       <section className="d-wrap d-hero">
+        <div className="d-hero-copy">
         <span className="d-eyebrow d-hero-eyebrow">
           <Seal label="Official-source index" />
         </span>
@@ -47,6 +53,36 @@ export default async function DiscoverHome() {
             <span>Live-ready listings</span>
           </span>
         </div>
+        </div>
+
+        {/* The right column shows the product doing its job, using a real
+            indexed product rather than a mock — the desktop hero otherwise
+            left half the row empty. Hidden on narrow screens. */}
+        {heroProduct && heroProduct.offers.length > 0 && (
+          <aside className="d-hero-proof" aria-label="Example comparison">
+            <div className="d-proof-head">
+              <span className="d-eyebrow">One product · every official source</span>
+              <strong className="d-proof-name">{heroProduct.name}</strong>
+            </div>
+            <ul className="d-proof-rows">
+              {heroProduct.offers.slice(0, 3).map((o, i) => (
+                <li key={o.id} className={`d-proof-row${i === 0 ? " is-best" : ""}`}>
+                  <span className="d-proof-src">
+                    <span className="d-proof-code">{o.source.code}</span>
+                    {o.source.name}
+                  </span>
+                  <span className="d-proof-price">
+                    {money(o.price, o.currency)}
+                    {i === 0 && <em className="d-proof-tag">Best price</em>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="d-proof-foot">
+              Verified sources only · we never hold stock or resell
+            </p>
+          </aside>
+        )}
       </section>
 
       {/* trending */}

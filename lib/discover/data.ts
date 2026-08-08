@@ -21,8 +21,32 @@ export const SOURCES: Source[] = [
   { id: "dell", name: "Dell", kind: "brand", official: true, domain: "dell.com", code: "DEL" },
   { id: "logitech", name: "Logitech", kind: "brand", official: true, domain: "logitech.com", code: "LOG" },
   { id: "jbl", name: "JBL", kind: "brand", official: true, domain: "jbl.com", code: "JBL" },
+  { id: "lg", name: "LG", kind: "brand", official: true, domain: "lg.com", code: "LG" },
+  { id: "xiaomi", name: "Xiaomi", kind: "brand", official: true, domain: "mi.com", code: "XIA" },
+  { id: "asus", name: "ASUS", kind: "brand", official: true, domain: "asus.com", code: "ASU" },
+  { id: "hp", name: "HP", kind: "brand", official: true, domain: "hp.com", code: "HP" },
+  { id: "lenovo", name: "Lenovo", kind: "brand", official: true, domain: "lenovo.com", code: "LEN" },
+  { id: "microsoft", name: "Microsoft", kind: "brand", official: true, domain: "microsoft.com", code: "MSF" },
+  { id: "nintendo", name: "Nintendo", kind: "brand", official: true, domain: "nintendo.com", code: "NTD" },
+  { id: "razer", name: "Razer", kind: "brand", official: true, domain: "razer.com", code: "RZR" },
+  { id: "philips", name: "Philips", kind: "brand", official: true, domain: "philips.com", code: "PHI" },
+  { id: "google", name: "Google", kind: "brand", official: true, domain: "store.google.com", code: "GGL" },
+  { id: "oneplus", name: "OnePlus", kind: "brand", official: true, domain: "oneplus.com", code: "OPL" },
+  { id: "nothing", name: "Nothing", kind: "brand", official: true, domain: "nothing.tech", code: "NTH" },
+  { id: "dji", name: "DJI", kind: "brand", official: true, domain: "dji.com", code: "DJI" },
+  { id: "nikon", name: "Nikon", kind: "brand", official: true, domain: "nikon.com", code: "NKN" },
+  { id: "sennheiser", name: "Sennheiser", kind: "brand", official: true, domain: "sennheiser.com", code: "SEN" },
+  { id: "marshall", name: "Marshall", kind: "brand", official: true, domain: "marshallheadphones.com", code: "MRS" },
+  { id: "fitbit", name: "Fitbit", kind: "brand", official: true, domain: "fitbit.com", code: "FIT" },
+  { id: "ninja", name: "Ninja", kind: "brand", official: true, domain: "ninjakitchen.com", code: "NNJ" },
+  { id: "roborock", name: "Roborock", kind: "brand", official: true, domain: "roborock.com", code: "RBR" },
+  { id: "tplink", name: "TP-Link", kind: "brand", official: true, domain: "tp-link.com", code: "TPL" },
+  { id: "sandisk", name: "SanDisk", kind: "brand", official: true, domain: "sandisk.com", code: "SND" },
+  { id: "keychron", name: "Keychron", kind: "brand", official: true, domain: "keychron.com", code: "KEY" },
+  { id: "belkin", name: "Belkin", kind: "brand", official: true, domain: "belkin.com", code: "BLK" },
   { id: "amazon", name: "Amazon", kind: "marketplace", official: true, domain: "amazon.com", code: "AMZ" },
   { id: "noon", name: "Noon", kind: "marketplace", official: true, domain: "noon.com", code: "NOO" },
+  { id: "bestbuy", name: "Best Buy", kind: "marketplace", official: true, domain: "bestbuy.com", code: "BBY" },
 ];
 
 export const CATEGORIES: Category[] = [
@@ -32,6 +56,14 @@ export const CATEGORIES: Category[] = [
   { id: "home", slug: "home", name: "Home Tech", blurb: "Cleaning, air and everyday home devices." },
   { id: "cameras", slug: "cameras", name: "Cameras", blurb: "Mirrorless, action and vlog cameras." },
   { id: "computing", slug: "computing", name: "Computing", blurb: "Laptops and desk gear, official-source only." },
+  { id: "tv", slug: "tv", name: "TV & Display", blurb: "Televisions, monitors and projectors." },
+  { id: "gaming", slug: "gaming", name: "Gaming", blurb: "Consoles, handhelds and play gear." },
+  { id: "smarthome", slug: "smart-home", name: "Smart Home", blurb: "Lighting, security and connected living." },
+  { id: "kitchen", slug: "kitchen", name: "Kitchen", blurb: "Coffee, cooking and countertop appliances." },
+  { id: "fitness", slug: "fitness", name: "Fitness", blurb: "Training, recovery and health tracking." },
+  { id: "networking", slug: "networking", name: "Networking & Storage", blurb: "Routers, mesh systems and drives." },
+  { id: "power", slug: "power", name: "Power & Charging", blurb: "Chargers, power banks and stations." },
+  { id: "beauty", slug: "beauty", name: "Beauty & Care", blurb: "Grooming, hair and personal care devices." },
 ];
 
 export const BRANDS: Brand[] = [
@@ -48,6 +80,29 @@ export const BRANDS: Brand[] = [
   { id: "dell", slug: "dell", name: "Dell", official: true, monogram: "De", hue: 215, blurb: "Laptops and monitors from Dell's official store.", categoryIds: ["computing"] },
   { id: "logitech", slug: "logitech", name: "Logitech", official: true, monogram: "Lo", hue: 195, blurb: "Keyboards, mice and desk gear, official Logitech.", categoryIds: ["computing", "audio"] },
   { id: "jbl", slug: "jbl", name: "JBL", official: true, monogram: "Jb", hue: 20, blurb: "Portable speakers and audio from JBL.", categoryIds: ["audio"] },
+  { id: "lg", slug: "lg", name: "LG", official: true, monogram: "LG", hue: 340, blurb: "OLED televisions, monitors and home appliances from LG.", categoryIds: ["tv", "home"] },
+  { id: "xiaomi", slug: "xiaomi", name: "Xiaomi", official: true, monogram: "Xi", hue: 25, blurb: "Phones, wearables and smart home from Xiaomi's official channels.", categoryIds: ["mobile", "wearables", "smarthome"] },
+  { id: "asus", slug: "asus", name: "ASUS", official: true, monogram: "As", hue: 205, blurb: "Laptops, monitors and gaming hardware from ASUS.", categoryIds: ["computing", "gaming", "tv"] },
+  { id: "hp", slug: "hp", name: "HP", official: true, monogram: "HP", hue: 200, blurb: "Laptops, printers and displays from HP's official store.", categoryIds: ["computing"] },
+  { id: "lenovo", slug: "lenovo", name: "Lenovo", official: true, monogram: "Le", hue: 0, blurb: "ThinkPad, Yoga and Legion, official warranty.", categoryIds: ["computing", "gaming"] },
+  { id: "microsoft", slug: "microsoft", name: "Microsoft", official: true, monogram: "Ms", hue: 210, blurb: "Surface devices and Xbox from Microsoft.", categoryIds: ["computing", "gaming"] },
+  { id: "nintendo", slug: "nintendo", name: "Nintendo", official: true, monogram: "Nt", hue: 355, blurb: "Switch consoles and first-party accessories.", categoryIds: ["gaming"] },
+  { id: "razer", slug: "razer", name: "Razer", official: true, monogram: "Rz", hue: 110, blurb: "Gaming laptops, mice and headsets from Razer.", categoryIds: ["gaming", "computing"] },
+  { id: "philips", slug: "philips", name: "Philips", official: true, monogram: "Ph", hue: 215, blurb: "Hue lighting, grooming and personal care from Philips.", categoryIds: ["smarthome", "beauty"] },
+  { id: "google", slug: "google", name: "Google", official: true, monogram: "Gg", hue: 220, blurb: "Pixel phones, Nest and Fitbit from the Google Store.", categoryIds: ["mobile", "smarthome", "wearables"] },
+  { id: "oneplus", slug: "oneplus", name: "OnePlus", official: true, monogram: "1+", hue: 0, blurb: "Flagship phones and audio from OnePlus.", categoryIds: ["mobile", "audio"] },
+  { id: "nothing", slug: "nothing", name: "Nothing", official: true, monogram: "No", hue: 0, blurb: "Transparent-design phones and earbuds from Nothing.", categoryIds: ["mobile", "audio"] },
+  { id: "dji", slug: "dji", name: "DJI", official: true, monogram: "DJ", hue: 195, blurb: "Drones, gimbals and action cameras from DJI.", categoryIds: ["cameras"] },
+  { id: "nikon", slug: "nikon", name: "Nikon", official: true, monogram: "Nk", hue: 45, blurb: "Mirrorless cameras and lenses, official Nikon.", categoryIds: ["cameras"] },
+  { id: "sennheiser", slug: "sennheiser", name: "Sennheiser", official: true, monogram: "Se", hue: 220, blurb: "Reference headphones and earbuds from Sennheiser.", categoryIds: ["audio"] },
+  { id: "marshall", slug: "marshall", name: "Marshall", official: true, monogram: "Mr", hue: 30, blurb: "Amp-styled speakers and headphones from Marshall.", categoryIds: ["audio"] },
+  { id: "fitbit", slug: "fitbit", name: "Fitbit", official: true, monogram: "Fb", hue: 175, blurb: "Health and activity trackers, official Fitbit.", categoryIds: ["wearables", "fitness"] },
+  { id: "ninja", slug: "ninja", name: "Ninja", official: true, monogram: "Nj", hue: 145, blurb: "Air fryers, blenders and countertop cooking.", categoryIds: ["kitchen"] },
+  { id: "roborock", slug: "roborock", name: "Roborock", official: true, monogram: "Rb", hue: 190, blurb: "Robot vacuums and mops, official Roborock.", categoryIds: ["home", "smarthome"] },
+  { id: "tplink", slug: "tp-link", name: "TP-Link", official: true, monogram: "TP", hue: 185, blurb: "Routers, mesh Wi-Fi and smart plugs.", categoryIds: ["networking", "smarthome"] },
+  { id: "sandisk", slug: "sandisk", name: "SanDisk", official: true, monogram: "Sd", hue: 5, blurb: "Portable SSDs and memory cards, official SanDisk.", categoryIds: ["networking", "computing"] },
+  { id: "keychron", slug: "keychron", name: "Keychron", official: true, monogram: "Kc", hue: 235, blurb: "Mechanical keyboards, official Keychron.", categoryIds: ["computing"] },
+  { id: "belkin", slug: "belkin", name: "Belkin", official: true, monogram: "Bk", hue: 200, blurb: "Chargers, docks and cables, official Belkin.", categoryIds: ["power"] },
 ];
 
 // helper to build a short, deterministic price history (base currency)
@@ -214,6 +269,254 @@ export const PRODUCTS: Product[] = [
     specs: [{ label: "Rating", value: "IP67" }, { label: "Playtime", value: "20 h" }, { label: "Extras", value: "USB powerbank" }],
     hue: 22, currency: "USD", history: hist(179.95, [179.95, 179.95, 159.95, 149.95, 149.95, 149.95]),
   },
+
+  // ---- Audio ----
+  {
+    id: "p-momentum4", slug: "sennheiser-momentum-4", name: "Sennheiser Momentum 4 Wireless", brandId: "sennheiser", categoryId: "audio",
+    summary: "60-hour battery with reference tuning.",
+    description: "Sennheiser's flagship wireless over-ears, tuned for neutral reproduction with adaptive noise cancelling and a 60-hour battery.",
+    specs: [{ label: "Type", value: "Over-ear" }, { label: "Battery", value: "60 h" }, { label: "Codecs", value: "aptX Adaptive" }, { label: "Weight", value: "293 g" }],
+    hue: 224, currency: "USD", history: hist(349.95, [379.95, 349.95, 329.95, 299.95, 299.95, 279.95]),
+  },
+  {
+    id: "p-marshall-stanmore", slug: "marshall-stanmore-iii", name: "Marshall Stanmore III", brandId: "marshall", categoryId: "audio",
+    summary: "Amp-styled stereo speaker for the room.",
+    description: "A bookshelf-sized Bluetooth speaker with Marshall's signature grille and analogue controls, tuned for full-room stereo.",
+    specs: [{ label: "Power", value: "50 W" }, { label: "Bluetooth", value: "5.2 LE" }, { label: "Controls", value: "Analogue knobs" }],
+    hue: 32, currency: "USD", history: hist(379.99, [379.99, 379.99, 379.99, 349.99, 329.99, 329.99]),
+  },
+  {
+    id: "p-nothing-ear", slug: "nothing-ear-a", name: "Nothing Ear (a)", brandId: "nothing", categoryId: "audio",
+    summary: "Transparent-design ANC earbuds.",
+    description: "Lightweight earbuds with 45 dB adaptive noise cancelling and Nothing's transparent industrial design.",
+    specs: [{ label: "ANC", value: "45 dB adaptive" }, { label: "Battery", value: "42.5 h with case" }, { label: "Driver", value: "11 mm" }],
+    hue: 355, currency: "USD", history: hist(99, [99, 99, 99, 89, 89, 79]),
+  },
+  {
+    id: "p-oneplus-buds3", slug: "oneplus-buds-3-pro", name: "OnePlus Buds 3 Pro", brandId: "oneplus", categoryId: "audio",
+    summary: "Dual-driver earbuds with 50 dB ANC.",
+    description: "Dual-driver earbuds with adaptive noise cancelling up to 50 dB, spatial audio and fast pairing across OnePlus devices.",
+    specs: [{ label: "ANC", value: "50 dB" }, { label: "Drivers", value: "Dual (11 + 6 mm)" }, { label: "Battery", value: "43 h with case" }],
+    hue: 8, currency: "USD", history: hist(179.99, [179.99, 179.99, 169.99, 159.99, 149.99, 149.99]),
+  },
+
+  // ---- TV & Display ----
+  {
+    id: "p-lg-c4", slug: "lg-oled-evo-c4-55", name: "LG OLED evo C4 55\"", brandId: "lg", categoryId: "tv",
+    summary: "144 Hz OLED with per-pixel contrast.",
+    description: "LG's mainstream OLED with the α9 Gen7 processor, 144 Hz refresh for gaming and per-pixel light control for absolute blacks.",
+    specs: [{ label: "Panel", value: "OLED evo" }, { label: "Size", value: "55 in" }, { label: "Refresh", value: "144 Hz" }, { label: "HDMI", value: "4 × HDMI 2.1" }],
+    hue: 340, currency: "USD", history: hist(1499, [1699, 1599, 1499, 1399, 1299, 1296]),
+  },
+  {
+    id: "p-samsung-s90d", slug: "samsung-oled-s90d-65", name: "Samsung OLED S90D 65\"", brandId: "samsung", categoryId: "tv",
+    summary: "QD-OLED brightness with 144 Hz gaming.",
+    description: "Quantum-dot OLED panel with the NQ4 AI Gen2 processor, 144 Hz refresh and Motion Xcelerator for console play.",
+    specs: [{ label: "Panel", value: "QD-OLED" }, { label: "Size", value: "65 in" }, { label: "Refresh", value: "144 Hz" }, { label: "HDR", value: "HDR10+" }],
+    hue: 212, currency: "USD", history: hist(2299, [2599, 2499, 2299, 2099, 1899, 1799]),
+  },
+  {
+    id: "p-asus-pg27", slug: "asus-rog-swift-oled-pg27aqdm", name: "ASUS ROG Swift OLED PG27AQDM", brandId: "asus", categoryId: "tv",
+    summary: "240 Hz 1440p OLED gaming monitor.",
+    description: "A 26.5-inch OLED gaming monitor running 1440p at 240 Hz with a 0.03 ms response and a custom heatsink.",
+    specs: [{ label: "Size", value: "26.5 in" }, { label: "Resolution", value: "2560 × 1440" }, { label: "Refresh", value: "240 Hz" }, { label: "Response", value: "0.03 ms" }],
+    hue: 205, currency: "USD", history: hist(899, [999, 949, 899, 849, 799, 799]),
+  },
+
+  // ---- Gaming ----
+  {
+    id: "p-switch-oled", slug: "nintendo-switch-oled", name: "Nintendo Switch — OLED Model", brandId: "nintendo", categoryId: "gaming",
+    summary: "7-inch OLED handheld and dock.",
+    description: "The OLED revision of the Switch with a 7-inch screen, wide adjustable stand and 64 GB of internal storage.",
+    specs: [{ label: "Screen", value: "7 in OLED" }, { label: "Storage", value: "64 GB" }, { label: "Battery", value: "4.5–9 h" }],
+    hue: 355, currency: "USD", history: hist(349.99, [349.99, 349.99, 349.99, 349.99, 339.99, 329.99]),
+  },
+  {
+    id: "p-xbox-x", slug: "xbox-series-x", name: "Xbox Series X", brandId: "microsoft", categoryId: "gaming",
+    summary: "4K console with 1 TB SSD.",
+    description: "Microsoft's flagship console targeting 4K at up to 120 fps, with a 1 TB custom NVMe SSD and Quick Resume.",
+    specs: [{ label: "Target", value: "4K / 120 fps" }, { label: "Storage", value: "1 TB NVMe" }, { label: "Optical", value: "4K UHD Blu-ray" }],
+    hue: 128, currency: "USD", history: hist(499.99, [499.99, 499.99, 499.99, 469.99, 449.99, 449.99]),
+  },
+  {
+    id: "p-razer-basilisk", slug: "razer-basilisk-v3-pro", name: "Razer Basilisk V3 Pro", brandId: "razer", categoryId: "gaming",
+    summary: "Wireless gaming mouse, 30 K sensor.",
+    description: "An 11-button wireless gaming mouse with a 30 000 DPI optical sensor, optical switches and a tilt-scroll wheel.",
+    specs: [{ label: "Sensor", value: "30 000 DPI" }, { label: "Buttons", value: "11 programmable" }, { label: "Battery", value: "90 h" }],
+    hue: 112, currency: "USD", history: hist(159.99, [159.99, 159.99, 149.99, 139.99, 129.99, 129.99]),
+  },
+
+  // ---- Smart Home ----
+  {
+    id: "p-hue-starter", slug: "philips-hue-white-color-starter", name: "Philips Hue White & Color Starter Kit", brandId: "philips", categoryId: "smarthome",
+    summary: "Bridge plus three colour bulbs.",
+    description: "The Hue starter kit: a bridge and three colour-capable bulbs covering 16 million colours, with scenes and schedules.",
+    specs: [{ label: "Bulbs", value: "3 × A19" }, { label: "Colours", value: "16 million" }, { label: "Hub", value: "Hue Bridge included" }],
+    hue: 218, currency: "USD", history: hist(199.99, [199.99, 199.99, 189.99, 169.99, 159.99, 159.99]),
+  },
+  {
+    id: "p-nest-cam", slug: "google-nest-cam-battery", name: "Google Nest Cam (Battery)", brandId: "google", categoryId: "smarthome",
+    summary: "Wire-free camera with on-device AI.",
+    description: "A weatherproof battery camera that recognises people, animals and vehicles on-device, with three hours of free event history.",
+    specs: [{ label: "Video", value: "1080p HDR" }, { label: "Power", value: "Battery or wired" }, { label: "Rating", value: "IP54" }],
+    hue: 222, currency: "USD", history: hist(179.99, [179.99, 179.99, 169.99, 159.99, 149.99, 149.99]),
+  },
+  {
+    id: "p-roborock-s8", slug: "roborock-s8-max-ultra", name: "Roborock S8 MaxV Ultra", brandId: "roborock", categoryId: "smarthome",
+    summary: "Self-washing robot vacuum and mop.",
+    description: "A robot vacuum and mop with 10 000 Pa suction, an extending side brush and a dock that washes and dries the mop.",
+    specs: [{ label: "Suction", value: "10 000 Pa" }, { label: "Dock", value: "Wash, dry, refill" }, { label: "Navigation", value: "LiDAR + binocular" }],
+    hue: 192, currency: "USD", history: hist(1799.99, [1799.99, 1699.99, 1599.99, 1499.99, 1399.99, 1399.99]),
+  },
+
+  // ---- Kitchen ----
+  {
+    id: "p-ninja-af", slug: "ninja-foodi-dual-zone", name: "Ninja Foodi 6-in-1 DualZone Air Fryer", brandId: "ninja", categoryId: "kitchen",
+    summary: "Two baskets, two foods, one finish time.",
+    description: "A dual-basket air fryer whose Smart Finish setting times two different foods to finish together across six cooking modes.",
+    specs: [{ label: "Capacity", value: "9.5 L total" }, { label: "Baskets", value: "2 independent" }, { label: "Modes", value: "6" }],
+    hue: 148, currency: "USD", history: hist(229.99, [229.99, 219.99, 199.99, 179.99, 169.99, 169.99]),
+  },
+  {
+    id: "p-ninja-blender", slug: "ninja-detect-power-blender", name: "Ninja Detect Power Blender Pro", brandId: "ninja", categoryId: "kitchen",
+    summary: "Senses contents and adjusts the blend.",
+    description: "A 1800-peak-watt blender that detects the contents and adjusts blend time and power automatically, with a 72 oz pitcher.",
+    specs: [{ label: "Power", value: "1800 W peak" }, { label: "Pitcher", value: "72 oz" }, { label: "Programs", value: "5 Auto-iQ" }],
+    hue: 142, currency: "USD", history: hist(199.99, [199.99, 189.99, 179.99, 169.99, 159.99, 159.99]),
+  },
+
+  // ---- Fitness ----
+  {
+    id: "p-charge6", slug: "fitbit-charge-6", name: "Fitbit Charge 6", brandId: "fitbit", categoryId: "fitness",
+    summary: "ECG, GPS and Google apps on the wrist.",
+    description: "A tracker with built-in GPS, ECG and EDA sensors, plus Google Maps and Wallet, and a week of battery.",
+    specs: [{ label: "Battery", value: "7 days" }, { label: "Sensors", value: "ECG, EDA, SpO2" }, { label: "GPS", value: "Built-in" }],
+    hue: 178, currency: "USD", history: hist(159.95, [159.95, 149.95, 139.95, 129.95, 119.95, 99.95]),
+  },
+  {
+    id: "p-fenix8", slug: "garmin-fenix-8", name: "Garmin fēnix 8", brandId: "garmin", categoryId: "fitness",
+    summary: "AMOLED multisport watch with dive support.",
+    description: "Garmin's flagship multisport watch with an AMOLED display, built-in speaker and mic, leakproof design and dive computer modes.",
+    specs: [{ label: "Display", value: "AMOLED" }, { label: "Battery", value: "Up to 16 days" }, { label: "Water", value: "10 ATM, dive-rated" }],
+    hue: 158, currency: "USD", history: hist(999.99, [1099.99, 1099.99, 1049.99, 999.99, 999.99, 949.99]),
+  },
+
+  // ---- Networking & Storage ----
+  {
+    id: "p-deco-be85", slug: "tp-link-deco-be85", name: "TP-Link Deco BE85 (2-pack)", brandId: "tplink", categoryId: "networking",
+    summary: "Wi-Fi 7 mesh with 10 G ports.",
+    description: "A tri-band Wi-Fi 7 mesh system with 10 Gbps ports and coverage up to 8 400 sq ft across two units.",
+    specs: [{ label: "Standard", value: "Wi-Fi 7 (BE22000)" }, { label: "Ports", value: "2 × 10 G per unit" }, { label: "Coverage", value: "8 400 sq ft" }],
+    hue: 188, currency: "USD", history: hist(699.99, [699.99, 699.99, 649.99, 599.99, 549.99, 549.99]),
+  },
+  {
+    id: "p-sandisk-t5", slug: "sandisk-extreme-pro-portable-ssd", name: "SanDisk Extreme PRO Portable SSD 2 TB", brandId: "sandisk", categoryId: "networking",
+    summary: "2000 MB/s pocket SSD, IP65.",
+    description: "A rugged USB 3.2 Gen 2×2 portable SSD reading up to 2000 MB/s, with IP65 dust and water resistance.",
+    specs: [{ label: "Capacity", value: "2 TB" }, { label: "Read", value: "2000 MB/s" }, { label: "Rating", value: "IP65" }],
+    hue: 8, currency: "USD", history: hist(299.99, [299.99, 279.99, 259.99, 239.99, 219.99, 199.99]),
+  },
+
+  // ---- Power & Charging ----
+  {
+    id: "p-anker-737", slug: "anker-737-power-bank", name: "Anker 737 Power Bank (PowerCore 24K)", brandId: "anker", categoryId: "power",
+    summary: "24 000 mAh with a 140 W output.",
+    description: "A 24 000 mAh bank delivering up to 140 W over USB-C, with a smart display showing power flow and temperature.",
+    specs: [{ label: "Capacity", value: "24 000 mAh" }, { label: "Output", value: "140 W max" }, { label: "Display", value: "Smart digital" }],
+    hue: 200, currency: "USD", history: hist(149.99, [149.99, 139.99, 129.99, 119.99, 109.99, 99.99]),
+  },
+  {
+    id: "p-belkin-3in1", slug: "belkin-boostcharge-pro-3-in-1", name: "Belkin BoostCharge Pro 3-in-1 (Qi2)", brandId: "belkin", categoryId: "power",
+    summary: "Qi2 15 W stand for phone, watch and buds.",
+    description: "A magnetic 3-in-1 charger delivering Qi2 15 W to the phone while charging a watch and earbuds from one base.",
+    specs: [{ label: "Standard", value: "Qi2 15 W" }, { label: "Devices", value: "3 at once" }, { label: "Watch", value: "Fast charge" }],
+    hue: 202, currency: "USD", history: hist(149.99, [149.99, 149.99, 139.99, 129.99, 119.99, 119.99]),
+  },
+
+  // ---- Beauty & Care ----
+  {
+    id: "p-airwrap", slug: "dyson-airwrap-i-d", name: "Dyson Airwrap i.d.", brandId: "dyson", categoryId: "beauty",
+    summary: "Curls and dries without extreme heat.",
+    description: "Dyson's multi-styler using the Coanda effect to curl, wave and smooth with heat controlled to protect the hair.",
+    specs: [{ label: "Heat control", value: "Measured 40× / sec" }, { label: "Attachments", value: "6 in box" }, { label: "Modes", value: "App-curated" }],
+    hue: 300, currency: "USD", history: hist(599.99, [599.99, 599.99, 599.99, 549.99, 549.99, 529.99]),
+  },
+  {
+    id: "p-philips-9000", slug: "philips-norelco-shaver-9000", name: "Philips Norelco Shaver 9000 Prestige", brandId: "philips", categoryId: "beauty",
+    summary: "Adaptive rotary shave, wet or dry.",
+    description: "A rotary shaver that reads beard density 500 times per second and adjusts power, usable wet or dry with a cleaning pod.",
+    specs: [{ label: "Sensing", value: "500× / sec" }, { label: "Use", value: "Wet & dry" }, { label: "Battery", value: "60 min" }],
+    hue: 216, currency: "USD", history: hist(399.99, [399.99, 379.99, 349.99, 329.99, 299.99, 279.99]),
+  },
+
+  // ---- Mobile ----
+  {
+    id: "p-pixel9p", slug: "google-pixel-9-pro", name: "Google Pixel 9 Pro", brandId: "google", categoryId: "mobile",
+    summary: "Tensor G4 with a triple 48 MP-class camera.",
+    description: "Google's compact pro phone with the Tensor G4, a 6.3-inch Super Actua display and seven years of OS updates.",
+    specs: [{ label: "Chip", value: "Tensor G4" }, { label: "Display", value: "6.3\" Super Actua" }, { label: "Updates", value: "7 years" }],
+    hue: 226, currency: "USD", history: hist(999, [999, 999, 949, 899, 849, 799]),
+  },
+  {
+    id: "p-oneplus12", slug: "oneplus-12", name: "OnePlus 12", brandId: "oneplus", categoryId: "mobile",
+    summary: "Snapdragon 8 Gen 3 with 100 W charging.",
+    description: "A flagship with the Snapdragon 8 Gen 3, a 2K 120 Hz ProXDR display and 100 W wired charging.",
+    specs: [{ label: "Chip", value: "Snapdragon 8 Gen 3" }, { label: "Display", value: "6.82\" 2K 120 Hz" }, { label: "Charging", value: "100 W wired" }],
+    hue: 4, currency: "USD", history: hist(799.99, [799.99, 799.99, 749.99, 699.99, 649.99, 649.99]),
+  },
+  {
+    id: "p-xiaomi14", slug: "xiaomi-14-ultra", name: "Xiaomi 14 Ultra", brandId: "xiaomi", categoryId: "mobile",
+    summary: "Leica quad camera with variable aperture.",
+    description: "A camera-first flagship co-engineered with Leica, with a 1-inch main sensor and a stepless variable aperture.",
+    specs: [{ label: "Main sensor", value: "1-inch LYT-900" }, { label: "Aperture", value: "f/1.63–f/4.0" }, { label: "Optics", value: "Leica Summilux" }],
+    hue: 28, currency: "USD", history: hist(1299, [1399, 1349, 1299, 1249, 1199, 1149]),
+  },
+
+  // ---- Computing ----
+  {
+    id: "p-xps14", slug: "dell-xps-14", name: "Dell XPS 14", brandId: "dell", categoryId: "computing",
+    summary: "Core Ultra laptop with an OLED option.",
+    description: "A 14.5-inch machined-aluminium laptop with Intel Core Ultra, an optional 3.2K OLED touch display and RTX graphics.",
+    specs: [{ label: "Chip", value: "Intel Core Ultra 7" }, { label: "Display", value: "14.5\" 3.2K OLED" }, { label: "Graphics", value: "RTX 4050" }],
+    hue: 218, currency: "USD", history: hist(1899, [1999, 1949, 1899, 1799, 1699, 1649]),
+  },
+  {
+    id: "p-thinkpad-x1", slug: "lenovo-thinkpad-x1-carbon-g12", name: "Lenovo ThinkPad X1 Carbon Gen 12", brandId: "lenovo", categoryId: "computing",
+    summary: "Sub-kilo business laptop, Core Ultra.",
+    description: "A 14-inch carbon-fibre business laptop under 1.1 kg, with Core Ultra, a 2.8K OLED option and MIL-STD durability.",
+    specs: [{ label: "Weight", value: "1.09 kg" }, { label: "Chip", value: "Intel Core Ultra 7" }, { label: "Display", value: "14\" 2.8K OLED" }],
+    hue: 358, currency: "USD", history: hist(2149, [2299, 2249, 2149, 1999, 1899, 1849]),
+  },
+  {
+    id: "p-surface-l6", slug: "microsoft-surface-laptop-6", name: "Microsoft Surface Laptop 6", brandId: "microsoft", categoryId: "computing",
+    summary: "Touch laptop with a repairable design.",
+    description: "A touchscreen laptop with Core Ultra, a 120 Hz PixelSense display and a design built for serviceability.",
+    specs: [{ label: "Chip", value: "Intel Core Ultra 5" }, { label: "Display", value: "13.5\" PixelSense 120 Hz" }, { label: "Ports", value: "2 × USB4" }],
+    hue: 212, currency: "USD", history: hist(1199.99, [1199.99, 1199.99, 1149.99, 1099.99, 1049.99, 999.99]),
+  },
+  {
+    id: "p-keychron-q1", slug: "keychron-q1-pro", name: "Keychron Q1 Pro", brandId: "keychron", categoryId: "computing",
+    summary: "Gasket-mounted wireless mechanical board.",
+    description: "A 75% aluminium mechanical keyboard with a gasket mount, hot-swappable switches, QMK/VIA support and Bluetooth.",
+    specs: [{ label: "Layout", value: "75%" }, { label: "Mount", value: "Gasket" }, { label: "Firmware", value: "QMK / VIA" }, { label: "Wireless", value: "Bluetooth 5.1" }],
+    hue: 238, currency: "USD", history: hist(199, [199, 199, 189, 179, 179, 174]),
+  },
+
+  // ---- Cameras ----
+  {
+    id: "p-dji-mini4", slug: "dji-mini-4-pro", name: "DJI Mini 4 Pro", brandId: "dji", categoryId: "cameras",
+    summary: "Sub-249 g drone with omnidirectional sensing.",
+    description: "A sub-249 g drone shooting 4K/60 HDR with omnidirectional obstacle sensing and 34 minutes of flight.",
+    specs: [{ label: "Weight", value: "< 249 g" }, { label: "Video", value: "4K/60 HDR" }, { label: "Flight", value: "34 min" }, { label: "Sensing", value: "Omnidirectional" }],
+    hue: 196, currency: "USD", history: hist(759, [759, 759, 759, 729, 699, 699]),
+  },
+  {
+    id: "p-nikon-z6iii", slug: "nikon-z6-iii", name: "Nikon Z6 III", brandId: "nikon", categoryId: "cameras",
+    summary: "Partially-stacked sensor, 6K RAW.",
+    description: "A full-frame mirrorless with the first partially-stacked CMOS sensor, 6K/60 internal RAW and 20 fps bursts.",
+    specs: [{ label: "Sensor", value: "24.5 MP partially-stacked" }, { label: "Video", value: "6K/60 N-RAW" }, { label: "Burst", value: "20 fps" }],
+    hue: 48, currency: "USD", history: hist(2499.95, [2499.95, 2499.95, 2499.95, 2399.95, 2299.95, 2296.95]),
+  },
 ];
 
 // Offers: same product, several official / authorized sources, multi-currency.
@@ -290,7 +593,119 @@ export const OFFERS: Offer[] = [
   // JBL Charge 5
   { id: "o49", productId: "p-charge5", sourceId: "jbl", price: 179.95, currency: "USD", url: "https://www.jbl.com/portable-speakers/JBL+CHARGE+5.html", availability: "in_stock", updatedAt: "2026-07-12", shipsTo: "US" },
   { id: "o50", productId: "p-charge5", sourceId: "amazon", price: 149.95, currency: "USD", url: "https://www.amazon.com/s?k=jbl+charge+5", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+
+  // Sennheiser Momentum 4
+  { id: "o51", productId: "p-momentum4", sourceId: "sennheiser", price: 299.95, currency: "USD", url: "https://www.sennheiser-hearing.com/en-US/p/momentum-4-wireless/", availability: "in_stock", updatedAt: "2026-07-18", shipsTo: "US" },
+  { id: "o52", productId: "p-momentum4", sourceId: "amazon", price: 279.95, currency: "USD", url: "https://www.amazon.com/s?k=sennheiser+momentum+4", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Marshall Stanmore III
+  { id: "o53", productId: "p-marshall-stanmore", sourceId: "marshall", price: 379.99, currency: "USD", url: "https://www.marshallheadphones.com/us/en/stanmore-iii.html", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o54", productId: "p-marshall-stanmore", sourceId: "amazon", price: 329.99, currency: "USD", url: "https://www.amazon.com/s?k=marshall+stanmore+iii", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Nothing Ear (a)
+  { id: "o55", productId: "p-nothing-ear", sourceId: "nothing", price: 99, currency: "USD", url: "https://us.nothing.tech/products/ear-a", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o56", productId: "p-nothing-ear", sourceId: "amazon", price: 79, currency: "USD", url: "https://www.amazon.com/s?k=nothing+ear+a", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // OnePlus Buds 3 Pro
+  { id: "o57", productId: "p-oneplus-buds3", sourceId: "oneplus", price: 179.99, currency: "USD", url: "https://www.oneplus.com/us/oneplus-buds-3", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o58", productId: "p-oneplus-buds3", sourceId: "amazon", price: 149.99, currency: "USD", url: "https://www.amazon.com/s?k=oneplus+buds+3+pro", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // LG OLED evo C4 55"
+  { id: "o59", productId: "p-lg-c4", sourceId: "lg", price: 1399, currency: "USD", url: "https://www.lg.com/us/tvs/lg-oled55c4pua-oled-4k-tv", availability: "in_stock", updatedAt: "2026-07-18", shipsTo: "US" },
+  { id: "o60", productId: "p-lg-c4", sourceId: "bestbuy", price: 1296, currency: "USD", url: "https://www.bestbuy.com/site/searchpage.jsp?st=lg+c4+oled+55", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  { id: "o61", productId: "p-lg-c4", sourceId: "amazon", price: 1299, currency: "USD", url: "https://www.amazon.com/s?k=lg+oled+c4+55", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Samsung S90D 65"
+  { id: "o62", productId: "p-samsung-s90d", sourceId: "samsung", price: 1899, currency: "USD", url: "https://www.samsung.com/us/televisions-home-theater/tvs/oled-tvs/", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o63", productId: "p-samsung-s90d", sourceId: "bestbuy", price: 1799, currency: "USD", url: "https://www.bestbuy.com/site/searchpage.jsp?st=samsung+s90d+65", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // ASUS ROG Swift OLED
+  { id: "o64", productId: "p-asus-pg27", sourceId: "asus", price: 899, currency: "USD", url: "https://rog.asus.com/monitors/27-to-31-5-inches/rog-swift-oled-pg27aqdm/", availability: "in_stock", updatedAt: "2026-07-14", shipsTo: "US" },
+  { id: "o65", productId: "p-asus-pg27", sourceId: "amazon", price: 799, currency: "USD", url: "https://www.amazon.com/s?k=asus+rog+swift+oled+pg27aqdm", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Nintendo Switch OLED
+  { id: "o66", productId: "p-switch-oled", sourceId: "nintendo", price: 349.99, currency: "USD", url: "https://www.nintendo.com/us/store/products/nintendo-switch-oled-model-white-set/", availability: "in_stock", updatedAt: "2026-07-18", shipsTo: "US" },
+  { id: "o67", productId: "p-switch-oled", sourceId: "amazon", price: 329.99, currency: "USD", url: "https://www.amazon.com/s?k=nintendo+switch+oled", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Xbox Series X
+  { id: "o68", productId: "p-xbox-x", sourceId: "microsoft", price: 499.99, currency: "USD", url: "https://www.xbox.com/en-US/consoles/xbox-series-x", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o69", productId: "p-xbox-x", sourceId: "bestbuy", price: 449.99, currency: "USD", url: "https://www.bestbuy.com/site/searchpage.jsp?st=xbox+series+x", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Razer Basilisk V3 Pro
+  { id: "o70", productId: "p-razer-basilisk", sourceId: "razer", price: 159.99, currency: "USD", url: "https://www.razer.com/gaming-mice/razer-basilisk-v3-pro", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o71", productId: "p-razer-basilisk", sourceId: "amazon", price: 129.99, currency: "USD", url: "https://www.amazon.com/s?k=razer+basilisk+v3+pro", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Philips Hue starter kit
+  { id: "o72", productId: "p-hue-starter", sourceId: "philips", price: 179.99, currency: "USD", url: "https://www.philips-hue.com/en-us/p/hue-white-and-color-ambiance-starter-kit/", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o73", productId: "p-hue-starter", sourceId: "amazon", price: 159.99, currency: "USD", url: "https://www.amazon.com/s?k=philips+hue+starter+kit", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Google Nest Cam
+  { id: "o74", productId: "p-nest-cam", sourceId: "google", price: 179.99, currency: "USD", url: "https://store.google.com/product/nest_cam_battery", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o75", productId: "p-nest-cam", sourceId: "amazon", price: 149.99, currency: "USD", url: "https://www.amazon.com/s?k=google+nest+cam+battery", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Roborock S8 MaxV Ultra
+  { id: "o76", productId: "p-roborock-s8", sourceId: "roborock", price: 1599.99, currency: "USD", url: "https://us.roborock.com/products/roborock-s8-maxv-ultra", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o77", productId: "p-roborock-s8", sourceId: "amazon", price: 1399.99, currency: "USD", url: "https://www.amazon.com/s?k=roborock+s8+maxv+ultra", availability: "low", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Ninja air fryer
+  { id: "o78", productId: "p-ninja-af", sourceId: "ninja", price: 199.99, currency: "USD", url: "https://www.ninjakitchen.com/products/ninja-foodi-6-in-1-8-qt-2-basket-air-fryer", availability: "in_stock", updatedAt: "2026-07-14", shipsTo: "US" },
+  { id: "o79", productId: "p-ninja-af", sourceId: "amazon", price: 169.99, currency: "USD", url: "https://www.amazon.com/s?k=ninja+foodi+dualzone+air+fryer", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Ninja blender
+  { id: "o80", productId: "p-ninja-blender", sourceId: "ninja", price: 179.99, currency: "USD", url: "https://www.ninjakitchen.com/products/ninja-detect-power-blender-pro", availability: "in_stock", updatedAt: "2026-07-14", shipsTo: "US" },
+  { id: "o81", productId: "p-ninja-blender", sourceId: "amazon", price: 159.99, currency: "USD", url: "https://www.amazon.com/s?k=ninja+detect+power+blender+pro", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Fitbit Charge 6
+  { id: "o82", productId: "p-charge6", sourceId: "google", price: 159.95, currency: "USD", url: "https://store.google.com/product/fitbit_charge_6", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o83", productId: "p-charge6", sourceId: "amazon", price: 99.95, currency: "USD", url: "https://www.amazon.com/s?k=fitbit+charge+6", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Garmin fenix 8
+  { id: "o84", productId: "p-fenix8", sourceId: "garmin", price: 999.99, currency: "USD", url: "https://www.garmin.com/en-US/p/fenix-8", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o85", productId: "p-fenix8", sourceId: "amazon", price: 949.99, currency: "USD", url: "https://www.amazon.com/s?k=garmin+fenix+8", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // TP-Link Deco BE85
+  { id: "o86", productId: "p-deco-be85", sourceId: "tplink", price: 649.99, currency: "USD", url: "https://www.tp-link.com/us/home-networking/deco/deco-be85/", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o87", productId: "p-deco-be85", sourceId: "amazon", price: 549.99, currency: "USD", url: "https://www.amazon.com/s?k=tp-link+deco+be85", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // SanDisk Extreme PRO SSD
+  { id: "o88", productId: "p-sandisk-t5", sourceId: "sandisk", price: 249.99, currency: "USD", url: "https://shop.sandisk.com/products/portable-ssd/sandisk-extreme-pro-usb-3-2-ssd", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o89", productId: "p-sandisk-t5", sourceId: "amazon", price: 199.99, currency: "USD", url: "https://www.amazon.com/s?k=sandisk+extreme+pro+portable+ssd+2tb", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Anker 737
+  { id: "o90", productId: "p-anker-737", sourceId: "anker", price: 149.99, currency: "USD", url: "https://www.anker.com/products/a1289", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o91", productId: "p-anker-737", sourceId: "amazon", price: 99.99, currency: "USD", url: "https://www.amazon.com/s?k=anker+737+power+bank", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Belkin 3-in-1
+  { id: "o92", productId: "p-belkin-3in1", sourceId: "belkin", price: 149.99, currency: "USD", url: "https://www.belkin.com/boostcharge-pro-3-in-1-magnetic-wireless-charging-pad-with-qi2-15w/", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o93", productId: "p-belkin-3in1", sourceId: "amazon", price: 119.99, currency: "USD", url: "https://www.amazon.com/s?k=belkin+boostcharge+pro+3+in+1+qi2", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Dyson Airwrap i.d.
+  { id: "o94", productId: "p-airwrap", sourceId: "dyson", price: 599.99, currency: "USD", url: "https://www.dyson.com/hair-care/hair-stylers/airwrap", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o95", productId: "p-airwrap", sourceId: "amazon", price: 529.99, currency: "USD", url: "https://www.amazon.com/s?k=dyson+airwrap", availability: "low", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Philips Shaver 9000
+  { id: "o96", productId: "p-philips-9000", sourceId: "philips", price: 329.99, currency: "USD", url: "https://www.usa.philips.com/c-m-pe/shavers", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o97", productId: "p-philips-9000", sourceId: "amazon", price: 279.99, currency: "USD", url: "https://www.amazon.com/s?k=philips+norelco+9000+prestige", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Pixel 9 Pro
+  { id: "o98", productId: "p-pixel9p", sourceId: "google", price: 999, currency: "USD", url: "https://store.google.com/product/pixel_9_pro", availability: "in_stock", updatedAt: "2026-07-18", shipsTo: "US" },
+  { id: "o99", productId: "p-pixel9p", sourceId: "amazon", price: 799, currency: "USD", url: "https://www.amazon.com/s?k=google+pixel+9+pro", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // OnePlus 12
+  { id: "o100", productId: "p-oneplus12", sourceId: "oneplus", price: 799.99, currency: "USD", url: "https://www.oneplus.com/us/oneplus-12", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o101", productId: "p-oneplus12", sourceId: "amazon", price: 649.99, currency: "USD", url: "https://www.amazon.com/s?k=oneplus+12", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Xiaomi 14 Ultra
+  { id: "o102", productId: "p-xiaomi14", sourceId: "xiaomi", price: 1299, currency: "USD", url: "https://www.mi.com/global/product/xiaomi-14-ultra/", availability: "in_stock", updatedAt: "2026-07-14", shipsTo: "US" },
+  { id: "o103", productId: "p-xiaomi14", sourceId: "amazon", price: 1149, currency: "USD", url: "https://www.amazon.com/s?k=xiaomi+14+ultra", availability: "low", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // Dell XPS 14
+  { id: "o104", productId: "p-xps14", sourceId: "dell", price: 1899, currency: "USD", url: "https://www.dell.com/en-us/shop/dell-laptops/xps-14/spd/xps-14-9440-laptop", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o105", productId: "p-xps14", sourceId: "amazon", price: 1649, currency: "USD", url: "https://www.amazon.com/s?k=dell+xps+14", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // ThinkPad X1 Carbon
+  { id: "o106", productId: "p-thinkpad-x1", sourceId: "lenovo", price: 2149, currency: "USD", url: "https://www.lenovo.com/us/en/p/laptops/thinkpad/thinkpadx1/", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o107", productId: "p-thinkpad-x1", sourceId: "amazon", price: 1849, currency: "USD", url: "https://www.amazon.com/s?k=thinkpad+x1+carbon+gen+12", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Surface Laptop 6
+  { id: "o108", productId: "p-surface-l6", sourceId: "microsoft", price: 1199.99, currency: "USD", url: "https://www.microsoft.com/en-us/surface/business/surface-laptop-6", availability: "in_stock", updatedAt: "2026-07-15", shipsTo: "US" },
+  { id: "o109", productId: "p-surface-l6", sourceId: "bestbuy", price: 999.99, currency: "USD", url: "https://www.bestbuy.com/site/searchpage.jsp?st=surface+laptop+6", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Keychron Q1 Pro
+  { id: "o110", productId: "p-keychron-q1", sourceId: "keychron", price: 199, currency: "USD", url: "https://www.keychron.com/products/keychron-q1-pro-qmk-via-wireless-custom-mechanical-keyboard", availability: "in_stock", updatedAt: "2026-07-14", shipsTo: "US" },
+  { id: "o111", productId: "p-keychron-q1", sourceId: "amazon", price: 174, currency: "USD", url: "https://www.amazon.com/s?k=keychron+q1+pro", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+
+  // DJI Mini 4 Pro
+  { id: "o112", productId: "p-dji-mini4", sourceId: "dji", price: 759, currency: "USD", url: "https://www.dji.com/mini-4-pro", availability: "in_stock", updatedAt: "2026-07-17", shipsTo: "US" },
+  { id: "o113", productId: "p-dji-mini4", sourceId: "amazon", price: 699, currency: "USD", url: "https://www.amazon.com/s?k=dji+mini+4+pro", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
+  // Nikon Z6 III
+  { id: "o114", productId: "p-nikon-z6iii", sourceId: "nikon", price: 2499.95, currency: "USD", url: "https://www.nikonusa.com/p/z-6iii/1774/overview", availability: "in_stock", updatedAt: "2026-07-16", shipsTo: "US" },
+  { id: "o115", productId: "p-nikon-z6iii", sourceId: "amazon", price: 2296.95, currency: "USD", url: "https://www.amazon.com/s?k=nikon+z6+iii", availability: "in_stock", updatedAt: "2026-07-19", shipsTo: "US" },
 ];
 
 // Trending order (ids) — would come from click/conversion analytics in production.
-export const TRENDING_IDS = ["p-xm5", "p-ip16p", "p-mba-m3", "p-a7iv", "p-app2", "p-v15", "p-s24u", "p-aw10"];
+export const TRENDING_IDS = [
+  "p-xm5", "p-ip16p", "p-lg-c4", "p-pixel9p", "p-switch-oled", "p-app2",
+  "p-dji-mini4", "p-roborock-s8", "p-s24u", "p-momentum4", "p-aw10", "p-xbox-x",
+];

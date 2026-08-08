@@ -115,13 +115,32 @@
 }
 .d-brand-name { font-weight: 700; letter-spacing: -0.02em; font-size: 17px; }
 .d-brand-name small { color: var(--ink-3); font-weight: 500; }
-.d-nav { display: flex; align-items: center; gap: 4px; margin-left: 6px; }
+/* The nav is built from the catalog, so it has to stay one line tall however
+   many categories exist: it scrolls sideways rather than wrapping, and the
+   scrollbar is hidden so the header edge stays clean. */
+.d-nav {
+  display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+  flex: 1 1 auto; min-width: 0; scroll-behavior: smooth;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+          mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.d-nav::-webkit-scrollbar { display: none; }
 .d-nav a {
-  padding: 7px 11px; border-radius: 8px; font-size: 14px; color: var(--ink-2);
+  padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--ink-2);
   font-weight: 500; transition: background 0.15s, color 0.15s;
+  white-space: nowrap; flex: none;
 }
 .d-nav a:hover { background: var(--line-2); color: var(--ink); }
-.d-head-search { margin-left: auto; flex: 1 1 auto; max-width: 420px; }
+/* "How it works" is not a category — a hairline sets it apart from the list. */
+.d-nav .d-nav-sep {
+  margin-left: 6px; padding-left: 14px;
+  border-left: 1px solid var(--line);
+  border-radius: 0 8px 8px 0;
+}
+/* The nav now flexes, so the search keeps a fixed share instead of competing
+   with it for the remaining width. */
+.d-head-search { margin-left: auto; flex: 0 1 320px; min-width: 180px; }
 .d-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 @media (max-width: 860px) { .d-nav { display: none; } .d-head-search { max-width: none; } }
 
@@ -174,7 +193,50 @@
 .d-section-head p { margin-top: 6px; }
 
 /* ---- hero ---- */
-.d-hero { padding: 60px 0 48px; }
+/* Two columns on desktop: copy on the left, a real comparison on the right.
+   Single column below 940px, where the proof panel is dropped rather than
+   stacked — on a phone the copy and search should own the first screen. */
+.d-hero {
+  padding: 60px 0 48px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  gap: 56px; align-items: center;
+}
+.d-hero-copy { min-width: 0; }
+
+.d-hero-proof {
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--card); box-shadow: var(--shadow);
+  padding: 18px 18px 14px; min-width: 0;
+}
+.d-proof-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.d-proof-name { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.d-proof-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.d-proof-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--card-2);
+}
+.d-proof-row.is-best { border-color: color-mix(in srgb, var(--pine) 40%, var(--line)); background: var(--pine-tint); }
+.d-proof-src { display: inline-flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 600; min-width: 0; }
+.d-proof-code {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+  padding: 3px 6px; border-radius: 5px; background: var(--line-2); color: var(--ink-2);
+  flex: none;
+}
+.d-proof-price {
+  font-family: var(--mono); font-size: 14px; font-weight: 600; white-space: nowrap;
+  display: inline-flex; align-items: baseline; gap: 8px;
+}
+.d-proof-tag {
+  font-family: var(--sans); font-style: normal; font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--pine);
+}
+.d-proof-foot { margin-top: 12px; font-size: 11.5px; color: var(--ink-3); text-align: center; }
+
+@media (max-width: 940px) {
+  .d-hero { grid-template-columns: 1fr; gap: 0; }
+  .d-hero-proof { display: none; }
+}
 .d-hero-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px; }
 .d-hero .d-h1 { max-width: 15ch; }
 .d-hero-lead { margin-top: 20px; }
