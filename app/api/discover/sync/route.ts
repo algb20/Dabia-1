@@ -10,7 +10,7 @@
 // public sync endpoint would let anyone burn the API quota.
 // ═══════════════════════════════════════════════════════════════════════════
 import { NextRequest, NextResponse } from "next/server"
-import { getAdminClient } from "@/lib/dabia/db/admin"
+import { getAdminClient, serviceKeyFingerprint } from "@/lib/dabia/db/admin"
 import { fetchHotProducts, searchProducts, aliexpressConfigured, diagnoseSignature, type AliProduct } from "@/lib/discover/aliexpress"
 
 const ADMIN_EMAILS = new Set(["maskmal088@gmail.com"])
@@ -208,7 +208,22 @@ export async function GET(req: NextRequest) {
   // ?diagnose=1 — fires every signature variant once and reports which one the
   // gateway accepts, so the format is settled in a single round trip.
   if (q.get("diagnose")) {
-    return NextResponse.json(await diagnoseSignature())
+    return NextResponse.json({
+      ...(await diagnoseSignature()),
+      supabase: serviceKeyFingerprint(),
+    })
+  }
+  // ?checkdb=1 — verifies the service-role key can actually write, which is
+  // what "Invalid API key" during a sync points at.
+  if (q.get("checkdb")) {
+    const admin = getAdminClient()
+    if (!admin) return NextResponse.json({ ok: false, reason: "No service-role key set", supabase: serviceKeyFingerprint() })
+    const { error } = await admin.from("discover_products").select("id").limit(1)
+    return NextResponse.json({
+      ok: !error,
+      error: error?.message ?? null,
+      supabase: serviceKeyFingerprint(),
+    })
   }
   return runSync({})
 }

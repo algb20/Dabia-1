@@ -19,12 +19,35 @@ if (typeof window !== "undefined") {
   throw new Error("admin.ts (Supabase service-role client) must never run in the browser")
 }
 
-const SUPABASE_URL =
+// Values are trimmed: a key pasted into a dashboard field easily carries a
+// trailing newline, and one stray character makes Supabase answer
+// "Invalid API key" — an error that points at the key rather than the paste.
+const SUPABASE_URL = (
   process.env.SUPABASE_URL ||
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   "https://fjeyhpasqhhqebqmhcmy.supabase.co"
+).trim()
 
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+
+/** Masked view of the service-role credentials, for diagnosing auth failures
+ *  without ever printing the key. A service-role JWT is ~200+ characters and
+ *  has three dot-separated segments; anything else is the wrong value. */
+export function serviceKeyFingerprint() {
+  const raw = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""
+  const k = SERVICE_ROLE_KEY ?? ""
+  return {
+    url: SUPABASE_URL,
+    key_present: Boolean(k),
+    key_length: k.length,
+    key_raw_length: raw.length,
+    key_had_whitespace: raw.length !== k.length,
+    key_masked: k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : "(too short)",
+    // A JWT has exactly three segments; the publishable key is not one.
+    jwt_segments: k ? k.split(".").length : 0,
+    looks_like_jwt: k.startsWith("eyJ") && k.split(".").length === 3,
+  }
+}
 
 let cached: SupabaseClient | null = null
 
