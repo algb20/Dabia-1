@@ -6,6 +6,7 @@ import { Tile, Seal, OfferLedger, Sparkline, SpecList, ProductCard } from "@/com
 import { SaveButton, AlertButton } from "@/components/discover/client";
 import { money } from "@/lib/discover/format";
 import { href } from "@/lib/discover/config";
+import { JsonLd, productSchema, breadcrumbSchema } from "@/lib/discover/schema";
 
 export async function generateStaticParams() {
   const slugs = await allProductSlugs();
@@ -38,6 +39,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   return (
     <section className="d-wrap">
+      {/* Rich-result markup: price range, per-source offers and the category
+          path, so search engines can render this as a comparison listing. */}
+      <JsonLd data={productSchema(p)} />
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Index", path: "/discover" },
+          { name: p.category.name, path: `/discover/c/${p.category.slug}` },
+          { name: p.brand.name, path: `/discover/b/${p.brand.slug}` },
+          { name: p.name, path: `/discover/p/${p.slug}` },
+        ])}
+      />
       <div className="d-crumbs" style={{ paddingTop: 24 }}>
         <Link href={href("/")}>Index</Link>
         <span>/</span>

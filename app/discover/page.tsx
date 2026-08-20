@@ -5,6 +5,7 @@ import { getTrending, getCategories, getBrands, STATS } from "@/lib/discover/sto
 import { ProductCard, Tile, Seal } from "@/components/discover/ui";
 import { SearchBox } from "@/components/discover/client";
 import { money } from "@/lib/discover/format";
+import { JsonLd, siteSchema, itemListSchema } from "@/lib/discover/schema";
 
 export default async function DiscoverHome() {
   const [trending, categories, brands] = await Promise.all([
@@ -19,6 +20,11 @@ export default async function DiscoverHome() {
 
   return (
     <>
+      {/* Site identity plus the search action that enables a sitelinks search
+          box, and the trending set as a machine-readable list. */}
+      <JsonLd data={siteSchema()} />
+      <JsonLd data={itemListSchema(trending, "Trending right now")} />
+
       {/* hero */}
       <section className="d-wrap d-hero">
         <div className="d-hero-copy">
